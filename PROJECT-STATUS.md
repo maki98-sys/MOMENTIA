@@ -49,7 +49,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 ### Fase 1 — Datos (8% global)
 
-**Avance verificado actual: 59% de la fase (4.7% del proyecto).** Desglose ponderado y conservador:
+**Avance verificado actual: 59% de la fase (4.7% del proyecto), antes de aceptar la migración 0003 y la prueba concurrente.** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 85% (esquema base y reglas principales implementadas; faltan completar cobertura y casos límite).
 - Migraciones y seeds: 50% (dos migraciones aplicadas en CI; conjunto de seeds de desarrollo pendiente).
 - Índices, consultas y paginación: 50% (índices creados; falta validar consultas con EXPLAIN y carga representativa).
