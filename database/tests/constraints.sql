@@ -2,7 +2,7 @@
 -- This script rolls back all fixtures.
 BEGIN;
 
-DO $$
+DO $body$
 DECLARE
  u1 uuid; u2 uuid; s uuid; invalid_space uuid; caught boolean := false;
 BEGIN
@@ -51,6 +51,6 @@ BEGIN
  UPDATE space_memberships SET state='left', left_at=now()
   WHERE space_id=invalid_space AND user_id=u2;
  SET CONSTRAINTS ALL IMMEDIATE;
-END $;
+END $body$;
 
 ROLLBACK;
