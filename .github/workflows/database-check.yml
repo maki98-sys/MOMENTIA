@@ -41,8 +41,16 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_initial_schema.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0002_space_integrity_and_event_albums.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0003_platform_operations_and_ownership.sql
+      - name: Verify migration ledger
+        run: test "$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM schema_migrations")" = "3"
       - name: Run integrity checks
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
+      - name: Load synthetic development data
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seeds/development.sql
+      - name: Validate representative query plans
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/queries/representative.sql
+      - name: Verify PostgreSQL backup and restore
+        run: bash database/tests/backup_restore.sh
 
       - name: Verify local SQLite schema
         run: python database/local/verify_schema.py
