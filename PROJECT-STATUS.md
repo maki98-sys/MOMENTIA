@@ -208,9 +208,10 @@ Una tarea se contabiliza como terminada únicamente si:
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
 | 2026-11-17 | Documentación fundacional v1 creada en rama de documentación | Ver historial de rama | No aplica a implementación | Borrador documental |
-| 2026-11-17 | Base PostgreSQL y SQLite, tres migraciones, restricciones, seeds, consultas y respaldo/restauración | GitHub Actions run #26: success | PostgreSQL 16, SQLite, integridad, concurrencia, EXPLAIN y restore | Verificado |
+| 2026-11-17 | Base PostgreSQL y SQLite, tres migraciones, restricciones, seeds, consultas y respaldo/restauración | GitHub Actions run #32: success | PostgreSQL 16, SQLite, integridad, concurrencia, EXPLAIN y restore | Verificado |
 | 2026-11-17 | Runner de migraciones con ledger e idempotencia | GitHub Actions run #28: success | Aplicación inicial y segunda ejecución sin duplicar cambios | Verificado |
 | 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
+| 2026-11-17 | Casos negativos de subtipo incompatible y álbum en CIRCLE | GitHub Actions run #32: success | Las dos restricciones rechazan los registros inválidos | Verificado |
 
 ## 8. Cierre de Fase 1 y siguiente ejecución
 
