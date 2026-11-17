@@ -48,6 +48,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seeds/development.sql
       - name: Validate representative query plans
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/queries/representative.sql
+      - name: Run 10k-row synthetic timeline smoke test
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/load_smoke.sql
       - name: Verify PostgreSQL backup and restore
         run: bash database/tests/backup_restore.sh
 
