@@ -212,6 +212,8 @@ Una tarea se contabiliza como terminada únicamente si:
 | 2026-11-17 | Runner de migraciones con ledger e idempotencia | GitHub Actions run #28: success | Aplicación inicial y segunda ejecución sin duplicar cambios | Verificado |
 | 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
 | 2026-11-17 | Casos negativos de subtipo incompatible y álbum en CIRCLE | GitHub Actions run #32: success | Las dos restricciones rechazan los registros inválidos | Verificado |
+| 2026-11-17 | Prueba sintética de 10.000 entradas de cronología y consulta indexada | GitHub Actions run #35: success | Conteo 10.000, índice `timeline_entries_space_time_idx`, consulta latest-50 en 0.023 ms; transacción revertida | Verificado |
+| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | En preparación para CI | Rechaza columnas con nombres token/secret/password/credential/authorization | Pendiente de CI |
 
 ## 8. Cierre de Fase 1 y siguiente ejecución
 
