@@ -1,0 +1,44 @@
+name: database-check
+
+on:
+  push:
+    paths:
+      - "database/**"
+      - ".github/workflows/database-check.yml"
+  pull_request:
+    paths:
+      - "database/**"
+      - ".github/workflows/database-check.yml"
+  workflow_dispatch:
+
+jobs:
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: momentia
+          POSTGRES_PASSWORD: momentia_test
+          POSTGRES_DB: momentia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U momentia -d momentia_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://momentia:momentia_test@localhost:5432/momentia_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Apply schema migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_initial_schema.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0002_space_integrity_and_event_albums.sql
+      - name: Run integrity checks
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
