@@ -4,13 +4,13 @@ PostgreSQL 15+ is the primary relational store. Original media and variants belo
 
 ## Apply locally
 
-Requires a local PostgreSQL 15+ database and a development role with schema privileges.
+Requires a local PostgreSQL 15+ database, `psql`, and a development role with schema privileges.
 
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_initial_schema.sql
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0002_space_integrity_and_event_albums.sql
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0003_platform_operations_and_ownership.sql
+    DATABASE_URL="postgres://..." bash database/scripts/migrate.sh
 
-The migrations are ordered and intended for a fresh, empty database. Do not run them twice against the same schema.
+The runner applies migrations in filename order, checks the `schema_migrations` ledger, skips versions already applied, and stops on the first failure. Each migration is transactional and records its version only after its DDL succeeds. Never edit an already-applied migration in a deployed environment; add a new forward migration instead.
+
+See [SCHEMA.md](SCHEMA.md) for the table inventory, invariants and implementation boundaries.
 
 ## Transaction invariants
 
@@ -23,11 +23,11 @@ The migrations are ordered and intended for a fresh, empty database. Do not run 
 
 ## Verification status
 
-Migrations 0001–0003, deferred integrity checks, SQLite smoke tests and the concurrent COUPLE membership test all passed GitHub Actions run #17 on PostgreSQL 16.
+Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #26 on PostgreSQL 16.
 
 
 ## Automated verification
-The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations in order, runs integrity/concurrency checks, and verifies the SQLite schema.
+The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations through the ledger-aware runner, verifies an idempotent second run, runs integrity/concurrency checks, loads development fixtures, checks representative query plans, restores a backup and verifies the SQLite schema.
 
 
 ## Local SQLite
