@@ -42,3 +42,6 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0002_space_integrity_and_event_albums.sql
       - name: Run integrity checks
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
+
+      - name: Verify local SQLite schema
+        run: python database/local/verify_schema.py
