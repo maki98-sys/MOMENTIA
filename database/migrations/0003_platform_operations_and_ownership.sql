@@ -1,4 +1,6 @@
 -- MOMENTIA operational, billing, retention and ownership invariants.
+BEGIN;
+
 CREATE TABLE billing_plans (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  code text NOT NULL UNIQUE,
@@ -195,3 +197,6 @@ CREATE TRIGGER moderation_cases_updated_at BEFORE UPDATE ON moderation_cases
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER support_tickets_updated_at BEFORE UPDATE ON support_tickets
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+INSERT INTO schema_migrations(version) VALUES ('0003_platform_operations_and_ownership');
+COMMIT;
