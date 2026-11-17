@@ -23,7 +23,7 @@ See [SCHEMA.md](SCHEMA.md) for the table inventory, invariants and implementatio
 
 ## Verification status
 
-Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #32 on PostgreSQL 16, including invalid subtype and event-album scope rejection tests.
+Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #35 on PostgreSQL 16, including invalid subtype and event-album scope rejection tests. Run #35 also inserted 10,000 synthetic timeline entries inside a rolled-back transaction, verified the row count, and confirmed the latest-50 query used `timeline_entries_space_time_idx` (50 rows; 0.023 ms execution in that CI run).
 
 
 ## Automated verification
@@ -38,7 +38,7 @@ Run the standard-library smoke tests with:
 
     python database/local/verify_schema.py
 
-The SQLite file is a local cache and sync queue, not an alternative server of record. Conflict resolution and sync execution are implemented in the offline application phase.
+The SQLite file is a local cache and sync queue, not an alternative server of record. Conflict resolution and sync execution are implemented in the offline application phase. Its automated schema smoke test also audits column names to reject token, secret, password, credential or authorization fields; authentication secrets belong in iOS Keychain / Android Keystore.
 
 
 ## Additional operational tables
