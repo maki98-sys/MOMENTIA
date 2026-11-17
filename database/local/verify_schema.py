@@ -8,6 +8,13 @@ db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
 db.executescript(schema)
 
+# Authentication secrets belong in Keychain/Keystore, never in SQLite.
+for (table_name,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+    columns = [row[1].lower() for row in db.execute(f'PRAGMA table_info("{table_name}")')]
+    forbidden = ("token", "secret", "password", "credential", "authorization")
+    leaked = [column for column in columns if any(term in column for term in forbidden)]
+    assert not leaked, f"Authentication secret-like columns found in {table_name}: {leaked}"
+
 # Verify offline photo capture and durable outbox persistence.
 db.execute("INSERT INTO local_media_assets(local_id,file_uri,mime_type,size_bytes) VALUES (?,?,?,?)",
            ("local-photo-1","file:///local/photo.jpg","image/jpeg",1024))
@@ -48,4 +55,4 @@ try:
 except sqlite3.IntegrityError:
     pass
 
-print("SQLite schema smoke tests: PASS")
+print("SQLite schema smoke tests and auth-secret column audit: PASS")
