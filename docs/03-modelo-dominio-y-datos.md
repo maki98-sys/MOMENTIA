@@ -80,6 +80,6 @@ Definir política por cuenta, posts, originales, derivados, auditoría, pagos y 
 
 
 ## Esquema físico inicial
-La migración PostgreSQL está en database/migrations/0001_initial_schema.sql. La migración incremental database/migrations/0002_space_integrity_and_event_albums.sql añade álbumes colaborativos de eventos y restricciones diferidas para exigir un subtipo coincidente con EVENT, COUPLE o CIRCLE. La prueba inicial está en database/tests/constraints.sql.
+La base PostgreSQL se crea con database/migrations/0001_initial_schema.sql, 0002_space_integrity_and_event_albums.sql y 0003_platform_operations_and_ownership.sql. La segunda añade álbumes colaborativos y validación de subtipos; la tercera añade billing, solicitudes de datos, retención, auditoría, moderación, soporte y propiedad de espacios. Las pruebas están en database/tests/constraints.sql y database/tests/concurrency.sh; SQLite local está en database/local/0001_local_schema.sql.
 
-**Estado de verificación:** archivos fuente creados en la rama; todavía no ejecutados contra un servidor PostgreSQL. La fase no se considera completada hasta ejecutar migraciones y pruebas, incluyendo concurrencia y restauración.
+**Estado de verificación:** migraciones PostgreSQL 16, integridad diferida, SQLite y concurrencia COUPLE pasaron GitHub Actions run #17. Faltan pruebas de restauración/rollback, consultas de carga, semillas y cerrar políticas de retención antes de aceptar la fase.
