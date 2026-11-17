@@ -131,7 +131,7 @@ CREATE INDEX support_tickets_queue_idx ON support_tickets(status,created_at);
 
 -- Serialize writes to COUPLE memberships before row changes begin. Without this
 -- early lock, two deferred checks can deadlock while trying to lock the same space.
-CREATE FUNCTION lock_couple_membership_write() RETURNS trigger LANGUAGE plpgsql AS $
+CREATE FUNCTION lock_couple_membership_write() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE target_space uuid; target_type text;
 BEGIN
  IF TG_OP = 'UPDATE' AND NEW.space_id <> OLD.space_id THEN
@@ -149,7 +149,7 @@ BEGIN
  END IF;
  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
  RETURN NEW;
-END $;
+END $fn$;
 
 CREATE TRIGGER couple_membership_write_lock
 BEFORE INSERT OR UPDATE OR DELETE ON space_memberships
