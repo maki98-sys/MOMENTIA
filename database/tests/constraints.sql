@@ -28,6 +28,29 @@ BEGIN
   caught := true;
  END;
  IF NOT caught THEN RAISE EXCEPTION 'Expected COUPLE exact-two-members constraint to reject one member'; END IF;
-END $$;
+
+ -- An active space cannot exist without its owner membership.
+ caught := false;
+ BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
+  INSERT INTO spaces(type,owner_id,name) VALUES ('CIRCLE',u1,'missing-owner-membership') RETURNING id INTO invalid_space;
+  INSERT INTO circle_details(space_id) VALUES (invalid_space);
+  SET CONSTRAINTS ALL IMMEDIATE;
+ EXCEPTION WHEN check_violation THEN
+  caught := true;
+ END;
+ IF NOT caught THEN RAISE EXCEPTION 'Expected active-space owner membership constraint to reject missing owner'; END IF;
+
+ -- A closed couple can proceed through its departure/closure lifecycle.
+ INSERT INTO spaces(type,owner_id,name) VALUES ('COUPLE',u1,'closed test couple') RETURNING id INTO invalid_space;
+ INSERT INTO couple_details(space_id) VALUES (invalid_space);
+ INSERT INTO space_memberships(space_id,user_id,role,state,joined_at) VALUES
+  (invalid_space,u1,'owner','active',now()), (invalid_space,u2,'member','active',now());
+ SET CONSTRAINTS ALL IMMEDIATE;
+ UPDATE spaces SET status='closed', closed_at=now() WHERE id=invalid_space;
+ UPDATE space_memberships SET state='left', left_at=now()
+  WHERE space_id=invalid_space AND user_id=u2;
+ SET CONSTRAINTS ALL IMMEDIATE;
+END $;
 
 ROLLBACK;
