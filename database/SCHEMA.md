@@ -2,9 +2,10 @@
 
 This is the physical PostgreSQL schema inventory for the current database foundation. It documents persisted responsibilities; it does not imply that the corresponding API or user interface has been implemented.
 
-## Server schema (40 tables)
+## Server schema (41 tables)
 
 ### Identity and account security
+- `schema_migrations`: applied migration versions and timestamps.
 - `users`: canonical account and lifecycle state.
 - `auth_identities`: external/provider identity mappings.
 - `user_profiles`: public/private profile fields and display preferences.
