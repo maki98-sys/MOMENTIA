@@ -42,6 +42,7 @@ BEGIN
  IF NOT caught THEN RAISE EXCEPTION 'Expected active-space owner membership constraint to reject missing owner'; END IF;
 
  -- A closed couple can proceed through its departure/closure lifecycle.
+ SET CONSTRAINTS ALL DEFERRED;
  INSERT INTO spaces(type,owner_id,name) VALUES ('COUPLE',u1,'closed test couple') RETURNING id INTO invalid_space;
  INSERT INTO couple_details(space_id) VALUES (invalid_space);
  INSERT INTO space_memberships(space_id,user_id,role,state,joined_at) VALUES
