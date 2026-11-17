@@ -18,6 +18,7 @@ BEGIN
 
  -- Invalid couple: committing a single active member must fail.
  BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
   INSERT INTO spaces(type,owner_id,name) VALUES ('COUPLE',u1,'invalid test couple') RETURNING id INTO invalid_space;
   INSERT INTO couple_details(space_id) VALUES (invalid_space);
   INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
