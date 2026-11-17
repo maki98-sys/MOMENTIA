@@ -128,6 +128,33 @@ CREATE TABLE support_tickets (
 );
 CREATE INDEX support_tickets_queue_idx ON support_tickets(status,created_at);
 
+
+-- Serialize writes to COUPLE memberships before row changes begin. Without this
+-- early lock, two deferred checks can deadlock while trying to lock the same space.
+CREATE FUNCTION lock_couple_membership_write() RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE target_space uuid; target_type text;
+BEGIN
+ IF TG_OP = 'UPDATE' AND NEW.space_id <> OLD.space_id THEN
+  RAISE EXCEPTION 'membership cannot be moved between spaces; remove and recreate it'
+   USING ERRCODE = 'check_violation';
+ END IF;
+ IF TG_OP = 'DELETE' THEN
+  target_space := OLD.space_id;
+ ELSE
+  target_space := NEW.space_id;
+ END IF;
+ SELECT type INTO target_type FROM spaces WHERE id = target_space;
+ IF target_type = 'COUPLE' THEN
+  PERFORM 1 FROM spaces WHERE id = target_space FOR UPDATE;
+ END IF;
+ IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+ RETURN NEW;
+END $;
+
+CREATE TRIGGER couple_membership_write_lock
+BEFORE INSERT OR UPDATE OR DELETE ON space_memberships
+FOR EACH ROW EXECUTE FUNCTION lock_couple_membership_write();
+
 -- Every active space must have its owner as its one active owner membership.
 CREATE UNIQUE INDEX space_single_active_owner_uq
  ON space_memberships(space_id) WHERE role = 'owner' AND state = 'active';
