@@ -24,14 +24,14 @@ Los pesos acordados suman 100%.
 | Fase | Peso global | Alcance | Avance inicial |
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
-| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 59% verificado |
+| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 83% verificado |
 | 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 0% |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
 | 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
 | 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
 | 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **4.7% global verificado** |
+| **Total** | **100%** | | **6.6% global verificado** |
 
 La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
 
@@ -49,13 +49,13 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 ### Fase 1 — Datos (8% global)
 
-**Avance verificado actual: 59% de la fase (4.7% del proyecto), antes de aceptar la migración 0003 y la prueba concurrente.** Desglose ponderado y conservador:
-- Modelo relacional y restricciones: 85% (esquema base y reglas principales implementadas; faltan completar cobertura y casos límite).
-- Migraciones y seeds: 50% (dos migraciones aplicadas en CI; conjunto de seeds de desarrollo pendiente).
-- Índices, consultas y paginación: 50% (índices creados; falta validar consultas con EXPLAIN y carga representativa).
-- Persistencia local SQLite: 80% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
-- Retención, exportación y borrado: 0%.
-- Pruebas de integridad y migración: 60% (CI PostgreSQL/SQLite verde; faltan concurrencia, rollback y pruebas ampliadas).
+**Avance verificado actual: 83% de la fase (6.6% del proyecto).** Desglose ponderado y conservador:
+- Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
+- Migraciones y seeds: 80% (tres migraciones aplicadas en CI; conjunto de seeds de desarrollo pendiente).
+- Índices, consultas y paginación: 70% (índices creados; falta validar consultas con EXPLAIN y carga representativa).
+- Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
+- Retención, exportación y borrado: 70% (tablas de solicitudes y políticas preparadas; faltan plazos aprobados y procesos de ejecución).
+- Pruebas de integridad y migración: 85% (CI PostgreSQL/SQLite y concurrencia COUPLE verdes; faltan rollback/restauración y más casos límite).
 
 - Modelo relacional y restricciones: 25%.
 - Migraciones y seeds: 20%.
