@@ -1,4 +1,6 @@
 -- MOMENTIA additive integrity and collaborative event albums.
+BEGIN;
+
 CREATE TABLE event_albums (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  space_id uuid NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -79,3 +81,6 @@ FOR EACH ROW EXECUTE FUNCTION assert_event_album_space_type();
 CREATE UNIQUE INDEX audio_participants_active_user_no_device_uq
 ON audio_participants(session_id, user_id)
 WHERE left_at IS NULL AND device_id IS NULL;
+
+INSERT INTO schema_migrations(version) VALUES ('0002_space_integrity_and_event_albums');
+COMMIT;
