@@ -7,8 +7,10 @@ PostgreSQL 15+ is the primary relational store. Original media and variants belo
 Requires a local PostgreSQL 15+ database and a development role with schema privileges.
 
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0001_initial_schema.sql
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0002_space_integrity_and_event_albums.sql
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/0003_platform_operations_and_ownership.sql
 
-The baseline is for a fresh, empty database. Do not run it twice against the same schema.
+The migrations are ordered and intended for a fresh, empty database. Do not run them twice against the same schema.
 
 ## Transaction invariants
 
@@ -21,11 +23,11 @@ The baseline is for a fresh, empty database. Do not run it twice against the sam
 
 ## Verification status
 
-The migration is committed as source but has not yet been executed against PostgreSQL in this environment. It must pass fresh-database application, integrity tests, concurrent membership tests and rollback/forward-fix review before this phase is accepted.
+Migrations 0001 and 0002 have passed PostgreSQL 16 CI and their integrity checks. Migration 0003 and the concurrent-membership test were added afterward and require the latest workflow run to pass before acceptance.
 
 
 ## Automated verification
-A GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations in order, and runs the SQL integrity checks. The workflow must complete successfully on the working branch before database phase acceptance. Its initial run has not yet been observed.
+The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations in order, runs integrity/concurrency checks, and verifies the SQLite schema.
 
 
 ## Local SQLite
@@ -37,3 +39,8 @@ Run the standard-library smoke tests with:
     python database/local/verify_schema.py
 
 The SQLite file is a local cache and sync queue, not an alternative server of record. Conflict resolution and sync execution are implemented in the offline application phase.
+
+
+## Additional operational tables
+
+Migration 0003 adds plans, subscriptions, idempotent payment-provider events, data export/deletion requests, configurable retention policy records, audit logs, moderation cases, media access grants and support tickets. Retention rules are deliberately not pre-populated: legal periods and actions must be approved for each market before activation.
