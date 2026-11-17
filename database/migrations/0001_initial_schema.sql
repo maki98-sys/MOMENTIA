@@ -1,5 +1,10 @@
 -- MOMENTIA PostgreSQL 15+ baseline. Apply to a fresh database.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+BEGIN;
+
+CREATE TABLE schema_migrations (
+ version text PRIMARY KEY,
+ applied_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE users (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -377,3 +382,6 @@ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_couple_member
 
 -- Application services must authorize every read/write, including generic target_id references.
 -- Never expose object keys directly; issue short-lived signed URLs after authorization.
+
+INSERT INTO schema_migrations(version) VALUES ('0001_initial_schema');
+COMMIT;
