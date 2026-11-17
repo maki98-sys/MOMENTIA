@@ -1,9 +1,9 @@
 # MOMENTIA — Control maestro de desarrollo
 
-**Versión:** 1.0  
+**Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** inicio de construcción; documentación fundacional creada, implementación todavía no iniciada.
+**Estado:** construcción inicial de base de datos; migraciones fuente creadas, ejecución PostgreSQL pendiente.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -11,7 +11,7 @@
 
 - El objetivo es entregar la aplicación completa, no solo especificaciones.
 - El trabajo se ejecuta por fases y módulos, con commits pequeños y comprobables.
-- Se conserva el orden de trabajo solicitado: backend → frontend → implementación e integración de base de datos/conectividad offline. El modelo de datos y los contratos se diseñan desde el inicio para que backend y frontend no se construyan sobre supuestos; la persistencia real se integra y prueba en la fase correspondiente.
+- Orden de ejecución vigente: base de datos → backend → frontend → offline/sincronización → integración y calidad. Los contratos se diseñan temprano; la persistencia PostgreSQL se establece antes de construir servicios que dependan de ella.
 - Ninguna fase se marca completa por haber creado archivos: requiere implementación, pruebas y criterios de aceptación.
 - No se fusiona a `main` sin revisión de cambios y comprobaciones.
 - No se inventa avance. Los porcentajes se basan en tareas aceptadas, no en estimaciones optimistas.
@@ -24,7 +24,7 @@ Los pesos acordados suman 100%.
 | Fase | Peso global | Alcance | Avance inicial |
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
-| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 0% aceptado |
+| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | En curso; 0% aceptado hasta ejecutar y probar |
 | 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 0% |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
