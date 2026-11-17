@@ -13,7 +13,7 @@ The baseline is for a fresh, empty database. Do not run it twice against the sam
 ## Transaction invariants
 
 1. Create a COUPLE space, its subtype row and exactly two active memberships in one transaction.
-2. Any membership change in a COUPLE space must leave exactly two active members at commit.
+2. An active COUPLE space must have exactly two active members at commit. Close the space before processing a departure that reduces the active member count.
 3. Create the subtype row matching the declared space type in the same transaction.
 4. Store hashes of invitation and refresh tokens, never reusable secrets.
 5. Authorize media access before issuing short-lived signed object URLs.
