@@ -26,3 +26,14 @@ The migration is committed as source but has not yet been executed against Postg
 
 ## Automated verification
 A GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations in order, and runs the SQL integrity checks. The workflow must complete successfully on the working branch before database phase acceptance. Its initial run has not yet been observed.
+
+
+## Local SQLite
+
+The offline client schema is database/local/0001_local_schema.sql. It stores cached spaces, memberships, local media files, timeline entries, durable outbox operations, sync cursors and a bounded download cache. Authentication secrets must remain in platform secure storage, not SQLite.
+
+Run the standard-library smoke tests with:
+
+    python database/local/verify_schema.py
+
+The SQLite file is a local cache and sync queue, not an alternative server of record. Conflict resolution and sync execution are implemented in the offline application phase.
