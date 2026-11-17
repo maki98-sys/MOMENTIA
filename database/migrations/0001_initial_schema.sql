@@ -358,11 +358,11 @@ CREATE TRIGGER audio_sessions_updated_at BEFORE UPDATE ON audio_sessions FOR EAC
 -- Deferred integrity: each COUPLE space must commit with exactly two active members.
 -- Create the space and both memberships in the same transaction.
 CREATE FUNCTION assert_couple_member_count() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE target_space uuid; target_type text; active_count integer;
+DECLARE target_space uuid; target_type text; target_status text; active_count integer;
 BEGIN
  target_space := COALESCE(NEW.space_id, OLD.space_id);
- SELECT type INTO target_type FROM spaces WHERE id = target_space FOR UPDATE;
- IF target_type IS NULL OR target_type <> 'COUPLE' THEN RETURN NULL; END IF;
+ SELECT type, status INTO target_type, target_status FROM spaces WHERE id = target_space FOR UPDATE;
+ IF target_type IS NULL OR target_type <> 'COUPLE' OR target_status <> 'active' THEN RETURN NULL; END IF;
  SELECT count(*) INTO active_count FROM space_memberships
   WHERE space_id = target_space AND state = 'active';
  IF active_count <> 2 THEN
