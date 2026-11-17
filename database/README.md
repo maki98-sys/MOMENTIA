@@ -22,3 +22,7 @@ The baseline is for a fresh, empty database. Do not run it twice against the sam
 ## Verification status
 
 The migration is committed as source but has not yet been executed against PostgreSQL in this environment. It must pass fresh-database application, integrity tests, concurrent membership tests and rollback/forward-fix review before this phase is accepted.
+
+
+## Automated verification
+A GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations in order, and runs the SQL integrity checks. The workflow must complete successfully on the working branch before database phase acceptance. Its initial run has not yet been observed.
