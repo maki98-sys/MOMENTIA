@@ -23,7 +23,7 @@ The migrations are ordered and intended for a fresh, empty database. Do not run 
 
 ## Verification status
 
-Migrations 0001 and 0002 have passed PostgreSQL 16 CI and their integrity checks. Migration 0003 and the concurrent-membership test were added afterward and require the latest workflow run to pass before acceptance.
+Migrations 0001–0003, deferred integrity checks, SQLite smoke tests and the concurrent COUPLE membership test all passed GitHub Actions run #17 on PostgreSQL 16.
 
 
 ## Automated verification
