@@ -41,6 +41,35 @@ BEGIN
  END;
  IF NOT caught THEN RAISE EXCEPTION 'Expected active-space owner membership constraint to reject missing owner'; END IF;
 
+
+ -- A space cannot use a subtype different from its declared type.
+ caught := false;
+ BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
+  INSERT INTO spaces(type,owner_id,name) VALUES ('EVENT',u1,'mismatched subtype') RETURNING id INTO invalid_space;
+  INSERT INTO couple_details(space_id) VALUES (invalid_space);
+  SET CONSTRAINTS ALL IMMEDIATE;
+ EXCEPTION WHEN check_violation THEN
+  caught := true;
+ END;
+ IF NOT caught THEN RAISE EXCEPTION 'Expected subtype guard to reject COUPLE details on EVENT space'; END IF;
+
+ -- Collaborative event albums cannot be attached to private CIRCLE spaces.
+ caught := false;
+ BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
+  INSERT INTO spaces(type,owner_id,name) VALUES ('CIRCLE',u1,'circle for album test') RETURNING id INTO invalid_space;
+  INSERT INTO circle_details(space_id) VALUES (invalid_space);
+  INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
+   VALUES (invalid_space,u1,'owner','active',now());
+  SET CONSTRAINTS ALL IMMEDIATE;
+  INSERT INTO event_albums(space_id,created_by,title) VALUES (invalid_space,u1,'invalid circle album');
+  SET CONSTRAINTS ALL IMMEDIATE;
+ EXCEPTION WHEN check_violation THEN
+  caught := true;
+ END;
+ IF NOT caught THEN RAISE EXCEPTION 'Expected event album guard to reject a CIRCLE space'; END IF;
+
  -- A closed couple can proceed through its departure/closure lifecycle.
  SET CONSTRAINTS ALL DEFERRED;
  INSERT INTO spaces(type,owner_id,name) VALUES ('COUPLE',u1,'closed test couple') RETURNING id INTO invalid_space;
