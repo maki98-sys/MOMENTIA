@@ -12,10 +12,12 @@ subtype AS (INSERT INTO couple_details(space_id) SELECT id FROM new_space RETURN
 owner_membership AS (INSERT INTO space_memberships(space_id,user_id,role,state,joined_at) SELECT subtype.space_id,owner_user.id,'owner','active',now() FROM subtype CROSS JOIN owner_user RETURNING id),
 member_membership AS (INSERT INTO space_memberships(space_id,user_id,role,state,joined_at) SELECT subtype.space_id,member_user.id,'member','active',now() FROM subtype CROSS JOIN member_user RETURNING id)
 SELECT (SELECT id FROM new_space) || '|' ||
+       (SELECT id FROM owner_user) || '|' ||
+       (SELECT id FROM member_user) || '|' ||
        (SELECT id FROM extra_user_a) || '|' ||
        (SELECT id FROM extra_user_b);
 SQL
-IFS='|' read -r SPACE EXTRA_A EXTRA_B < /tmp/momentia-concurrency-fixture.txt
+IFS='|' read -r SPACE OWNER MEMBER EXTRA_A EXTRA_B < /tmp/momentia-concurrency-fixture.txt
 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "BEGIN; INSERT INTO space_memberships(space_id,user_id,role,state,joined_at) VALUES ('$SPACE','$EXTRA_A','member','active',now()); SELECT pg_sleep(1); COMMIT;" >/tmp/momentia-race-a.log 2>&1 &
 PID_A=$!
@@ -31,5 +33,5 @@ COUNT=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM space
 test "$COUNT" = "2"
 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "DELETE FROM spaces WHERE id='$SPACE'"
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "DELETE FROM users WHERE id IN ('$EXTRA_A','$EXTRA_B')"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "DELETE FROM users WHERE id IN ('$OWNER','$MEMBER','$EXTRA_A','$EXTRA_B')"
 echo "PostgreSQL concurrent COUPLE membership test: PASS"
