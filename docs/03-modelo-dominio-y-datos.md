@@ -77,3 +77,9 @@ Notification, Subscription, Plan, PaymentEvent y AuditLog con IDs, estado, times
 
 ## Retención
 Definir política por cuenta, posts, originales, derivados, auditoría, pagos y reportes. Documentar purga física y expiración de backups.
+
+
+## Esquema físico inicial
+La migración PostgreSQL está en database/migrations/0001_initial_schema.sql. La migración incremental database/migrations/0002_space_integrity_and_event_albums.sql añade álbumes colaborativos de eventos y restricciones diferidas para exigir un subtipo coincidente con EVENT, COUPLE o CIRCLE. La prueba inicial está en database/tests/constraints.sql.
+
+**Estado de verificación:** archivos fuente creados en la rama; todavía no ejecutados contra un servidor PostgreSQL. La fase no se considera completada hasta ejecutar migraciones y pruebas, incluyendo concurrencia y restauración.
