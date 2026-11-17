@@ -3,7 +3,7 @@
 **Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** construcción inicial de base de datos; migraciones fuente creadas, ejecución PostgreSQL pendiente.
+**Estado:** base de datos implementada y verificada en CI; Fase 1 en revisión final, sin pasar aún al backend.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -24,14 +24,14 @@ Los pesos acordados suman 100%.
 | Fase | Peso global | Alcance | Avance inicial |
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
-| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 83% verificado |
+| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% verificado |
 | 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 0% |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
 | 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
 | 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
 | 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **6.6% global verificado** |
+| **Total** | **100%** | | **7.2% global verificado** |
 
 La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
 
@@ -49,13 +49,13 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 ### Fase 1 — Datos (8% global)
 
-**Avance verificado actual: 83% de la fase (6.6% del proyecto).** Desglose ponderado y conservador:
+**Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
-- Migraciones y seeds: 80% (tres migraciones aplicadas en CI; conjunto de seeds de desarrollo pendiente).
-- Índices, consultas y paginación: 70% (índices creados; falta validar consultas con EXPLAIN y carga representativa).
+- Migraciones y seeds: 95% (tres migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
+- Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; falta carga de volumen realista y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
-- Retención, exportación y borrado: 70% (tablas de solicitudes y políticas preparadas; faltan plazos aprobados y procesos de ejecución).
-- Pruebas de integridad y migración: 85% (CI PostgreSQL/SQLite y concurrencia COUPLE verdes; faltan rollback/restauración y más casos límite).
+- Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
+- Pruebas de integridad y migración: 95% (CI PostgreSQL 16, runner idempotente, restricciones, concurrencia, SQLite, seeds, EXPLAIN y backup/restore verdes; faltan pruebas de carga y casos límite ampliados).
 
 - Modelo relacional y restricciones: 25%.
 - Migraciones y seeds: 20%.
@@ -208,16 +208,18 @@ Una tarea se contabiliza como terminada únicamente si:
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
 | 2026-11-17 | Documentación fundacional v1 creada en rama de documentación | Ver historial de rama | No aplica a implementación | Borrador documental |
+| 2026-11-17 | Base PostgreSQL y SQLite, tres migraciones, restricciones, seeds, consultas y respaldo/restauración | GitHub Actions run #26: success | PostgreSQL 16, SQLite, integridad, concurrencia, EXPLAIN y restore | Verificado |
+| 2026-11-17 | Runner de migraciones con ledger e idempotencia | GitHub Actions run #28: success | Aplicación inicial y segunda ejecución sin duplicar cambios | Verificado |
+| 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
 
-## 8. Próxima ejecución técnica
+## 8. Cierre de Fase 1 y siguiente ejecución
 
-1. Inspeccionar todos los archivos y ramas existentes antes de tocar estructura.
-2. Completar inventario de repo y registrar qué existe realmente.
-3. Definir arquitectura ejecutable, monorepo, convenciones, variables de entorno de ejemplo y CI.
-4. Preparar contratos y estructura de backend.
-5. Implementar backend por módulos con pruebas.
-6. Construir frontend conectado a contratos reales.
-7. Implementar migraciones y persistencia completa; completar SQLite y sincronización offline.
-8. Integrar, probar, asegurar y preparar builds.
+La Fase 1 permanece abierta hasta completar:
+1. Revisión final de cobertura de relaciones y restricciones de todas las entidades.
+2. Prueba de carga con volúmenes sintéticos representativos y revisión de planes/índices.
+3. Revisión de los límites de privacidad y de las operaciones de exportación/eliminación que implementará el backend.
+4. Confirmar que el esquema local y las reglas de sincronización no guardan secretos de autenticación en SQLite.
+
+Al cerrar Fase 1, la siguiente fase será Backend: bootstrap NestJS, configuración por entorno, validación de variables, logging/observabilidad, contratos, health/readiness, conexión PostgreSQL y módulos por dominio. No se implementará lógica que dependa de una política de retención no aprobada.
 
 **No declarar la aplicación creada hasta tener una versión ejecutable y comprobada en dispositivos/emuladores.**
