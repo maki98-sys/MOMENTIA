@@ -23,7 +23,7 @@ See [SCHEMA.md](SCHEMA.md) for the table inventory, invariants and implementatio
 
 ## Verification status
 
-Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #26 on PostgreSQL 16.
+Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #32 on PostgreSQL 16, including invalid subtype and event-album scope rejection tests.
 
 
 ## Automated verification
