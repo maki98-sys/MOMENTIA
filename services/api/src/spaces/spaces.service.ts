@@ -223,7 +223,7 @@ export class SpacesService {
       const existingMembership = existing.rows[0] as { state: string; role: string } | undefined;
       const currentState = existingMembership?.state;
       if (currentState === 'active') {
-        return { spaceId: invitation.space_id, role: existingMembership.role, alreadyMember: true };
+        return { spaceId: invitation.space_id, role: existingMembership?.role ?? invitation.role, alreadyMember: true };
       }
       if (currentState === 'removed' || currentState === 'banned') {
         throw new ForbiddenException('This account cannot rejoin the space.');
