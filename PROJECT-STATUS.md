@@ -213,15 +213,15 @@ Una tarea se contabiliza como terminada únicamente si:
 | 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
 | 2026-11-17 | Casos negativos de subtipo incompatible y álbum en CIRCLE | GitHub Actions run #32: success | Las dos restricciones rechazan los registros inválidos | Verificado |
 | 2026-11-17 | Prueba sintética de 10.000 entradas de cronología y consulta indexada | GitHub Actions run #35: success | Conteo 10.000, índice `timeline_entries_space_time_idx`, consulta latest-50 en 0.023 ms; transacción revertida | Verificado |
-| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | En preparación para CI | Rechaza columnas con nombres token/secret/password/credential/authorization | Pendiente de CI |
+| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | GitHub Actions run #36: success | Rechaza columnas con nombres token/secret/password/credential/authorization | Verificado |
 
 ## 8. Cierre de Fase 1 y siguiente ejecución
 
 La Fase 1 permanece abierta hasta completar:
 1. Revisión final de cobertura de relaciones y restricciones de todas las entidades.
-2. Prueba de carga con volúmenes sintéticos representativos y revisión de planes/índices.
-3. Revisión de los límites de privacidad y de las operaciones de exportación/eliminación que implementará el backend.
-4. Confirmar que el esquema local y las reglas de sincronización no guardan secretos de autenticación en SQLite.
+2. Prueba sintética de 10.000 entradas de cronología y consulta latest-50: completada en run #35; el índice esperado fue utilizado. La prueba es un smoke test de carga, no sustituye pruebas de estrés/concurrencia a escala de producción.
+3. Revisión de los límites de privacidad y de las operaciones de exportación/eliminación que implementará el backend; los plazos de retención siguen desactivados hasta aprobación legal por mercado.
+4. Auditoría automática de columnas SQLite contra nombres de secretos: completada en run #36. El cifrado de archivos locales y la custodia real de credenciales en Keychain/Keystore se implementarán y probarán en las fases móvil/offline.
 
 Al cerrar Fase 1, la siguiente fase será Backend: bootstrap NestJS, configuración por entorno, validación de variables, logging/observabilidad, contratos, health/readiness, conexión PostgreSQL y módulos por dominio. No se implementará lógica que dependa de una política de retención no aprobada.
 
