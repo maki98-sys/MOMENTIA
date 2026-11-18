@@ -234,7 +234,7 @@ function validateInput(input: CreateMediaUploadInput): void {
     || input.fileName.includes('/') || input.fileName.includes('\\')) {
     throw new BadRequestException('fileName must be a simple file name of at most 180 characters.');
   }
-  if (!ALLOWED_TYPES.has(input.contentType.toLowerCase())) {
+  if (!ALLOWED_TYPES.has(input.contentType)) {
     throw new BadRequestException('Only JPEG, PNG and WebP images are accepted in this upload phase.');
   }
   if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes < 1 || input.sizeBytes > MAX_IMAGE_BYTES) {
