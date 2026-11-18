@@ -116,6 +116,9 @@ export class InvitationsService {
       if (existing.rowCount && existing.rows[0].state === 'active') {
         throw new BadRequestException('You are already an active member of this space.');
       }
+      if (existing.rowCount && existing.rows[0].state === 'banned') {
+        throw new ForbiddenException('A banned member cannot rejoin using an invitation.');
+      }
       if (invite.approval_required) {
         throw new BadRequestException('This invitation requires approval and cannot yet be accepted directly.');
       }
