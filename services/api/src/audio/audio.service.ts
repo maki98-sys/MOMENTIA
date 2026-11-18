@@ -57,7 +57,7 @@ export class AudioService {
     return this.withQueue(r.rows[0]);
   }
 
-  private async withQueue(session: Record<string, any>) {
+  private async withQueue(session: Record<string, any>): Promise<Record<string, any>> {
     const [queue, participants] = await Promise.all([
       this.db.query(`SELECT id,added_by,provider_track_reference,position,state,created_at FROM audio_queue_items
         WHERE session_id=$1 AND state IN ('queued','current') ORDER BY position ASC`, [session.id]),
