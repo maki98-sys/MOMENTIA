@@ -23,7 +23,9 @@ const principal = {
 describe('OidcIdentityService', () => {
   it('returns an existing active identity without creating a user', async () => {
     const h = createHarness();
-    h.query.mockResolvedValueOnce({ rows: [{ id: 'user-1', status: 'active' }], rowCount: 1 });
+    h.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
+      .mockResolvedValueOnce({ rows: [{ id: 'user-1', status: 'active' }], rowCount: 1 });
 
     await expect(h.service.resolveOrProvision(principal)).resolves.toEqual({
       userId: 'user-1',
@@ -35,14 +37,18 @@ describe('OidcIdentityService', () => {
 
   it('rejects an existing identity whose account is not active', async () => {
     const h = createHarness();
-    h.query.mockResolvedValueOnce({ rows: [{ id: 'user-1', status: 'suspended' }], rowCount: 1 });
+    h.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
+      .mockResolvedValueOnce({ rows: [{ id: 'user-1', status: 'suspended' }], rowCount: 1 });
 
     await expect(h.service.resolveOrProvision(principal)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('requires a verified email before provisioning', async () => {
     const h = createHarness();
-    h.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    h.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // identity not found
 
     await expect(h.service.resolveOrProvision({ ...principal, emailVerified: false }))
       .rejects.toBeInstanceOf(UnauthorizedException);
@@ -52,8 +58,9 @@ describe('OidcIdentityService', () => {
   it('does not automatically link an identity to an existing email account', async () => {
     const h = createHarness();
     h.query
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [{ id: 'existing-user' }], rowCount: 1 });
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // identity not found
+      .mockResolvedValueOnce({ rows: [{ id: 'existing-user' }], rowCount: 1 }); // email already owned
 
     await expect(h.service.resolveOrProvision(principal)).rejects.toBeInstanceOf(ConflictException);
     expect(h.query).toHaveBeenCalledTimes(3);
@@ -62,8 +69,9 @@ describe('OidcIdentityService', () => {
   it('creates a user and external identity in the same transaction', async () => {
     const h = createHarness();
     h.query
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // identity not found
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // email available
       .mockResolvedValueOnce({ rows: [{ id: 'new-user' }], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
@@ -71,7 +79,7 @@ describe('OidcIdentityService', () => {
       userId: 'new-user',
       created: true,
     });
-    expect(h.query.mock.calls[2][0]).toContain('INSERT INTO users');
-    expect(h.query.mock.calls[3][0]).toContain('INSERT INTO auth_identities');
+    expect(h.query.mock.calls[3][0]).toContain('INSERT INTO users');
+    expect(h.query.mock.calls[4][0]).toContain('INSERT INTO auth_identities');
   });
 });
