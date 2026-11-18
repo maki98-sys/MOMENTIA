@@ -48,6 +48,16 @@ export function getLocalDatabase() {
           PRIMARY KEY(entity_type, entity_id)
         );
       `);
+      const draftColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(media_drafts)');
+      const existingColumns = new Set(draftColumns.map(column => column.name));
+      const additions: Array<[string, string]> = [
+        ['upload_id', 'TEXT'],
+        ['remote_media_asset_id', 'TEXT'],
+        ['last_error', 'TEXT'],
+      ];
+      for (const [name, type] of additions) {
+        if (!existingColumns.has(name)) await db.execAsync(`ALTER TABLE media_drafts ADD COLUMN ${name} ${type}`);
+      }
       return db;
     });
   }
