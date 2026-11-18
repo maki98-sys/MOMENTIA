@@ -322,3 +322,6 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Los cambios de playback, cola, votos y participantes hechos por REST publican snapshots a los sockets conectados.
 - CI de esta implementación todavía debe ejecutarse y aprobarse.
 - Límite: difusión en memoria para una instancia. Redis adapter, limpieza de presencia al desconectar/expirar, cliente móvil y SDK de música siguen pendientes.
+
+- Primera validación del gateway detectó un error de tipado en el snapshot (`server_version`); se amplió el tipo de retorno de `withQueue` y se corrigió la importación de interfaces de ciclo de vida NestJS.
+- Las ejecuciones intermedias fueron canceladas por los nuevos commits (concurrency `cancel-in-progress`). La validación más reciente #44240792982 está en cola; no se declara aprobada todavía.
