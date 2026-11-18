@@ -10,5 +10,11 @@ export const environmentSchema = Joi.object({
   OIDC_ISSUER: Joi.string().uri({ scheme: ['https'] }),
   OIDC_AUDIENCE: Joi.string().min(1),
   OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https'] }),
+  S3_ENDPOINT: Joi.string().uri({ scheme: ['https'] }),
+  S3_BUCKET: Joi.string().min(1),
+  S3_ACCESS_KEY_ID: Joi.string().min(1),
+  S3_SECRET_ACCESS_KEY: Joi.string().min(1),
+  S3_REGION: Joi.string().min(1).default('auto'),
 }).and('OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI')
+  .and('S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY')
   .messages({ 'object.and': 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be configured together.' });

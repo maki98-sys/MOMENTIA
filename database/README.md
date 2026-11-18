@@ -23,11 +23,11 @@ See [SCHEMA.md](SCHEMA.md) for the table inventory, invariants and implementatio
 
 ## Verification status
 
-Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #35 on PostgreSQL 16, including invalid subtype and event-album scope rejection tests. Run #35 also inserted 10,000 synthetic timeline entries inside a rolled-back transaction, verified the row count, and confirmed the latest-50 query used `timeline_entries_space_time_idx` (50 rows; 0.023 ms execution in that CI run).
+Migrations 0001–0006, runner idempotency, migration ledger, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and concurrent COUPLE membership passed GitHub Actions database-check run #97 on PostgreSQL 16. The workflow also inserts 10,000 synthetic timeline entries in a rolled-back transaction and verifies the latest-50 query plan. Earlier run #35 measured 50 rows at 0.023 ms using `timeline_entries_space_time_idx`.
 
 
 ## Automated verification
-The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations through the ledger-aware runner, verifies an idempotent second run, runs integrity/concurrency checks, loads development fixtures, checks representative query plans, restores a backup and verifies the SQLite schema.
+The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations 0001–0006 through the ledger-aware runner, verifies an idempotent second run, runs integrity/concurrency checks, loads development fixtures, checks representative query plans, restores a backup and verifies the SQLite schema.
 
 
 ## Local SQLite

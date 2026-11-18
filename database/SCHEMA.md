@@ -2,7 +2,7 @@
 
 This is the physical PostgreSQL schema inventory for the current database foundation. It documents persisted responsibilities; it does not imply that the corresponding API or user interface has been implemented.
 
-## Server schema (41 tables)
+## Server schema (42 tables)
 
 ### Identity and account security
 - `schema_migrations`: applied migration versions and timestamps.
@@ -25,12 +25,14 @@ This is the physical PostgreSQL schema inventory for the current database founda
 - `media_variants`: thumbnails and derived renditions.
 - `media_metadata`: capture time, EXIF-derived fields and optional location metadata.
 - `media_uploads`: upload and processing state.
+- `media_processing_jobs`: durable queue, lease, retry and terminal processing state for media workers.
+- `media_processing_jobs`: durable, retryable work queue for verified uploads; workers claim jobs with PostgreSQL `SKIP LOCKED`.
 
 ### Social content and memories
 - `posts`: social and space-scoped publications.
 - `post_comments`: comments and replies.
 - `content_reactions`: reactions to supported content targets.
-- `timeline_entries`: chronological memory/feed projection.
+- `timeline_entries`: chronological memory/feed projection; a partial unique index guarantees one media item per space.
 - `event_albums`, `event_album_items`: collaborative event albums and media ordering.
 
 ### Audio, notifications and reliability

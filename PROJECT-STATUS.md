@@ -1,9 +1,9 @@
 # MOMENTIA — Control maestro de desarrollo
 
-**Versión:** 1.1  
+**Versión:** 1.2  
 **Repositorio:** `maki98-sys/MOMENTIA`  
-**Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos en revisión final; bootstrap del backend implementado y aceptado por CI; módulos de producto aún no iniciados.
+**Rama de trabajo:** `feature/profile-api-v1` (PR #1; base de comparación `docs/arquitectura-y-alcance-v1`)  
+**Estado:** PostgreSQL y SQLite cuentan con base validada; API de perfiles, espacios, álbumes y social implementada parcialmente; flujo privado de carga, verificación de bytes/hash, cola durable y worker de procesamiento de imágenes implementados en la rama feature. La integración con bucket real y pruebas end-to-end siguen pendientes. Frontend, offline y Social Audio siguen pendientes.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -25,15 +25,15 @@ Los pesos acordados suman 100%.
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
 | 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% verificado |
-| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 8% verificado |
+| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | En curso; no recalculado |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
 | 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
 | 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
 | 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **8.96% global verificado** |
+| **Total** | **100%** | | **No recalculado en esta revisión** |
 
-La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
+La documentación fundacional inicial está en `docs/`; sigue siendo un borrador que debe revisarse. El porcentaje global anterior (8.96%) quedó obsoleto al incorporarse módulos backend; no se publicará una cifra nueva hasta recalcular todas las tareas con la fórmula de esta matriz.
 
 ## 3. Módulos y pesos internos
 
@@ -51,7 +51,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 **Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
-- Migraciones y seeds: 95% (tres migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
+- Migraciones y seeds: 95% (seis migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
 - Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; smoke test sintético de 10.000 entradas y consulta latest-50 completado; falta carga representativa prolongada y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
 - Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
@@ -136,20 +136,20 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 | Módulo | Estado de implementación | Avance |
 |---|---|---:|
-| Cuenta, identidad y perfiles | No iniciado | 0% |
-| Espacios, roles e invitaciones QR/enlace | No iniciado | 0% |
-| Eventos y álbumes colaborativos | No iniciado | 0% |
-| Parejas y diario privado | No iniciado | 0% |
-| Círculos privados | No iniciado | 0% |
-| Red social, feed e interacciones | No iniciado | 0% |
-| Cámara, galería, EXIF y multimedia | No iniciado | 0% |
-| Timeline y recuerdos | No iniciado | 0% |
-| Offline y sincronización | No iniciado | 0% |
-| Social Audio | No iniciado | 0% |
-| Notificaciones | No iniciado | 0% |
-| PWA de invitados | No iniciado | 0% |
-| Moderación y administración | No iniciado | 0% |
-| Monetización y cuotas | No iniciado | 0% |
+| Cuenta, identidad y perfiles | OIDC base y API de perfil implementados; alta/recuperación y UX pendientes | No recalculado |
+| Espacios, roles e invitaciones QR/enlace | API y controles de membresía implementados; UX QR/enlace pendiente | No recalculado |
+| Eventos y álbumes colaborativos | API de álbum y membresía implementadas; carga/visualización real pendiente | No recalculado |
+| Parejas y diario privado | Espacio COUPLE y regla de dos miembros; diario y UX pendientes | No recalculado |
+| Círculos privados | Espacios CIRCLE y permisos base; UX y funciones completas pendientes | No recalculado |
+| Red social, feed e interacciones | Posts/feed/comentarios/reacciones, follow/accept/reject/unfollow/block/unblock y listados paginados de seguidores/seguidos/solicitudes; discovery y moderación pendientes | No recalculado |
+| Cámara, galería, EXIF y multimedia | Inicio/confirmación de carga privada en fase inicial; validación real, derivados y app pendientes | No recalculado |
+| Timeline y recuerdos | API de lectura cursor por espacio; integra posts visibles y fotos listas de álbumes de eventos; diarios/recuerdos avanzados pendientes | No recalculado |
+| Offline y sincronización | Diseño documentado; implementación cliente y cola pendientes | No recalculado |
+| Social Audio | Esquema de datos; backend, proveedor autorizado y cliente pendientes | No recalculado |
+| Notificaciones | Esquema de datos; entrega y preferencias pendientes | No recalculado |
+| PWA de invitados | No iniciado | No recalculado |
+| Moderación y administración | Tablas base; flujos y consola pendientes | No recalculado |
+| Monetización y cuotas | Tablas base; lógica, webhooks y límites pendientes | No recalculado |
 
 ## 5. Estructura de carpetas objetivo
 
@@ -213,7 +213,7 @@ Una tarea se contabiliza como terminada únicamente si:
 | 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
 | 2026-11-17 | Casos negativos de subtipo incompatible y álbum en CIRCLE | GitHub Actions run #32: success | Las dos restricciones rechazan los registros inválidos | Verificado |
 | 2026-11-17 | Prueba sintética de 10.000 entradas de cronología y consulta indexada | GitHub Actions run #35: success | Conteo 10.000, índice `timeline_entries_space_time_idx`, consulta latest-50 en 0.023 ms; transacción revertida | Verificado |
-| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | GitHub Actions run #36: success | Rechaza columnas con nombres token/secret/password/credential/authorization | Verificado |\n| 2026-11-18 | Bootstrap NestJS aceptado: migraciones, typecheck, unit tests, build y Docker | GitHub Actions run #7, commit `d33dfa4` | Todos los pasos completados correctamente | Verificado |\n| 2026-11-18 | ADR-001: estrategia de identidad y autenticación propuesta, pendiente de decisión | `docs/architecture/ADR-001-identity-and-authentication.md` | Revisión de tablas users/auth_identities/auth_sessions y límites de seguridad | Propuesta; no implementada |
+| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | GitHub Actions run #36: success | Rechaza columnas con nombres token/secret/password/credential/authorization | Verificado |\n| 2026-11-18 | Bootstrap NestJS aceptado: migraciones, typecheck, unit tests, build y Docker | GitHub Actions run #144 (API check) y #45 (database-check, en curso en esta revisión) | Todos los pasos completados correctamente | Verificado |\n| 2026-11-18 | ADR-001: estrategia de identidad y autenticación propuesta, pendiente de decisión | `docs/architecture/ADR-001-identity-and-authentication.md` | Revisión de tablas users/auth_identities/auth_sessions y límites de seguridad | Propuesta; no implementada |
 
 ## 8. Cierre de Fase 1 y siguiente ejecución
 
@@ -228,31 +228,48 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 **No declarar la aplicación creada hasta tener una versión ejecutable y comprobada en dispositivos/emuladores.**
 
 
-## 9. Inicio de implementación del backend
+## 9. Implementación backend y estado actual
 
-**Estado: base técnica creada y aceptada por CI en el HEAD de la rama de trabajo.**
+**Rama activa:** `feature/profile-api-v1`. El trabajo está en PR #1 y no se ha fusionado a `main`.
 
-Entregables añadidos:
-- Servicio NestJS modular en `services/api`, con TypeScript y configuración validada mediante Joi.
-- Pool PostgreSQL administrado por el ciclo de vida de NestJS.
-- Endpoints `GET /api/v1/health/live` y `GET /api/v1/health/ready`; readiness ejecuta `SELECT 1` y devuelve 503 si PostgreSQL no responde.
-- Seguridad HTTP inicial con Helmet, CORS denegado por defecto y ValidationPipe global.
-- Pruebas unitarias de validación de entorno.
-- Dockerfile multi-stage con ejecución como usuario no root.
-- Workflow `.github/workflows/api-check.yml` que aplica migraciones, instala dependencias, ejecuta typecheck, pruebas, build y build de imagen Docker.
+### Funciones API implementadas parcialmente
+- Perfil autenticado: lectura y actualización del perfil propio.
+- Espacios EVENT, CIRCLE y COUPLE; membresías, roles, salida e invitaciones con token hasheado.
+- Álbumes colaborativos de eventos: creación, listado y gestión de referencias a multimedia.
+- Social: publicaciones, feed con cursor, comentarios y reacciones; verificación de audiencia y bloqueos.
+- Relaciones: solicitudes follow, aceptación/rechazo, unfollow, bloqueo/desbloqueo y listados paginados de following/followers/solicitudes; bloqueos eliminan relaciones en ambas direcciones. Operaciones transaccionales bloquean las dos filas de usuario en orden estable.
+- Auditoría de operaciones sensibles.
 
-Límites deliberados de esta entrega:
-- No se exponen todavía rutas de cuenta, perfiles ni espacios.
-- No se ha elegido proveedor de identidad ni se inventará almacenamiento de contraseñas: el esquema actual no contiene hash de contraseña y la decisión de autenticación debe preceder a su implementación.
-- No se han activado retención, borrado automático ni políticas de conservación.
-- Observabilidad avanzada, trazas, métricas y alertas quedan pendientes.
+### Multimedia — carga, verificación y procesamiento
+- Inicio autenticado de carga con clave de idempotencia.
+- URLs PUT firmadas por 10 minutos para object storage S3-compatible privado.
+- Validación de campos, JPEG/PNG/WebP y tamaño declarado máximo de 25 MiB.
+- Confirmación con HEAD, lectura limitada del objeto, validación de firmas binarias JPEG/PNG/WebP y recálculo server-side de SHA-256; los datos incorrectos se ponen en cuarentena.
+- Migraciones 0004–0005 separan metadatos declarados/verificados y crean la cola durable de procesamiento; migración 0006 garantiza una sola entrada multimedia por espacio.
+- Los archivos se marcan `ready` solo después de que el worker genere y registre todas las variantes; si falla, reintenta con backoff y termina en `failed` al agotar intentos.
 
-La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit `d33dfa44732f0e44cea3d66ebd9c7ff8ad666c50`): migraciones PostgreSQL, instalación, typecheck, pruebas unitarias, build y build de imagen Docker finalizaron correctamente. Se contabiliza únicamente el 8% de la Fase 2 correspondiente al bootstrap; no se contabilizan aún módulos funcionales. La decisión de proveedor/protocolo de identidad está documentada en ADR-001 y sigue pendiente de aprobación.
+### Límites pendientes
+- El proveedor OIDC concreto no está seleccionado ni configurado.
+- No hay cliente móvil ni PWA implementados.
+- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración de otras fuentes de memoria en timeline, antivirus y limpieza operativa de objetos huérfanos.
+- Faltan discovery/búsqueda, listados de seguidores/seguidos, moderación operativa, recuerdos/diario avanzado, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
+- No se ha conectado un bucket real ni desplegado producción.
 
+### Evidencia CI
+- API quality run #238 (commit `b0f5f61`): lint, TypeScript, pruebas unitarias de media/timeline/social y build aprobados.
+- database-check run #114 (commit `b0f5f61`): seis migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
+- api-check run #252 (commit `519e6cd`): nueva verificación completa de API y Docker en ejecución al actualizar este estado.
 
-## 2026-11-18 — OIDC foundation (in progress)
-- User approved managed OIDC as the identity strategy; concrete provider remains unselected.
-- Added provider-neutral issuer/audience/JWKS configuration, HTTPS-only OIDC endpoints, JOSE JWT verification with RS256/ES256 allowlist, bearer guard and principal contract.
-- Added configuration tests and bearer-guard unit tests; AuthModule is registered but guard is not global and no private product routes are exposed.
-- Added implementation boundary and integration sequence in `services/api/src/auth/README.md`.
-- CI run #44210416238 was queued at the time of this update; do not count this work as accepted until CI is green. Account mapping, MOMENTIA sessions, refresh rotation, revocation and resource authorization remain unimplemented.
+## 10. Registro adicional — rama feature/profile-api-v1
+
+| Fecha | Entrega | Commit/PR | Pruebas | Estado |
+|---|---|---|---|---|
+| 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y database-check verdes en commit `5855184`; api-check en ejecución | Verificado en CI; sin bucket real |
+| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #203, database-check run #97 y api-check run #222 (incluido Docker) aprobados | Implementado y validado por los tres controles CI |
+
+| 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado y validado por los tres controles CI |
+
+| 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #252 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
+
+| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #252 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |

@@ -4,6 +4,11 @@ import { environmentSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
+import { ProfilesModule } from './profiles/profiles.module';
+import { SpacesModule } from './spaces/spaces.module';
+import { SocialModule } from './social/social.module';
+import { MediaModule } from './media/media.module';
+import { TimelineModule } from './timeline/timeline.module';
 
 @Module({
   imports: [
@@ -16,6 +21,11 @@ import { AuthModule } from './auth/auth.module';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    ProfilesModule,
+    SpacesModule,
+    SocialModule,
+    MediaModule,
+    TimelineModule,
   ],
 })
 export class AppModule {}

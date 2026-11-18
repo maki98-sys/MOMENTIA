@@ -11,19 +11,19 @@
 
 ## Endpoints iniciales
 
-**Cuenta:** POST /auth/register, /auth/login, /auth/refresh, /auth/logout; GET /me; PATCH /me/profile; GET /me/sessions.
+**Cuenta (parcialmente implementada):** GET /me/profile y PUT /me/profile requieren bearer token válido y operan exclusivamente sobre el usuario autenticado. PUT acepta `displayName` (1–80 caracteres), `bio` (hasta 500 caracteres o null) y `visibility` (`private`, `followers` o `public`; predeterminado `private`). El GET devuelve `profile: null` si el usuario todavía no ha creado su perfil. Registro/login/refresh/logout y sesiones siguen pendientes.
 
-**Espacios:** POST /spaces; GET /spaces; GET/PATCH /spaces/{spaceId}; GET /spaces/{spaceId}/members; POST /spaces/{spaceId}/invitations; POST /invitations/accept.
+**Espacios (implementación inicial):** POST /spaces crea EVENT, CIRCLE o COUPLE; GET /spaces lista espacios activos del usuario; GET /spaces/{spaceId} consulta detalles solo si es miembro activo; POST /spaces/{spaceId}/invitations crea invitaciones (solo owner/admin, token aleatorio mostrado una vez y almacenado como SHA-256); POST /invitations/accept consume invitación válida bajo bloqueo transaccional. COUPLE requiere un segundo usuario activo y crea exactamente dos membresías en la misma transacción. GET /spaces/{spaceId}/members lista integrantes activos; PATCH /spaces/{spaceId}/members/{memberId}/role permite al owner cambiar roles sin transferir ownership; DELETE /spaces/{spaceId}/members/{memberId} permite al owner retirar miembros; POST /spaces/{spaceId}/leave permite salir a miembros no propietarios. El propietario debe transferir propiedad o cerrar el espacio antes de salir. Los cambios de miembros en COUPLE requieren el flujo de cierre de pareja y no se permiten mediante estos endpoints.
 
-**Eventos/media:** POST /spaces/{spaceId}/albums; GET /spaces/{spaceId}/timeline; POST /spaces/{spaceId}/media; GET /media/{mediaId}; POST /media/{mediaId}/download-grant.
+**Álbumes colaborativos de eventos (implementación inicial):** POST/GET /spaces/{spaceId}/albums; GET /albums/{albumId} lista elementos; POST /albums/{albumId}/items agrega un recurso multimedia listo propiedad del usuario autenticado; DELETE /albums/{albumId}/items/{mediaAssetId} permite retirar el elemento a quien lo aportó o a un moderador/administrador/propietario. Solo espacios EVENT y miembros activos. Creación de álbum limitada a owner/admin/moderator. Los endpoints de carga y entrega segura de multimedia siguen pendientes.\n\n**Eventos/media (pendiente):** GET /spaces/{spaceId}/timeline; POST /spaces/{spaceId}/media; GET /media/{mediaId}; POST /media/{mediaId}/download-grant.
 
-**Social:** POST /posts; GET /feed; GET /posts/{postId}; POST /posts/{postId}/comments; POST /posts/{postId}/reactions; POST /users/{userId}/follow; POST /users/{userId}/block; POST /reports.
+**Social (implementación inicial):** POST /posts publica texto y/o multimedia lista; GET /feed devuelve feed con cursor; GET /posts/{postId} consulta publicaciones visibles; POST/GET /posts/{postId}/comments crea y lista comentarios; PUT/DELETE /posts/{postId}/reaction establece o retira la reacción del usuario. La audiencia `public`, `followers`, `space` o `private` se valida en servidor; publicaciones de espacio exigen membresía activa y se agregan a la línea de tiempo. El feed respeta bloqueos y relaciones aceptadas. Seguir/dejar de seguir, bloqueo, reportes y moderación siguen pendientes.
 
 **Audio:** POST /spaces/{spaceId}/audio-sessions; POST /audio-sessions/{sessionId}/join|leave; PATCH /audio-sessions/{sessionId}/playback; POST /audio-sessions/{sessionId}/queue; POST /audio-sessions/{sessionId}/queue/{itemId}/vote; GET /audio-sessions/{sessionId}.
 
 **Sync/uploads:** POST /sync/operations; GET /sync/changes?cursor=...; POST /uploads; POST /uploads/{uploadId}/complete|abort.
 
-Estos son contratos de diseño; antes de codificar se fijan DTO, límites, códigos de error y matriz de permisos.
+Los endpoints marcados como implementados existen en código; el resto sigue siendo contrato de diseño y no debe considerarse disponible. La aceptación de invitaciones comprueba expiración, revocación, límite de usos, estado del espacio y membresías expulsadas; los tokens en claro nunca se guardan. Los álbumes comprueban membresía activa, tipo EVENT, propiedad del recurso multimedia y estado `ready`; los metadatos de almacenamiento no se exponen en la API. Cada nuevo endpoint debe añadir DTO/validación, permisos, pruebas y documentación antes de marcarse como implementado.
 
 ## Autorización por petición
 Comprobar identidad, sesión, estado de cuenta, pertenencia activa, rol, permiso, audiencia, bloqueos, moderación y estado del recurso. Proteger contra BOLA/IDOR. Nunca confiar en controles de interfaz.
