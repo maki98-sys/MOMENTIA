@@ -101,7 +101,7 @@ export class MediaService {
     if (object.size !== Number(row.size_bytes)) {
       throw new ConflictException('Uploaded file size does not match the declared size.');
     }
-    if (object.contentType && object.contentType.split(';')[0].trim().toLowerCase() !== row.mime_type_declared) {
+    if (!object.contentType || object.contentType.split(';')[0].trim().toLowerCase() !== row.mime_type_declared) {
       throw new ConflictException('Uploaded file content type does not match the declared type.');
     }
     await this.database.transaction(async (client) => {
