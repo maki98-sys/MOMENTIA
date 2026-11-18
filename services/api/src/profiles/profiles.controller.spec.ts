@@ -1,3 +1,7 @@
+jest.mock('../auth/oidc-bearer.guard', () => ({
+  OidcBearerGuard: class OidcBearerGuard {},
+}));
+
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ProfilesController } from './profiles.controller';
 import { ProfilesService } from './profiles.service';
