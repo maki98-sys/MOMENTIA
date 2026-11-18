@@ -9,8 +9,9 @@ export class MediaService {
   private validate(input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Upload data is required.');
     const v=input as Record<string,unknown>;
-    if(Object.keys(v).some(k=>!['fileName','sizeBytes','checksumSha256','capturedAt','capturedTimezone','gpsConsent'].includes(k))) throw new BadRequestException('Unsupported upload fields.');
+    if(Object.keys(v).some(k=>!['fileName','mimeType','sizeBytes','checksumSha256','capturedAt','capturedTimezone','gpsConsent'].includes(k))) throw new BadRequestException('Unsupported upload fields.');
     if(typeof v.fileName!=='string'||!v.fileName.trim()||v.fileName.length>255||/[\\/\\0]/.test(v.fileName)) throw new BadRequestException('Invalid file name.');
+    if(!['image/jpeg','image/png','image/webp','image/heic','image/heif','video/mp4','video/quicktime'].includes(String(v.mimeType))) throw new BadRequestException('Unsupported declared media type.');
     if(!Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||Number(v.sizeBytes)>50*1024*1024) throw new BadRequestException('File size must be between 1 byte and 50 MB.');
     if(typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) throw new BadRequestException('A SHA-256 checksum is required.');
     if(v.capturedAt!==undefined&&(typeof v.capturedAt!=='string'||Number.isNaN(Date.parse(v.capturedAt)))) throw new BadRequestException('capturedAt must be a valid ISO date-time.');
@@ -23,6 +24,7 @@ export class MediaService {
     const v=this.validate(input);
     if(!idempotencyKey||idempotencyKey.length>128) throw new BadRequestException('A valid Idempotency-Key header is required.');
     return this.db.transaction(async client=>{
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':'+idempotencyKey]);
       const prior=await client.query(
         `SELECT u.id upload_id,u.state,u.created_at,a.id media_asset_id,a.status
          FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
@@ -31,18 +33,18 @@ export class MediaService {
       const assetId=randomUUID();
       const storageKey='pending/'+userId+'/'+assetId;
       const asset=await client.query(
-        `INSERT INTO media_assets(id,owner_id,storage_key_original,mime_type_detected,size_bytes,checksum_sha256,status)
-         VALUES($1,$2,$3,'application/octet-stream',$4,$5,'pending')
+        `INSERT INTO media_assets(id,owner_id,storage_key_original,original_filename,mime_type_detected,size_bytes,checksum_sha256,status)
+         VALUES($1,$2,$3,$4,'application/octet-stream',$5,$6,'pending')
          RETURNING id,status,size_bytes,created_at`,
-        [assetId,userId,storageKey,v.sizeBytes,String(v.checksumSha256).toLowerCase()]);
+        [assetId,userId,storageKey,v.fileName,v.sizeBytes,String(v.checksumSha256).toLowerCase()]);
       await client.query(
         `INSERT INTO media_metadata(media_asset_id,captured_at,captured_timezone,gps_consent_at)
          VALUES($1,$2,$3,CASE WHEN $4::boolean THEN now() ELSE NULL END)`,
         [assetId,v.capturedAt??null,v.capturedTimezone??null,v.gpsConsent===true]);
       const upload=await client.query(
-        `INSERT INTO media_uploads(media_asset_id,uploader_id,state,idempotency_key)
-         VALUES($1,$2,'created',$3)
-         RETURNING id,state,created_at`,[assetId,userId,idempotencyKey]);
+        `INSERT INTO media_uploads(media_asset_id,uploader_id,state,idempotency_key,declared_mime_type)
+         VALUES($1,$2,'created',$3,$4)
+         RETURNING id,state,created_at`,[assetId,userId,idempotencyKey,v.mimeType]);
       return {...upload.rows[0],media_asset_id:asset.rows[0].id,asset_status:asset.rows[0].status,size_bytes:asset.rows[0].size_bytes};
     });
   }
