@@ -36,6 +36,8 @@ describe('MediaService', () => {
       .rejects.toBeInstanceOf(BadRequestException);
     await expect(service.createUpload('user-1', 'key-2', { ...input, sizeBytes: 26 * 1024 * 1024 }))
       .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createUpload('user-1', 'key-3', { ...input, contentType: 'IMAGE/JPEG' }))
+      .rejects.toBeInstanceOf(BadRequestException);
     expect(database.transaction).not.toHaveBeenCalled();
   });
 
