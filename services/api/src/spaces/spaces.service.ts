@@ -1,5 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { PoolClient } from 'pg';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 export type SpaceType = 'EVENT' | 'COUPLE' | 'CIRCLE';
@@ -145,6 +144,9 @@ export class SpacesService {
     const endsAt = optionalString('endsAt', 40);
     const description = optionalString('description', 500);
     const partnerUserId = optionalString('partnerUserId', 36);
+    if (timezone === null || partnerUserId === null) {
+      throw new BadRequestException('timezone and partnerUserId cannot be null.');
+    }
     if (body.type === 'COUPLE' && !partnerUserId) {
       throw new BadRequestException('partnerUserId is required for a couple space.');
     }
