@@ -44,6 +44,10 @@ export class S3CompatibleStorageService {
     }
   }
 
+  async presignGet(key: string, expiresSeconds: number): Promise<string> {
+    return this.presign('GET', key, expiresSeconds);
+  }
+
   async headObject(key: string): Promise<{ size: number; contentType: string | null }> {
     const url = await this.presign('HEAD', key, 60);
     const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10_000) });
