@@ -6,6 +6,7 @@ describe('environmentSchema', () => {
   it('requires a valid PostgreSQL connection string', () => {
     expect(environmentSchema.validate({ DATABASE_URL: 'not-a-url' }).error).toBeDefined();
   });
+
   it('applies safe development defaults', () => {
     const result = environmentSchema.validate({ DATABASE_URL: database });
     expect(result.error).toBeUndefined();
@@ -14,13 +15,29 @@ describe('environmentSchema', () => {
     expect(result.value.DATABASE_POOL_MAX).toBe(10);
     expect(result.value.DATABASE_SSL).toBe(false);
   });
+
   it('rejects unsupported runtime environments', () => {
     expect(environmentSchema.validate({ NODE_ENV: 'production-ish', DATABASE_URL: database }).error).toBeDefined();
   });
+
   it('requires OIDC settings to be supplied as a complete set', () => {
-    expect(environmentSchema.validate({ DATABASE_URL: database, OIDC_ISSUER: 'https://id.example.test/' }).error).toBeDefined();
+    expect(environmentSchema.validate({
+      DATABASE_URL: database,
+      OIDC_ISSUER: 'https://id.example.test/',
+    }).error).toBeDefined();
   });
-  it('rejects an HTTP JWKS endpoint', () => {\n    const result = environmentSchema.validate({\n      DATABASE_URL: database,\n      OIDC_ISSUER: 'https://id.example.test/',\n      OIDC_AUDIENCE: 'momentia-api',\n      OIDC_JWKS_URI: 'http://id.example.test/.well-known/jwks.json',\n    });\n    expect(result.error).toBeDefined();\n  });\n  it('accepts a complete OIDC configuration', () => {
+
+  it('rejects an HTTP JWKS endpoint', () => {
+    const result = environmentSchema.validate({
+      DATABASE_URL: database,
+      OIDC_ISSUER: 'https://id.example.test/',
+      OIDC_AUDIENCE: 'momentia-api',
+      OIDC_JWKS_URI: 'http://id.example.test/.well-known/jwks.json',
+    });
+    expect(result.error).toBeDefined();
+  });
+
+  it('accepts a complete OIDC configuration', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
       OIDC_ISSUER: 'https://id.example.test/',
