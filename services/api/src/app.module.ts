@@ -9,6 +9,7 @@ import { SpacesModule } from './spaces/spaces.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { SocialModule } from './social/social.module';
+import { TimelineModule } from './timeline/timeline.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SocialModule } from './social/social.module';
     InvitationsModule,
     MembershipsModule,
     SocialModule,
+    TimelineModule,
   ],
 })
 export class AppModule {}
