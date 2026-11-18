@@ -3,11 +3,13 @@ import { ActivityIndicator, Alert, Image, Pressable, SafeAreaView, ScrollView, S
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { listMediaDrafts, MediaDraft, saveMediaDraft } from '../src/storage/media-drafts';
+import { syncPendingMedia } from '../src/storage/media-sync';
 
 export default function CaptureScreen() {
   const router = useRouter();
   const [drafts, setDrafts] = useState<MediaDraft[]>([]);
   const [busy, setBusy] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
   const refresh = useCallback(async () => {
     try { setDrafts(await listMediaDrafts()); }
@@ -15,6 +17,22 @@ export default function CaptureScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+
+  const synchronize = async () => {
+    try {
+      setBusy(true);
+      setSyncMessage('Preparando fotografías…');
+      const results = await syncPendingMedia();
+      const uploaded = results.filter(item => item.state === 'SYNCED').length;
+      const failed = results.filter(item => item.state === 'FAILED').length;
+      setSyncMessage(`${uploaded} fotografía(s) enviada(s); ${failed} con error. Los archivos enviados quedan en cuarentena hasta su revisión.`);
+      await refresh();
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : 'No se pudo iniciar la sincronización.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const capture = async (source: 'camera' | 'library') => {
     try {
@@ -56,7 +74,11 @@ export default function CaptureScreen() {
           </Pressable>
         </View>
         {busy ? <ActivityIndicator color="#FFFFFF" style={{ marginTop: 18 }} /> : null}
-        <Text style={styles.sectionTitle}>Recuerdos guardados localmente ({drafts.length})</Text>
+        <Pressable disabled={busy || drafts.every(item => item.sync_state === 'SYNCED')} style={styles.syncButton} onPress={() => void synchronize()}>
+          <Text style={styles.primaryText}>{busy ? 'Procesando…' : 'Sincronizar fotografías pendientes'}</Text>
+        </Pressable>
+        {syncMessage ? <Text style={styles.syncMessage}>{syncMessage}</Text> : null}
+        <Text style={styles.sectionTitle}>Mis recuerdos ({drafts.length})</Text>
         {drafts.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>Todavía no hay fotografías</Text>
@@ -68,7 +90,7 @@ export default function CaptureScreen() {
               <View key={item.draft_id} style={styles.photoCard}>
                 <Image source={{ uri: item.local_uri }} style={styles.photo} />
                 <Text style={styles.photoName} numberOfLines={1}>{item.file_name}</Text>
-                <Text style={styles.localLabel}>SOLO EN ESTE DISPOSITIVO</Text>
+                <Text style={item.sync_state === 'SYNCED' ? styles.syncedLabel : styles.localLabel}>{item.sync_state === 'SYNCED' ? 'ENVIADA · EN CUARENTENA' : item.sync_state === 'FAILED' ? 'ERROR · PENDIENTE DE REINTENTO' : 'SOLO EN ESTE DISPOSITIVO'}</Text>
               </View>
             ))}
           </View>
@@ -90,7 +112,9 @@ const styles = StyleSheet.create({
   primaryText: { color: '#10131A', fontWeight: '800' },
   secondary: { backgroundColor: '#1A202C', borderColor: '#394457', borderWidth: 1, padding: 16, borderRadius: 14, alignItems: 'center' },
   secondaryText: { color: '#FFFFFF', fontWeight: '700' },
-  sectionTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', marginTop: 34, marginBottom: 14 },
+  syncButton: { backgroundColor: '#D6E4FF', padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 16 },
+  syncMessage: { color: '#C7D1E0', fontSize: 12, lineHeight: 18, marginTop: 10 },
+  sectionTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', marginTop: 28, marginBottom: 14 },
   empty: { backgroundColor: '#1A202C', borderRadius: 18, borderWidth: 1, borderColor: '#30394A', padding: 22 },
   emptyTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   emptyText: { color: '#AAB4C5', fontSize: 13, lineHeight: 20, marginTop: 8 },
@@ -99,4 +123,5 @@ const styles = StyleSheet.create({
   photo: { width: '100%', aspectRatio: 1, borderRadius: 10, backgroundColor: '#252D3B' },
   photoName: { color: '#FFFFFF', fontSize: 11, marginTop: 8 },
   localLabel: { color: '#E5C27B', fontSize: 9, fontWeight: '800', marginTop: 5, letterSpacing: 0.5 },
+  syncedLabel: { color: '#9BC7A5', fontSize: 9, fontWeight: '800', marginTop: 5, letterSpacing: 0.4 },
 });
