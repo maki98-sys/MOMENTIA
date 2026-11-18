@@ -9,6 +9,6 @@ export const environmentSchema = Joi.object({
   CORS_ORIGINS: Joi.string().allow('').default(''),
   OIDC_ISSUER: Joi.string().uri({ scheme: ['https'] }),
   OIDC_AUDIENCE: Joi.string().min(1),
-  OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https', 'http'] }),
+  OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https'] }),
 }).and('OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI')
   .messages({ 'object.and': 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be configured together.' });
