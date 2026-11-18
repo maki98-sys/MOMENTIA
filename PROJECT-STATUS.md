@@ -3,7 +3,7 @@
 **Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos implementada y verificada en CI; Fase 1 en revisión final, sin pasar aún al backend.
+**Estado:** base de datos en revisión final; bootstrap del backend implementado y aceptado por CI; módulos de producto aún no iniciados.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -25,13 +25,13 @@ Los pesos acordados suman 100%.
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
 | 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% verificado |
-| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 0% |
+| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 8% verificado |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
 | 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
 | 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
 | 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **7.2% global verificado** |
+| **Total** | **100%** | | **8.96% global verificado** |
 
 La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
 
@@ -223,14 +223,14 @@ La Fase 1 permanece abierta hasta completar:
 3. Revisión de los límites de privacidad y de las operaciones de exportación/eliminación que implementará el backend; los plazos de retención siguen desactivados hasta aprobación legal por mercado.
 4. Auditoría automática de columnas SQLite contra nombres de secretos: completada en run #36. El cifrado de archivos locales y la custodia real de credenciales en Keychain/Keystore se implementarán y probarán en las fases móvil/offline.
 
-Al cerrar Fase 1, la siguiente fase será Backend: bootstrap NestJS, configuración por entorno, validación de variables, logging/observabilidad, contratos, health/readiness, conexión PostgreSQL y módulos por dominio. No se implementará lógica que dependa de una política de retención no aprobada.
+La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en paralelo como base técnica y fue aceptado por CI. La siguiente ejecución backend será definir la estrategia de identidad/autenticación y después implementar dominios con autorización comprobable. No se implementará lógica que dependa de una política de retención no aprobada.
 
 **No declarar la aplicación creada hasta tener una versión ejecutable y comprobada en dispositivos/emuladores.**
 
 
 ## 9. Inicio de implementación del backend
 
-**Estado: base técnica creada en la rama de trabajo; aceptación final pendiente de CI del commit más reciente.**
+**Estado: base técnica creada y aceptada por CI en el HEAD de la rama de trabajo.**
 
 Entregables añadidos:
 - Servicio NestJS modular en `services/api`, con TypeScript y configuración validada mediante Joi.
@@ -247,4 +247,4 @@ Límites deliberados de esta entrega:
 - No se han activado retención, borrado automático ni políticas de conservación.
 - Observabilidad avanzada, trazas, métricas y alertas quedan pendientes.
 
-La aceptación del bootstrap requiere CI verde sobre el HEAD actual. El porcentaje global no aumenta hasta verificarlo.
+La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit `d33dfa44732f0e44cea3d66ebd9c7ff8ad666c50`): migraciones PostgreSQL, instalación, typecheck, pruebas unitarias, build y build de imagen Docker finalizaron correctamente. Se contabiliza únicamente el 8% de la Fase 2 correspondiente al bootstrap; no se contabilizan aún módulos funcionales.
