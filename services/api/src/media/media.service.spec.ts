@@ -4,10 +4,10 @@ import { DatabaseService } from '../database/database.service';
 import { S3CompatibleStorageService } from './s3-compatible-storage.service';
 
 describe('MediaService', () => {
-  const client = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [] }) };
+  const transactionClient = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [] }) };
   const database = {
     query: jest.fn(),
-    transaction: jest.fn(async (operation: (client: typeof client) => Promise<unknown>) => operation(client)),
+    transaction: jest.fn(async (operation: (txClient: typeof transactionClient) => Promise<unknown>) => operation(transactionClient)),
   } as unknown as DatabaseService;
   const storage = {
     presignPut: jest.fn().mockResolvedValue('https://storage.example/signed'),
@@ -46,7 +46,7 @@ describe('MediaService', () => {
       expect.stringMatching(/^original\/user-1\//), 'image/jpeg', 600,
     );
     expect(database.transaction).toHaveBeenCalledTimes(1);
-    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(transactionClient.query).toHaveBeenCalledTimes(2);
   });
 
   it('reuses an idempotent upload only when metadata matches', async () => {
