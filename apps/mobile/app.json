@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "MOMENTIA",
+    "slug": "momentia",
+    "scheme": "momentia",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-camera", { "cameraPermission": "MOMENTIA necesita acceso a la cámara para capturar recuerdos." }],
+      ["expo-image-picker", { "photosPermission": "MOMENTIA necesita acceso a tus fotos para compartir recuerdos." }],
+      ["expo-sqlite", { "enableFTS": false }]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.momentia.mobile"
+    },
+    "android": {
+      "package": "com.momentia.mobile",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "experiments": { "typedRoutes": true }
+  }
+}
