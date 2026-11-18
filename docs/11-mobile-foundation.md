@@ -39,3 +39,7 @@ La pantalla de inicio verifica la inicialización de SQLite y la disponibilidad 
 ## Verificación
 
 El workflow `.github/workflows/mobile-check.yml` instala dependencias, comprueba compatibilidad del SDK Expo y ejecuta TypeScript. Pasar CI no sustituye pruebas en emuladores/dispositivos ni compilaciones nativas.
+
+## Navegación inicial
+
+La navegación inferior ya contiene cinco rutas: Social, Eventos, Parejas, Círculos y Social Audio. Cada ruta presenta su propósito y un estado vacío honesto. Son cascarones de interfaz para fijar la estructura de producto; todavía no incluyen formularios operativos, publicaciones, cámara, álbumes ni controles de reproducción.
