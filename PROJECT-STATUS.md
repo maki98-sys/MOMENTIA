@@ -3,7 +3,7 @@
 **Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos en revisión final; backend con varios dominios API parciales; módulo de notificaciones añadido en la rama de trabajo y CI pendiente; frontend móvil/PWA aún no iniciado.
+**Estado:** base de datos en revisión final; backend con dominios API parciales y Social Audio inicial; CI de API y migraciones en nueva verificación; frontend móvil/PWA aún no iniciado.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -24,7 +24,7 @@ Los pesos acordados suman 100%.
 | Fase | Peso global | Alcance | Avance inicial |
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
-| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% verificado |
+| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% provisional, pendiente de CI actual |
 | 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 8% verificado |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
@@ -51,11 +51,11 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 **Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
-- Migraciones y seeds: 95% (tres migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
+- Migraciones y seeds: 95% (siete migraciones aplicadas en el último intento; runner idempotente; verificación del ledger se está corrigiendo para contar archivos de migración dinámicamente).
 - Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; smoke test sintético de 10.000 entradas y consulta latest-50 completado; falta carga representativa prolongada y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
 - Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
-- Pruebas de integridad y migración: 95% (CI PostgreSQL 16, runner idempotente, restricciones, concurrencia, SQLite, seeds, EXPLAIN, backup/restore y smoke test de 10.000 entradas verdes; faltan pruebas de carga prolongada y casos límite ampliados).
+- Pruebas de integridad y migración: 90% (CI PostgreSQL 16 previo pasó integridad, concurrencia, SQLite, seeds, EXPLAIN, backup/restore y smoke test; la última migración 0007 ya se aplicó, pero el chequeo de ledger falló por expectativa fija de seis y se actualizó el workflow para calcular el número de archivos; nueva ejecución pendiente).
 
 - Modelo relacional y restricciones: 25%.
 - Migraciones y seeds: 20%.
@@ -145,8 +145,8 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 | Cámara, galería, EXIF y multimedia | API parcial: carga y procesamiento; falta captura móvil | En verificación |
 | Timeline y recuerdos | API parcial: consultas y escritura de timeline | En verificación |
 | Offline y sincronización | Esquema SQLite y outbox; falta motor móvil | Pendiente |
-| Social Audio | Esquema de sesiones/cola/participantes; falta backend de sesión y fuente licenciada | Pendiente |
-| Notificaciones | API de bandeja, lectura individual/masiva y paginación en CI | En verificación |
+| Social Audio | API inicial de sesiones, participantes, cola, votación y control host; CI API #44238927772 verde; nueva verificación tras ajuste de índice parcial pendiente; faltan WebSocket, heartbeat, SDK/proveedor autorizado y app móvil | En verificación |
+| Notificaciones | API de bandeja, lectura individual/masiva y paginación; ejecución API #44238927772 pasó typecheck, unit tests, build y Docker; CI posterior tras ajuste sigue pendiente | En verificación |
 | PWA de invitados | No iniciado | 0% |
 | Moderación y administración | Esquema de datos; falta API y flujos | Pendiente |
 | Monetización y cuotas | Esquema de datos; faltan billing core y proveedores | Pendiente |
@@ -271,8 +271,8 @@ Esta sección corrige el inventario inicial de módulos del apartado 4, que qued
 - La base de datos contiene seis migraciones PostgreSQL y un esquema SQLite local de 10 tablas.
 - La API usa guard OIDC y resolución de identidad; la decisión final del proveedor de identidad sigue pendiente.
 - El módulo couple-journal almacena ciphertext y nonce, no texto plano; la gestión de claves y cifrado del lado cliente siguen pendientes.
-- El módulo de notificaciones se acaba de añadir: bandeja por usuario, filtro de no leídas, marcar una/ todas como leídas y cursor estable por fecha + UUID. Sus pruebas y CI están en ejecución; no se contabiliza como aceptado hasta que el workflow termine en verde.
-- Los últimos workflows de API y base de datos anteriores a esta entrega terminaron correctamente (API run #314 y database run #127).
+- El módulo de notificaciones incluye bandeja por usuario, filtro de no leídas, marcar una/todas como leídas y cursor estable por fecha + UUID. La API fue incluida en los workflows de backend; el CI de la rama se sigue verificando tras los últimos commits.
+- CI API #44238927772 terminó correctamente: migraciones, typecheck, unit tests, build y Docker. La ejecución de base de datos #44238922792 falló únicamente en el conteo fijo del ledger (esperaba 6, había 7); el workflow se corrigió para comparar contra el número de archivos de migración. La nueva ejecución #44239290972 está pendiente.
 
 ### Siguiente orden de trabajo
 1. Cerrar CI del módulo de notificaciones y corregir cualquier fallo.
@@ -291,3 +291,13 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Se documentó el contrato en `docs/06-circles-and-memberships.md`.
 - Se añadieron pruebas unitarias para acceso de miembros, jerarquía de roles, prevención de autoexpulsión y restricciones del propietario.
 - La nueva suite se encuentra pendiente de CI. La transferencia de propiedad, solicitudes de ingreso/aprobación, moderación y cliente móvil siguen pendientes.
+
+
+### Actualización — Social Audio y CI de migraciones (2026-11-18)
+- Se creó y registró `AudioModule`: creación/consulta de sesiones, entrada/salida, cola de pistas por referencia externa, votaciones y control de reproducción exclusivo del anfitrión.
+- Se añadió `audio.service.spec.ts` con validación de identificadores/proveedores, control de anfitrión y votos inválidos.
+- Se añadió migración `0007_audio_participant_uniqueness.sql` con índice único parcial para participantes sin dispositivo.
+- El CI API #44238927772 terminó correctamente (migraciones, typecheck, pruebas unitarias, build y Docker). Después se ajustó el target de conflicto SQL para usar el índice parcial; el workflow API #44239313944 está pendiente de resultado.
+- El CI de base de datos #44238922792 falló porque el workflow esperaba exactamente seis migraciones aunque ya existían siete. Se corrigió el chequeo para calcular el total desde los archivos SQL; #44239290972 está pendiente.
+- La documentación del contrato y límites está en `docs/07-social-audio-api.md`.
+- Social Audio aún no transmite música ni sincroniza audio real entre teléfonos: faltan WebSocket, heartbeat, cliente móvil y SDK/proveedor con derechos de reproducción.
