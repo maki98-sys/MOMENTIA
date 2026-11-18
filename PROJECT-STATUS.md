@@ -1,9 +1,9 @@
 # MOMENTIA — Control maestro de desarrollo
 
-**Versión:** 1.1  
+**Versión:** 1.2  
 **Repositorio:** `maki98-sys/MOMENTIA`  
-**Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos en revisión final; bootstrap del backend implementado y aceptado por CI; módulos de producto aún no iniciados.
+**Rama de trabajo:** `feature/profile-api-v1` (PR #1; base de comparación `docs/arquitectura-y-alcance-v1`)  
+**Estado:** PostgreSQL y SQLite cuentan con base validada; API de perfiles, espacios, álbumes y social implementada parcialmente; primera fase de carga privada multimedia implementada y en verificación CI. Frontend, offline y Social Audio siguen pendientes.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -25,15 +25,15 @@ Los pesos acordados suman 100%.
 |---|---:|---|---:|
 | 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
 | 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% verificado |
-| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 8% verificado |
+| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | En curso; no recalculado |
 | 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
 | 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
 | 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
 | 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
 | 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **8.96% global verificado** |
+| **Total** | **100%** | | **No recalculado en esta revisión** |
 
-La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
+La documentación fundacional inicial está en `docs/`; sigue siendo un borrador que debe revisarse. El porcentaje global anterior (8.96%) quedó obsoleto al incorporarse módulos backend; no se publicará una cifra nueva hasta recalcular todas las tareas con la fórmula de esta matriz.
 
 ## 3. Módulos y pesos internos
 
@@ -136,20 +136,20 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 | Módulo | Estado de implementación | Avance |
 |---|---|---:|
-| Cuenta, identidad y perfiles | No iniciado | 0% |
-| Espacios, roles e invitaciones QR/enlace | No iniciado | 0% |
-| Eventos y álbumes colaborativos | No iniciado | 0% |
-| Parejas y diario privado | No iniciado | 0% |
-| Círculos privados | No iniciado | 0% |
-| Red social, feed e interacciones | No iniciado | 0% |
-| Cámara, galería, EXIF y multimedia | No iniciado | 0% |
-| Timeline y recuerdos | No iniciado | 0% |
-| Offline y sincronización | No iniciado | 0% |
-| Social Audio | No iniciado | 0% |
-| Notificaciones | No iniciado | 0% |
-| PWA de invitados | No iniciado | 0% |
-| Moderación y administración | No iniciado | 0% |
-| Monetización y cuotas | No iniciado | 0% |
+| Cuenta, identidad y perfiles | OIDC base y API de perfil implementados; alta/recuperación y UX pendientes | No recalculado |
+| Espacios, roles e invitaciones QR/enlace | API y controles de membresía implementados; UX QR/enlace pendiente | No recalculado |
+| Eventos y álbumes colaborativos | API de álbum y membresía implementadas; carga/visualización real pendiente | No recalculado |
+| Parejas y diario privado | Espacio COUPLE y regla de dos miembros; diario y UX pendientes | No recalculado |
+| Círculos privados | Espacios CIRCLE y permisos base; UX y funciones completas pendientes | No recalculado |
+| Red social, feed e interacciones | Posts, feed, comentarios y reacciones API; follows/discovery/moderación pendientes | No recalculado |
+| Cámara, galería, EXIF y multimedia | Inicio/confirmación de carga privada en fase inicial; validación real, derivados y app pendientes | No recalculado |
+| Timeline y recuerdos | Esquema y entradas parciales desde publicaciones en espacios; consulta y recuerdos pendientes | No recalculado |
+| Offline y sincronización | Diseño documentado; implementación cliente y cola pendientes | No recalculado |
+| Social Audio | Esquema de datos; backend, proveedor autorizado y cliente pendientes | No recalculado |
+| Notificaciones | Esquema de datos; entrega y preferencias pendientes | No recalculado |
+| PWA de invitados | No iniciado | No recalculado |
+| Moderación y administración | Tablas base; flujos y consola pendientes | No recalculado |
+| Monetización y cuotas | Tablas base; lógica, webhooks y límites pendientes | No recalculado |
 
 ## 5. Estructura de carpetas objetivo
 
@@ -256,3 +256,11 @@ La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit 
 - Added configuration tests and bearer-guard unit tests; AuthModule is registered but guard is not global and no private product routes are exposed.
 - Added implementation boundary and integration sequence in `services/api/src/auth/README.md`.
 - CI run #44210416238 was queued at the time of this update; do not count this work as accepted until CI is green. Account mapping, MOMENTIA sessions, refresh rotation, revocation and resource authorization remain unimplemented.
+
+
+### Registro adicional — rama feature/profile-api-v1
+
+| Fecha | Entrega | Commit/PR | Pruebas | Estado |
+|---|---|---|---|---|
+| 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; commits de rama feature/profile-api-v1 | API quality verde y api-check verde en el commit base previo a multimedia | Implementado parcialmente |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia y confirmación HEAD | PR #1; commit `e734efe566a4c0f6f62dfb95667a2b74b578aaa5` | API quality: lint, TypeScript, unit tests y build verdes; api-check aún construyendo contenedor al registrar | Implementado en fase inicial; no listo para producción |
