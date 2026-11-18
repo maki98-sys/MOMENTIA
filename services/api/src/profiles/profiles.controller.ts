@@ -1,4 +1,4 @@
-import { UnauthorizedException, Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException, Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import type { AuthenticatedRequest } from '../auth/auth.types';
