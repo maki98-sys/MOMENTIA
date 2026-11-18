@@ -3,7 +3,7 @@
 **Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos en revisión final; backend con dominios API parciales y Social Audio inicial; CI de API y migraciones en nueva verificación; frontend móvil/PWA aún no iniciado.
+**Estado al 2026-11-18:** backend modular parcial; aplicación Expo móvil con captura y subida manual de fotografías; sincronización offline, experiencia de producto y lanzamiento todavía incompletos.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -19,19 +19,23 @@
 
 ## 2. Distribución global de avance
 
-Los pesos acordados suman 100%.
+Los pesos globales suman 100%. El porcentaje se recalculó el 2026-11-18 con evidencia de código y CI, y es una estimación ponderada conservadora: una fase parcial no equivale a producto listo para usuarios.
 
-| Fase | Peso global | Alcance | Avance inicial |
-|---|---:|---|---:|
-| 0. Arquitectura y especificación | 8% | alcance, requisitos, diagramas, decisiones, contratos y estructura | 0% aceptado |
-| 1. Modelo y diseño de datos | 8% | modelo relacional, migraciones, índices, reglas y datos locales | 90% provisional, pendiente de CI actual |
-| 2. Backend | 22% | API, autenticación, dominios, permisos, workers y tiempo real | 8% verificado |
-| 3. Frontend móvil y web | 20% | Android/iOS, navegación, pantallas, estados y PWA | 0% |
-| 4. Offline y sincronización | 14% | SQLite, cola local, reintentos, conflictos y cargas | 0% |
-| 5. Integración end-to-end | 10% | conexión completa, notificaciones, storage y proveedores | 0% |
-| 6. Calidad y seguridad | 12% | pruebas, hardening, rendimiento, accesibilidad y recuperación | 0% |
-| 7. Lanzamiento | 6% | builds, beta, tiendas, despliegue, monitoreo y soporte | 0% |
-| **Total** | **100%** | | **8.96% global verificado** |
+| Fase | Peso global | Avance estimado de fase | Aporte global |
+|---|---:|---:|---:|
+| 0. Arquitectura y especificación | 8% | 35% | 2.80% |
+| 1. Modelo y diseño de datos | 8% | 90% | 7.20% |
+| 2. Backend | 22% | 42% | 9.24% |
+| 3. Frontend móvil y web | 20% | 12% | 2.40% |
+| 4. Offline y sincronización | 14% | 10% | 1.40% |
+| 5. Integración end-to-end | 10% | 20% | 2.00% |
+| 6. Calidad y seguridad | 12% | 15% | 1.80% |
+| 7. Lanzamiento | 6% | 0% | 0.00% |
+| **Total global ponderado** | **100%** | | **26.84% ≈ 27%** |
+
+**Cómo interpretar el 27%:** representa el avance del trabajo técnico ponderado, no una aplicación terminada ni un porcentaje de funcionalidades disponibles para el público. La mayor parte del avance está en datos y backend. El frontend sigue siendo temprano: existe navegación base, captura y subida manual, pero no hay todavía feed funcional conectado ni flujos completos de las cinco experiencias.
+
+**Criterio:** el avance de cada fase se estima a partir de entregables presentes, cobertura funcional y evidencia de pruebas. Los módulos documentados, pendientes de proveedor o sin prueba se mantienen parciales o en cero. La cifra se recalculará cuando nuevas entregas pasen CI.
 
 La documentación fundacional inicial ya está escrita en `docs/`; se considera un borrador de partida, no una fase aceptada ni código terminado. Se revisará y ampliará durante la Fase 0.
 
@@ -365,3 +369,14 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Se añadieron pruebas negativas de identificador, ownership/no existencia y discrepancia de tamaño.
 - **Pendiente de CI:** API #44244678460 se inició para el primer cambio de transferencia; los cambios posteriores de pruebas dispararon una nueva ejecución. No declarar esta transferencia aceptada hasta que el último CI API termine en verde.
 - Límites de esta entrega: el controlador todavía almacena el cuerpo en memoria hasta 50 MiB; el adaptador local es para desarrollo/una instancia y no almacenamiento compartido de producción; faltan detección MIME real, escaneo, procesamiento de variantes, limpieza de archivos huérfanos, adaptador S3-compatible y conexión del cliente móvil al flujo de upload.
+
+
+## 2026-11-18 — Conexión móvil de la carga de fotografías (primera versión)
+
+- CI móvil #44293237038: **success** en commit `f107343db020e5a19b1d0fa394fa6d365c9c94f6`. Pasaron instalación, verificación Expo y TypeScript.
+- La app móvil calcula SHA-256 a partir del archivo local, crea la carga con clave idempotente y transfiere los bytes al endpoint autenticado mediante PUT binario.
+- SQLite incorpora migración compatible para guardar identificador remoto y último error.
+- La pantalla de captura ofrece sincronización manual y muestra los estados local, enviado/en cuarentena y error.
+- CI API #44244715376: **success** para el endpoint de transferencia y su validación.
+- La sincronización aún no es automática ni reanudable en segundo plano; el cliente lee el archivo completo para calcular el hash; no se ha probado en dispositivos físicos ni en redes intermitentes. El servidor mantiene el archivo en cuarentena y no genera variantes ni URL pública.
+- La cifra global ponderada se recalculó a **26.84% (≈27%)** con los pesos de las ocho fases. Es un indicador de avance técnico, no de disponibilidad del producto.
