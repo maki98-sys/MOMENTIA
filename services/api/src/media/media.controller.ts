@@ -53,7 +53,7 @@ function parseInput(value: unknown): CreateMediaUploadInput {
     throw new BadRequestException('fileName, contentType, sizeBytes and checksumSha256 are required.');
   }
   return {
-    fileName: body.fileName, contentType: body.contentType,
+    fileName: body.fileName.trim(), contentType: body.contentType.trim().toLowerCase(),
     sizeBytes: body.sizeBytes, checksumSha256: body.checksumSha256,
   };
 }
