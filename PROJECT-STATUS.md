@@ -344,3 +344,11 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 
 - CI móvil #44241266400: **success**. Expo install compatibility check y TypeScript typecheck completados correctamente tras alinear React Native a 0.81.5.
 - La verificación CI confirma instalación de dependencias y tipos; no equivale a un build nativo Android/iOS ni a pruebas en dispositivos.
+
+## 2026-11-18 — Captura local de fotografías
+
+- Añadida ruta `/capture` con solicitud de permisos y acceso a cámara/galería.
+- Las imágenes seleccionadas se copian al almacenamiento persistente privado de la app y se registran en SQLite como `LOCAL_ONLY`.
+- La pantalla muestra los borradores locales y no afirma que estén subidos.
+- El backend de medios todavía no transfiere bytes a object storage; faltan endpoint/adaptador de almacenamiento, confirmación y flujo de sincronización.
+- El CI móvil anterior #44241266400 pasó (Expo dependency check y TypeScript) antes de incorporar el flujo de captura; los cambios de captura requieren una nueva validación.
