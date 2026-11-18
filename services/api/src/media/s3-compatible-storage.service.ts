@@ -9,7 +9,8 @@ export class S3CompatibleStorageService {
   constructor(private readonly config: ConfigService) {}
 
   isConfigured(): boolean {
-    return Boolean(this.config.get<string>('S3_ENDPOINT')
+    const endpoint = this.config.get<string>('S3_ENDPOINT');
+    return Boolean(endpoint && endpoint.startsWith('https://')
       && this.config.get<string>('S3_BUCKET')
       && this.config.get<string>('S3_ACCESS_KEY_ID')
       && this.config.get<string>('S3_SECRET_ACCESS_KEY'));
