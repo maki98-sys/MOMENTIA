@@ -1,0 +1,79 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { MediaService } from './media.service';
+import { DatabaseService } from '../database/database.service';
+import { S3CompatibleStorageService } from './s3-compatible-storage.service';
+
+describe('MediaService', () => {
+  const client = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [] }) };
+  const database = {
+    query: jest.fn(),
+    transaction: jest.fn(async (operation: (client: typeof client) => Promise<unknown>) => operation(client)),
+  } as unknown as DatabaseService;
+  const storage = {
+    presignPut: jest.fn().mockResolvedValue('https://storage.example/signed'),
+    headObject: jest.fn(),
+  } as unknown as S3CompatibleStorageService;
+  const service = new MediaService(database, storage);
+  const input = {
+    fileName: 'photo.jpg', contentType: 'image/jpeg', sizeBytes: 1024,
+    checksumSha256: 'a'.repeat(64),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (database.query as jest.Mock).mockResolvedValue({ rowCount: 0, rows: [] });
+    (database.transaction as jest.Mock).mockImplementation(
+      async (operation: (client: typeof client) => Promise<unknown>) => operation(client),
+    );
+    (storage.presignPut as jest.Mock).mockResolvedValue('https://storage.example/signed');
+  });
+
+  it('rejects unsupported formats and oversized images before persistence', async () => {
+    await expect(service.createUpload('user-1', 'key-1', { ...input, contentType: 'image/svg+xml' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createUpload('user-1', 'key-2', { ...input, sizeBytes: 26 * 1024 * 1024 }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+
+  it('creates a private upload record and returns a short-lived signed PUT URL', async () => {
+    const result = await service.createUpload('user-1', 'key-1', input);
+    expect(result).toMatchObject({
+      state: 'created', method: 'PUT', uploadUrl: 'https://storage.example/signed',
+      requiredHeaders: { 'Content-Type': 'image/jpeg' }, expiresInSeconds: 600,
+    });
+    expect(storage.presignPut).toHaveBeenCalledWith(
+      expect.stringMatching(/^original\/user-1\//), 'image/jpeg', 600,
+    );
+    expect(database.transaction).toHaveBeenCalledTimes(1);
+    expect(client.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses an idempotent upload only when metadata matches', async () => {
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        id: 'upload-1', media_asset_id: 'asset-1', size_bytes: '1024',
+        checksum_sha256: 'a'.repeat(64), mime_type_detected: 'image/jpeg',
+        storage_key_original: 'original/user-1/asset-1', state: 'created',
+      }],
+    });
+    const result = await service.createUpload('user-1', 'key-1', input);
+    expect(result).toMatchObject({ uploadId: 'upload-1', mediaAssetId: 'asset-1', state: 'created' });
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects completion when storage reports a different byte size', async () => {
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        upload_id: 'upload-1', media_asset_id: 'asset-1', state: 'created',
+        storage_key_original: 'original/user-1/asset-1', size_bytes: '1024',
+        mime_type_detected: 'image/jpeg',
+      }],
+    });
+    (storage.headObject as jest.Mock).mockResolvedValue({ size: 1000, contentType: 'image/jpeg' });
+    await expect(service.completeUpload('user-1', 'upload-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+});
