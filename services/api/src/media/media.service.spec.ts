@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { mkdtemp, readFile, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { MediaService } from './media.service';
 import { DatabaseService } from '../database/database.service';
+
 describe('MediaService',()=>{
  const query=jest.fn(),transaction=jest.fn();
  const service=new MediaService({query,transaction} as unknown as DatabaseService);
@@ -24,6 +29,37 @@ describe('MediaService',()=>{
  it('rejects mismatched byte counts before writing a file',async()=>{
   query.mockResolvedValue({rowCount:1,rows:[{id:'123e4567-e89b-42d3-a456-426614174000',state:'created',uploader_id:'u',media_asset_id:'a',size_bytes:2,checksum_sha256:'a'.repeat(64),storage_key_original:'pending/u/a',declared_mime_type:'image/jpeg'}]});
   await expect(service.receiveUpload('u','123e4567-e89b-42d3-a456-426614174000',Buffer.from('x'))).rejects.toBeInstanceOf(BadRequestException);
+ });
+ it('rejects bytes whose SHA-256 does not match the upload declaration',async()=>{
+  query.mockResolvedValue({rowCount:1,rows:[{id:'123e4567-e89b-42d3-a456-426614174000',state:'created',uploader_id:'u',media_asset_id:'a',size_bytes:1,checksum_sha256:'a'.repeat(64),storage_key_original:'pending/u/a',declared_mime_type:'image/jpeg'}]});
+  await expect(service.receiveUpload('u','123e4567-e89b-42d3-a456-426614174000',Buffer.from('x'))).rejects.toThrow('SHA-256 checksum mismatch.');
+  expect(transaction).not.toHaveBeenCalled();
+ });
+ it('persists matching bytes and keeps the asset quarantined',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'momentia-media-'));
+  const previous=process.env.MEDIA_STORAGE_DIR;
+  process.env.MEDIA_STORAGE_DIR=root;
+  const bytes=Buffer.from('momentia-test-image-bytes');
+  const uploadId='123e4567-e89b-42d3-a456-426614174000';
+  query.mockResolvedValueOnce({rowCount:1,rows:[{
+   id:uploadId,state:'created',uploader_id:'u',media_asset_id:'asset-1',
+   size_bytes:bytes.length,checksum_sha256:createHash('sha256').update(bytes).digest('hex'),
+   storage_key_original:'pending/u/asset-1',declared_mime_type:'image/jpeg',
+  }]});
+  query.mockResolvedValueOnce({rowCount:1,rows:[{id:uploadId,state:'uploaded',media_asset_id:'asset-1',asset_status:'quarantined'}]});
+  transaction.mockImplementation(async (operation:(client:unknown)=>Promise<unknown>) =>
+   operation({query:jest.fn().mockResolvedValue({rowCount:1,rows:[]})}));
+  try {
+   const result=await service.receiveUpload('u',uploadId,bytes);
+   const stored=await readFile(join(root,'pending','u','asset-1'));
+   expect(stored).toEqual(bytes);
+   expect(result).toMatchObject({state:'uploaded',asset_status:'quarantined'});
+   expect(transaction).toHaveBeenCalledTimes(1);
+  } finally {
+   if(previous===undefined) delete process.env.MEDIA_STORAGE_DIR;
+   else process.env.MEDIA_STORAGE_DIR=previous;
+   await rm(root,{recursive:true,force:true});
+  }
  });
  it('requires a SHA-256 checksum',async()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:100,checksumSha256:'bad'},'key')).rejects.toBeInstanceOf(BadRequestException);
