@@ -312,3 +312,13 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Se añadieron pruebas unitarias de heartbeat válido y participación inactiva.
 - CI API #44239760139 está **in_progress** para el commit `9cec1022e5f1aada7060133fb854271f6c125eea`; todavía no se contabiliza como aprobado.
 - La presencia sigue siendo REST. WebSockets, reconexión automática, timeout/limpieza de participantes y sincronización real entre clientes siguen pendientes. La API no transporta audio ni inicia reproducción musical en dispositivos.
+
+## 2026-11-18 — Social Audio realtime gateway
+
+- API CI #44239760139 aprobó el heartbeat REST y sus pruebas: **success** (commit `9cec1022e5f1aada7060133fb854271f6c125eea`).
+- Se añadieron dependencias NestJS WebSockets / Socket.IO al manifiesto de API.
+- Se creó namespace `/audio` con transporte WebSocket y autenticación OIDC en el handshake.
+- Eventos de sesión: unirse, salir, heartbeat, snapshot y errores. El gateway verifica la membresía antes de unir un socket a una sala.
+- Los cambios de playback, cola, votos y participantes hechos por REST publican snapshots a los sockets conectados.
+- CI de esta implementación todavía debe ejecutarse y aprobarse.
+- Límite: difusión en memoria para una instancia. Redis adapter, limpieza de presencia al desconectar/expirar, cliente móvil y SDK de música siguen pendientes.
