@@ -141,7 +141,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 | Eventos y álbumes colaborativos | API de álbum y membresía implementadas; carga/visualización real pendiente | No recalculado |
 | Parejas y diario privado | Espacio COUPLE y regla de dos miembros; diario y UX pendientes | No recalculado |
 | Círculos privados | Espacios CIRCLE y permisos base; UX y funciones completas pendientes | No recalculado |
-| Red social, feed e interacciones | Posts, feed, comentarios y reacciones API; follows/discovery/moderación pendientes | No recalculado |
+| Red social, feed e interacciones | Posts/feed/comentarios/reacciones y API de solicitudes follow/accept/reject/unfollow/block/unblock; discovery, listados y moderación pendientes | No recalculado |
 | Cámara, galería, EXIF y multimedia | Inicio/confirmación de carga privada en fase inicial; validación real, derivados y app pendientes | No recalculado |
 | Timeline y recuerdos | API de lectura cursor por espacio; integra posts visibles y fotos listas de álbumes de eventos; diarios/recuerdos avanzados pendientes | No recalculado |
 | Offline y sincronización | Diseño documentado; implementación cliente y cola pendientes | No recalculado |
@@ -237,6 +237,7 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - Espacios EVENT, CIRCLE y COUPLE; membresías, roles, salida e invitaciones con token hasheado.
 - Álbumes colaborativos de eventos: creación, listado y gestión de referencias a multimedia.
 - Social: publicaciones, feed con cursor, comentarios y reacciones; verificación de audiencia y bloqueos.
+- Relaciones: solicitudes follow, aceptación/rechazo, unfollow y bloqueo/desbloqueo; bloqueos eliminan relaciones en ambas direcciones.
 - Auditoría de operaciones sensibles.
 
 ### Multimedia — carga, verificación y procesamiento
@@ -251,7 +252,7 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - El proveedor OIDC concreto no está seleccionado ni configurado.
 - No hay cliente móvil ni PWA implementados.
 - Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración de otras fuentes de memoria en timeline, antivirus y limpieza operativa de objetos huérfanos.
-- Faltan follows/discovery, moderación operativa, recuerdos/diario avanzado, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
+- Faltan discovery/búsqueda, listados de seguidores/seguidos, moderación operativa, recuerdos/diario avanzado, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
 - No se ha conectado un bucket real ni desplegado producción.
 
 ### Evidencia CI
@@ -268,3 +269,5 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 | 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #203, database-check run #97 y api-check run #222 (incluido Docker) aprobados | Implementado y validado por los tres controles CI |
 
 | 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado y validado por los tres controles CI |
+
+| 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | Pruebas unitarias de solicitudes recíprocas, bloqueos y self-follow; CI en ejecución | Implementado; CI pendiente |
