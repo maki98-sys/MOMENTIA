@@ -272,4 +272,4 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 
 | 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #250 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
 
-| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #250 en ejecución | Implementado; CI pendiente |
+| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #250 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
