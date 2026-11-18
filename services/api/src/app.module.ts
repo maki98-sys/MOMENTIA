@@ -8,6 +8,7 @@ import { ProfileModule } from './profile/profile.module';
 import { SpacesModule } from './spaces/spaces.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { MembershipsModule } from './memberships/memberships.module';
+import { SocialModule } from './social/social.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { MembershipsModule } from './memberships/memberships.module';
     SpacesModule,
     InvitationsModule,
     MembershipsModule,
+    SocialModule,
   ],
 })
 export class AppModule {}
