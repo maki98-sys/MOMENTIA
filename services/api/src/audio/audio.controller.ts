@@ -3,11 +3,18 @@ import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { AudioService } from './audio.service';
+import { AudioGateway } from './audio.gateway';
 
 @Controller()
 @UseGuards(OidcBearerGuard)
 export class AudioController {
-  constructor(private readonly audio: AudioService) {}
+  constructor(private readonly audio: AudioService, private readonly gateway: AudioGateway) {}
+
+  private async publish<T>(userId: string, sessionId: string, event: string, operation: () => Promise<T>): Promise<T> {
+    const result = await operation();
+    await this.gateway.publishSession(userId, sessionId, event);
+    return result;
+  }
 
   @Post('spaces/:spaceId/audio-sessions')
   create(@Req() req: Request & AuthenticatedRequest, @Param('spaceId') spaceId: string, @Body() body: { sourceProvider?: unknown }) {
@@ -26,7 +33,7 @@ export class AudioController {
 
   @Post('audio-sessions/:sessionId/join')
   join(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string) {
-    return this.audio.join(req.userId!, sessionId);
+    return this.publish(req.userId!, sessionId, 'audio:participant:joined', () => this.audio.join(req.userId!, sessionId));
   }
 
   @Post('audio-sessions/:sessionId/heartbeat')
@@ -36,26 +43,26 @@ export class AudioController {
 
   @Post('audio-sessions/:sessionId/leave')
   leave(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string) {
-    return this.audio.leave(req.userId!, sessionId);
+    return this.publish(req.userId!, sessionId, 'audio:participant:left', () => this.audio.leave(req.userId!, sessionId));
   }
 
   @Post('audio-sessions/:sessionId/queue')
   addQueueItem(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string, @Body() body: { trackReference?: unknown }) {
-    return this.audio.addQueueItem(req.userId!, sessionId, body?.trackReference);
+    return this.publish(req.userId!, sessionId, 'audio:queue:updated', () => this.audio.addQueueItem(req.userId!, sessionId, body?.trackReference));
   }
 
   @Delete('audio-sessions/:sessionId/queue/:itemId')
   removeQueueItem(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string, @Param('itemId') itemId: string) {
-    return this.audio.removeQueueItem(req.userId!, sessionId, itemId);
+    return this.publish(req.userId!, sessionId, 'audio:queue:updated', () => this.audio.removeQueueItem(req.userId!, sessionId, itemId));
   }
 
   @Patch('audio-sessions/:sessionId/playback')
   playback(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string, @Body() body: { action?: unknown; positionMs?: unknown; currentItemId?: unknown; expectedVersion?: unknown }) {
-    return this.audio.updatePlayback(req.userId!, sessionId, body);
+    return this.publish(req.userId!, sessionId, 'audio:playback:updated', () => this.audio.updatePlayback(req.userId!, sessionId, body));
   }
 
   @Post('audio-sessions/:sessionId/queue/:itemId/vote')
   vote(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string, @Param('itemId') itemId: string, @Body() body: { vote?: unknown }) {
-    return this.audio.vote(req.userId!, sessionId, itemId, body?.vote);
+    return this.publish(req.userId!, sessionId, 'audio:queue:vote-updated', () => this.audio.vote(req.userId!, sessionId, itemId, body?.vote));
   }
 }
