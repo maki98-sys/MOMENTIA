@@ -25,6 +25,7 @@ This is the physical PostgreSQL schema inventory for the current database founda
 - `media_variants`: thumbnails and derived renditions.
 - `media_metadata`: capture time, EXIF-derived fields and optional location metadata.
 - `media_uploads`: upload and processing state.
+- `media_processing_jobs`: durable queue, lease, retry and terminal processing state for media workers.
 - `media_processing_jobs`: durable, retryable work queue for verified uploads; workers claim jobs with PostgreSQL `SKIP LOCKED`.
 
 ### Social content and memories
