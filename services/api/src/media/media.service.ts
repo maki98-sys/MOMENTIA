@@ -161,7 +161,7 @@ function detectImageMime(bytes: Buffer): string | null {
 
 function validateInput(input: CreateMediaUploadInput): void {
   if (!input.fileName.trim() || input.fileName.length > 180
-    || input.fileName.includes('/') || input.fileName.includes('\\\\')) {
+    || input.fileName.includes('/') || input.fileName.includes('\\')) {
     throw new BadRequestException('fileName must be a simple file name of at most 180 characters.');
   }
   if (!ALLOWED_TYPES.has(input.contentType.toLowerCase())) {
