@@ -54,7 +54,7 @@ describe('MediaService', () => {
       rowCount: 1,
       rows: [{
         id: 'upload-1', media_asset_id: 'asset-1', size_bytes: '1024',
-        checksum_sha256: 'a'.repeat(64), mime_type_detected: 'image/jpeg',
+        checksum_sha256_declared: 'a'.repeat(64), mime_type_declared: 'image/jpeg',
         storage_key_original: 'original/user-1/asset-1', state: 'created',
       }],
     });
@@ -69,7 +69,7 @@ describe('MediaService', () => {
       rows: [{
         upload_id: 'upload-1', media_asset_id: 'asset-1', state: 'created',
         storage_key_original: 'original/user-1/asset-1', size_bytes: '1024',
-        mime_type_detected: 'image/jpeg',
+        mime_type_declared: 'image/jpeg',
       }],
     });
     (storage.headObject as jest.Mock).mockResolvedValue({ size: 1000, contentType: 'image/jpeg' });
