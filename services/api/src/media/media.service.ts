@@ -147,6 +147,70 @@ export class MediaService {
       message: 'File size, image signature and SHA-256 verified; a durable processing job has been queued for decoding, metadata removal and derivatives.',
     };
   }
+
+  async getVariantUrl(userId: string, mediaAssetId: string, variant: 'original' | 'thumbnail' | 'preview' | 'display') {
+    const result = await this.database.query<{ storage_key: string }>(
+      `SELECT CASE WHEN $3 = 'original' THEN m.storage_key_original ELSE v.storage_key END AS storage_key
+       FROM media_assets m
+       LEFT JOIN media_variants v
+         ON v.media_asset_id = m.id AND v.variant_type = $3
+       WHERE m.id = $1 AND m.status = 'ready' AND m.deleted_at IS NULL
+         AND ($3 = 'original' OR v.storage_key IS NOT NULL)
+         AND (
+           m.owner_id = $2
+           OR EXISTS (
+             SELECT 1 FROM media_access_grants g
+             WHERE g.media_asset_id = m.id AND g.subject_type = 'user'
+               AND g.subject_id = $2 AND g.permission IN ('view','download')
+               AND (g.expires_at IS NULL OR g.expires_at > now())
+           )
+           OR EXISTS (
+             SELECT 1 FROM media_access_grants g
+             JOIN space_memberships sm ON sm.space_id = g.subject_id
+             WHERE g.media_asset_id = m.id AND g.subject_type = 'space'
+               AND g.permission IN ('view','download')
+               AND (g.expires_at IS NULL OR g.expires_at > now())
+               AND sm.user_id = $2 AND sm.state = 'active'
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM event_album_items i
+             JOIN event_albums a ON a.id = i.album_id
+             JOIN spaces s ON s.id = a.space_id AND s.status = 'active'
+             JOIN space_memberships sm ON sm.space_id = s.id
+             WHERE i.media_asset_id = m.id AND sm.user_id = $2 AND sm.state = 'active'
+           )
+           OR EXISTS (
+             SELECT 1 FROM posts p
+             WHERE p.media_asset_id = m.id AND p.status = 'published'
+               AND (
+                 p.author_id = $2
+                 OR p.audience = 'public'
+                 OR (p.audience = 'followers' AND EXISTS (
+                   SELECT 1 FROM user_relationships r
+                   WHERE r.state = 'accepted'
+                     AND ((r.requester_id = $2 AND r.target_id = p.author_id)
+                       OR (r.requester_id = p.author_id AND r.target_id = $2))
+                 ))
+                 OR (p.audience = 'space' AND EXISTS (
+                   SELECT 1 FROM space_memberships sm
+                   WHERE sm.space_id = p.space_id AND sm.user_id = $2 AND sm.state = 'active'
+                 ))
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM user_blocks b
+                 WHERE (b.blocker_id = $2 AND b.blocked_id = p.author_id)
+                    OR (b.blocker_id = p.author_id AND b.blocked_id = $2)
+               )
+           )
+         )
+       LIMIT 1`,
+      [mediaAssetId, userId, variant],
+    );
+    if (!result.rowCount) throw new NotFoundException('Media asset or authorized variant not found.');
+    const url = await this.storage.presignGet(result.rows[0].storage_key, 60);
+    return { mediaAssetId, variant, url, expiresInSeconds: 60 };
+  }
 }
 
 function detectImageMime(bytes: Buffer): string | null {
