@@ -36,6 +36,9 @@ export class SpacesService {
   }
 
   async create(userId: string, input: CreateSpaceInput) {
+    if (input.type === 'COUPLE') {
+      throw new BadRequestException('Couple spaces will be enabled with the consent-based invitation and acceptance flow.');
+    }
     return this.database.transaction(async (client) => {
       if (input.type === 'COUPLE') {
         if (!input.partnerUserId || input.partnerUserId === userId) {
@@ -74,16 +77,6 @@ export class SpacesService {
           `INSERT INTO circle_details (space_id, description, join_policy)
            VALUES ($1, $2, 'invite')`,
           [spaceId, input.description ?? null],
-        );
-      } else {
-        await client.query(
-          `INSERT INTO couple_details (space_id) VALUES ($1)`,
-          [spaceId],
-        );
-        await client.query(
-          `INSERT INTO space_memberships (space_id, user_id, role, state, joined_at)
-           VALUES ($1, $2, 'member', 'active', now())`,
-          [spaceId, input.partnerUserId],
         );
       }
       return { ...space, memberCount: input.type === 'COUPLE' ? 2 : 1 };
