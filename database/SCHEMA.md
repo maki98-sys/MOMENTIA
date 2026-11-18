@@ -2,7 +2,7 @@
 
 This is the physical PostgreSQL schema inventory for the current database foundation. It documents persisted responsibilities; it does not imply that the corresponding API or user interface has been implemented.
 
-## Server schema (41 tables)
+## Server schema (42 tables)
 
 ### Identity and account security
 - `schema_migrations`: applied migration versions and timestamps.
