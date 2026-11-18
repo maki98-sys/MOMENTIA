@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  Patch,
   Param,
   Post,
   Req,
@@ -42,6 +44,60 @@ export class SpacesController {
   ) {
     assertUuid(spaceId, 'spaceId');
     return { space: await this.spaces.getMine(requireUserId(request), spaceId) };
+  }
+
+
+  @Get('spaces/:spaceId/members')
+  async listMembers(
+    @Req() request: Request & AuthenticatedRequest,
+    @Param('spaceId') spaceId: string,
+  ) {
+    assertUuid(spaceId, 'spaceId');
+    return { members: await this.spaces.listMembers(requireUserId(request), spaceId) };
+  }
+
+  @Patch('spaces/:spaceId/members/:memberId/role')
+  async updateMemberRole(
+    @Req() request: Request & AuthenticatedRequest,
+    @Param('spaceId') spaceId: string,
+    @Param('memberId') memberId: string,
+    @Body() body: unknown,
+  ) {
+    assertUuid(spaceId, 'spaceId');
+    assertUuid(memberId, 'memberId');
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new BadRequestException('A JSON object is required.');
+    }
+    const input = body as Record<string, unknown>;
+    rejectUnexpected(input, new Set(['role']));
+    const role = input.role;
+    if (role !== 'admin' && role !== 'moderator' && role !== 'member' && role !== 'guest') {
+      throw new BadRequestException('role must be admin, moderator, member or guest.');
+    }
+    await this.spaces.updateMemberRole(requireUserId(request), spaceId, memberId, role);
+    return { success: true };
+  }
+
+  @Delete('spaces/:spaceId/members/:memberId')
+  async removeMember(
+    @Req() request: Request & AuthenticatedRequest,
+    @Param('spaceId') spaceId: string,
+    @Param('memberId') memberId: string,
+  ) {
+    assertUuid(spaceId, 'spaceId');
+    assertUuid(memberId, 'memberId');
+    await this.spaces.removeMember(requireUserId(request), spaceId, memberId);
+    return { success: true };
+  }
+
+  @Post('spaces/:spaceId/leave')
+  async leaveSpace(
+    @Req() request: Request & AuthenticatedRequest,
+    @Param('spaceId') spaceId: string,
+  ) {
+    assertUuid(spaceId, 'spaceId');
+    await this.spaces.leaveSpace(requireUserId(request), spaceId);
+    return { success: true };
   }
 
   @Post('spaces/:spaceId/invitations')
