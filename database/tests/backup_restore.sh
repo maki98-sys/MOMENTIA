@@ -11,8 +11,8 @@ sed -i '/^SET transaction_timeout = 0;$/d' /tmp/momentia-backup.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE momentia_restore_test"
 psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -f /tmp/momentia-backup.sql
 
-COUNT=$(psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM schema_migrations WHERE version IN ('0001_initial_schema','0002_space_integrity_and_event_albums','0003_platform_operations_and_ownership','0004_media_declared_metadata','0005_media_processing_queue')")
-test "$COUNT" = "5"
+COUNT=$(psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM schema_migrations WHERE version IN ('0001_initial_schema','0002_space_integrity_and_event_albums','0003_platform_operations_and_ownership','0004_media_declared_metadata','0005_media_processing_queue','0006_timeline_media_uniqueness')")
+test "$COUNT" = "6"
 TABLES=$(psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
 test "$TABLES" -ge "30"
 echo "PostgreSQL backup/restore smoke test: PASS ($COUNT migrations, $TABLES tables)"
