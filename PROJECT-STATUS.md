@@ -337,3 +337,7 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Añadido workflow `.github/workflows/mobile-check.yml` para comprobar compatibilidad Expo y TypeScript.
 - No se han ejecutado builds nativos ni pruebas en emuladores/dispositivos.
 - CI API: typecheck pasa en el último run observado; la suite estaba ejecutándose. La ejecución anterior falló al cargar `jose` ESM en Jest; el test del gateway fue aislado mediante mocks y la nueva validación está pendiente.
+
+- CI API #44240945920: **success**; migraciones, typecheck, pruebas unitarias y build de imagen Docker completados. La suite de pruebas pasó tras aislar el módulo ESM `jose` en el test del gateway.
+- CI móvil inicial #44241083574 detectó que React Native 0.81.4 debía ser 0.81.5 para Expo SDK 54. Se corrigió la versión; nueva ejecución pendiente.
+- Añadidas cinco rutas de navegación para Social, Eventos, Parejas, Círculos y Social Audio, con estados iniciales explícitos y sin simular funciones aún no conectadas.
