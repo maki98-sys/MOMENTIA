@@ -8,4 +8,5 @@ export interface OidcPrincipal {
 
 export interface AuthenticatedRequest {
   auth?: OidcPrincipal;
+  userId?: string;
 }
