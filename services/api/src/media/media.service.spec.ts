@@ -94,7 +94,7 @@ describe('MediaService', () => {
   });
   it('verifies the actual PNG signature and SHA-256 before accepting an upload', async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const checksum = createHash.update(bytes).digest('hex');
+    const checksum = createHash('sha256').update(bytes).digest('hex');
     (database.query as jest.Mock).mockResolvedValueOnce({
       rowCount: 1,
       rows: [{
