@@ -51,7 +51,11 @@ function toProfile(row: ProfileRow): UserProfile {
     displayName: row.display_name,
     bio: row.bio,
     visibility: row.visibility,
-    createdAt: new Date(row.created_at).toISOString(),
-    updatedAt: new Date(row.updated_at).toISOString(),
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
   };
+}
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
