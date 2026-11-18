@@ -133,6 +133,12 @@ export class EventAlbumsService {
         [albumId, mediaAssetId, userId, position],
       );
       const item = inserted.rows[0] as Record<string, unknown>;
+      await client.query(
+        `INSERT INTO timeline_entries (space_id, media_asset_id, occurred_at, source)
+         VALUES ($1, $2, now(), 'upload')
+         ON CONFLICT (space_id, media_asset_id) WHERE media_asset_id IS NOT NULL DO NOTHING`,
+        [album.space_id, mediaAssetId],
+      );
       await this.audit(client, album.space_id, userId, 'event_album.media_added', 'event_album_item', String(item.id));
       return {
         id: item.id,
@@ -165,6 +171,16 @@ export class EventAlbumsService {
         throw new ForbiddenException('Only the contributor or a space manager can remove this item.');
       }
       await client.query('DELETE FROM event_album_items WHERE id = $1', [row.item_id]);
+      await client.query(
+        `DELETE FROM timeline_entries t
+         WHERE t.space_id = $1 AND t.media_asset_id = $2 AND t.source = 'upload'
+           AND NOT EXISTS (
+             SELECT 1 FROM event_album_items i
+             JOIN event_albums a ON a.id = i.album_id
+             WHERE a.space_id = $1 AND i.media_asset_id = $2
+           )`,
+        [row.space_id, mediaAssetId],
+      );
       await this.audit(client, row.space_id, userId, 'event_album.media_removed', 'event_album_item', row.item_id);
     });
   }
