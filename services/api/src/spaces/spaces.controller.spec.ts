@@ -1,3 +1,7 @@
+jest.mock('../auth/oidc-bearer.guard', () => ({
+  OidcBearerGuard: class OidcBearerGuard {},
+}));
+
 import { BadRequestException } from '@nestjs/common';
 import { SpacesController } from './spaces.controller';
 import { SpacesService } from './spaces.service';
