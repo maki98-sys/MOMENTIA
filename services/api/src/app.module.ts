@@ -13,6 +13,7 @@ import { TimelineModule } from './timeline/timeline.module';
 import { AlbumsModule } from './albums/albums.module';
 import { MediaModule } from './media/media.module';
 import { CoupleJournalModule } from './couple-journal/couple-journal.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { CoupleJournalModule } from './couple-journal/couple-journal.module';
     AlbumsModule,
     MediaModule,
     CoupleJournalModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
