@@ -37,15 +37,34 @@ export class S3CompatibleStorageService {
     if (!response.ok) {
       throw new ServiceUnavailableException('Could not read the uploaded object from private storage.');
     }
-    const declaredLength = Number(response.headers.get('content-length'));
-    if (Number.isSafeInteger(declaredLength) && declaredLength !== expectedSize) {
+    const declaredLengthHeader = response.headers.get('content-length');
+    if (declaredLengthHeader !== null && Number(declaredLengthHeader) !== expectedSize) {
       throw new ServiceUnavailableException('Storage returned an unexpected object length.');
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length !== expectedSize || bytes.length > MAX_OBJECT_BYTES) {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new ServiceUnavailableException('Storage response did not include a readable object body.');
+    }
+    const chunks: Buffer[] = [];
+    let receivedBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > expectedSize || receivedBytes > MAX_OBJECT_BYTES) {
+          await reader.cancel();
+          throw new ServiceUnavailableException('Downloaded object exceeds its verified size limit.');
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (receivedBytes !== expectedSize) {
       throw new ServiceUnavailableException('Downloaded object length does not match the verified upload size.');
     }
-    return bytes;
+    return Buffer.concat(chunks, receivedBytes);
   }
 
   private async presign(
