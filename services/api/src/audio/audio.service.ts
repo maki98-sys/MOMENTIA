@@ -84,6 +84,27 @@ export class AudioService {
     });
   }
 
+  async cleanupStaleParticipants(staleAfterSeconds = 45): Promise<string[]> {
+    const seconds = Number(staleAfterSeconds);
+    if (!Number.isSafeInteger(seconds) || seconds < 15 || seconds > 3600) {
+      throw new BadRequestException('Invalid stale participant timeout.');
+    }
+    const result = await this.db.query<{ id: string }>(`WITH stale AS (
+        UPDATE audio_participants p SET left_at=now()
+        FROM audio_sessions s
+        WHERE p.session_id=s.id AND p.left_at IS NULL
+          AND p.last_heartbeat_at < now() - ($1 * interval '1 second')
+          AND s.state IN ('created','playing','paused')
+        RETURNING p.session_id
+      ), affected AS (
+        SELECT DISTINCT session_id FROM stale
+      )
+      UPDATE audio_sessions a SET server_version=server_version+1,updated_at=now()
+      FROM affected WHERE a.id=affected.session_id
+      RETURNING a.id`, [seconds]);
+    return result.rows.map(row => row.id);
+  }
+
   async heartbeat(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
     const r = await this.db.query(`UPDATE audio_participants p
