@@ -1,7 +1,7 @@
 import {
   BadRequestException, ForbiddenException, Injectable, NotFoundException,
 } from '@nestjs/common';
-import { PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 
 type RelationshipState = 'pending' | 'accepted' | 'rejected';
