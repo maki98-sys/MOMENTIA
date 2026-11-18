@@ -14,6 +14,7 @@ import { AlbumsModule } from './albums/albums.module';
 import { MediaModule } from './media/media.module';
 import { CoupleJournalModule } from './couple-journal/couple-journal.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AudioModule } from './audio/audio.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     MediaModule,
     CoupleJournalModule,
     NotificationsModule,
+    AudioModule,
   ],
 })
 export class AppModule {}
