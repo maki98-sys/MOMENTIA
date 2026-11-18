@@ -3,7 +3,7 @@
 **Versión:** 1.2  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `feature/profile-api-v1` (PR #1; base de comparación `docs/arquitectura-y-alcance-v1`)  
-**Estado:** PostgreSQL y SQLite cuentan con base validada; API de perfiles, espacios, álbumes y social implementada parcialmente; primera fase de carga privada multimedia implementada y en verificación CI. Frontend, offline y Social Audio siguen pendientes.
+**Estado:** PostgreSQL y SQLite cuentan con base validada; API de perfiles, espacios, álbumes y social implementada parcialmente; flujo privado de carga, verificación de bytes/hash, cola durable y worker de procesamiento de imágenes implementados en la rama feature. La integración con bucket real y pruebas end-to-end siguen pendientes. Frontend, offline y Social Audio siguen pendientes.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -245,12 +245,12 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - Validación de campos, JPEG/PNG/WebP y tamaño declarado máximo de 25 MiB.
 - Confirmación con HEAD del objeto; el servidor compara tamaño y Content-Type.
 - Migración 0004 separa MIME/hash declarados por el cliente de valores que deberá verificar el procesamiento.
-- Los archivos siguen en estado pendiente: aún no se marcan como `ready`.
+- Los archivos se marcan `ready` solo después de que el worker genere y registre todas las variantes; si falla, reintenta con backoff y termina en `failed` al agotar intentos.
 
 ### Límites pendientes
 - El proveedor OIDC concreto no está seleccionado ni configurado.
 - No hay cliente móvil ni PWA implementados.
-- Falta inspección de magic bytes, recálculo de SHA-256, worker de imágenes, variantes, eliminación EXIF/GPS, entrega/descarga autorizada y limpieza de temporales.
+- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. Faltan pruebas con bucket real, endpoint de entrega/descarga autorizada, integración automática con timeline, antivirus y limpieza operativa de objetos huérfanos.
 - Faltan follows/discovery, moderación operativa, timeline completa, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
 - No se ha conectado un bucket real ni desplegado producción.
 
@@ -265,4 +265,5 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
-| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, confirmación HEAD y separación de metadatos declarados/verificados | PR #1; commit `1c3e19b18ee4808613be3f8c341c113f49ef64c9` | API quality verde; database-check run #48 verde; api-check en nueva ejecución | Fase inicial; no listo para producción |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y API check verdes en commit `19714f0`; database-check verde | Verificado en CI; sin bucket real |
+| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | Lint, typecheck, unit tests y build aprobados en API quality; database-check en curso al registrar esta línea | Implementado; validación de CI completa pendiente |
