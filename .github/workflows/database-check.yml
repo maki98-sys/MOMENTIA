@@ -41,7 +41,7 @@ jobs:
       - name: Verify migration runner is idempotent
         run: bash database/scripts/migrate.sh
       - name: Verify migration ledger
-        run: test "$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM schema_migrations")" = "3"
+        run: test "$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM schema_migrations")" = "4"
       - name: Run integrity checks
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
       - name: Load synthetic development data
