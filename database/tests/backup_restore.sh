@@ -12,7 +12,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE momentia_restore_tes
 psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -f /tmp/momentia-backup.sql
 
 COUNT=$(psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM schema_migrations")
-test "$COUNT" = "5"
+test "$COUNT" = "6"
 TABLES=$(psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
 test "$TABLES" -ge "30"
 echo "PostgreSQL backup/restore smoke test: PASS ($COUNT migrations, $TABLES tables)"
