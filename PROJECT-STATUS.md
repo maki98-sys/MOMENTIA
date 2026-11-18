@@ -140,7 +140,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 | Espacios, roles e invitaciones QR/enlace | API parcial: espacios, membresías e invitaciones | En verificación |
 | Eventos y álbumes colaborativos | API parcial: álbumes y elementos; falta experiencia móvil | En verificación |
 | Parejas y diario privado | API parcial: diario cifrado; falta flujo de consentimiento y cliente | En verificación |
-| Círculos privados | Base de datos y espacios; falta API específica y cliente | Pendiente |
+| Círculos privados | API existente mediante espacios, membresías, invitaciones, álbumes y timeline; pruebas adicionales de roles incorporadas | En verificación |
 | Red social, feed e interacciones | API parcial: publicaciones, comentarios, reacciones y feed | En verificación |
 | Cámara, galería, EXIF y multimedia | API parcial: carga y procesamiento; falta captura móvil | En verificación |
 | Timeline y recuerdos | API parcial: consultas y escritura de timeline | En verificación |
@@ -284,3 +284,10 @@ Esta sección corrige el inventario inicial de módulos del apartado 4, que qued
 7. Construir PWA de invitados y completar pruebas end-to-end.
 
 No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y aceptar las pruebas de esta entrega.
+
+
+### Actualización adicional — círculos y control de membresías
+- Se verificaron las rutas existentes para crear y consultar círculos, administrar miembros, invitar, aceptar invitaciones, álbumes y cronología.
+- Se documentó el contrato en `docs/06-circles-and-memberships.md`.
+- Se añadieron pruebas unitarias para acceso de miembros, jerarquía de roles, prevención de autoexpulsión y restricciones del propietario.
+- La nueva suite se encuentra pendiente de CI. La transferencia de propiedad, solicitudes de ingreso/aprobación, moderación y cliente móvil siguen pendientes.
