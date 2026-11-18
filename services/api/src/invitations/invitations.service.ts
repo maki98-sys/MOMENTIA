@@ -92,7 +92,7 @@ export class InvitationsService {
     return this.database.transaction(async (client) => {
       const invitation = await client.query(
         `SELECT i.id, i.space_id, i.role, i.expires_at, i.max_uses, i.uses,
-                i.approval_required, s.type, s.status
+                i.approval_required, i.revoked_at, s.type, s.status
          FROM space_invitations i
          JOIN spaces s ON s.id = i.space_id
          WHERE i.token_hash = $1
