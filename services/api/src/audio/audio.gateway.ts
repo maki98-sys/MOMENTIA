@@ -1,8 +1,8 @@
 import {
   ConnectedSocket, MessageBody, OnGatewayConnection, OnGatewayDisconnect,
-  OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer, OnModuleInit, OnModuleDestroy,
+  OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer,
 } from '@nestjs/websockets';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import type { Server, Socket } from 'socket.io';
 import { OidcTokenVerifier } from '../auth/oidc-token-verifier.service';
 import { OidcIdentityService } from '../auth/oidc-identity.service';
