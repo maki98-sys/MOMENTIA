@@ -41,3 +41,12 @@ El módulo `AudioModule` está registrado en NestJS y protegido por `OidcBearerG
 4. Añadir pruebas de integración PostgreSQL para creación, membresía, anfitrión, concurrencia y aislamiento.
 5. Implementar cliente móvil y sincronización de estado local con el servidor.
 6. Evaluar proveedor musical autorizado antes de comprometer reproducción sincronizada real.
+
+
+## Presencia y heartbeat (REST inicial)
+
+- `POST /audio-sessions/:sessionId/heartbeat` renueva `last_heartbeat_at` del participante autenticado.
+- Solo se acepta si la participación sigue activa, el espacio mantiene la membresía activa y la sesión está en estado `created`, `playing` o `paused`.
+- El endpoint no incrementa `server_version`: un ping de presencia no es un cambio de reproducción ni debe invalidar comandos optimistas de playback.
+- Si el usuario ya salió, fue retirado del espacio o la sesión terminó, responde como participación no encontrada.
+- Este endpoint permite establecer presencia básica; no reemplaza WebSockets, detección automática de desconexión ni sincronización audiovisual en tiempo real.
