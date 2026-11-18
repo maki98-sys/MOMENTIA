@@ -7,4 +7,8 @@ export const environmentSchema = Joi.object({
   DATABASE_SSL: Joi.boolean().truthy('true').falsy('false').default(false),
   DATABASE_POOL_MAX: Joi.number().integer().min(1).max(50).default(10),
   CORS_ORIGINS: Joi.string().allow('').default(''),
-});
+  OIDC_ISSUER: Joi.string().uri({ scheme: ['https', 'http'] }),
+  OIDC_AUDIENCE: Joi.string().min(1),
+  OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https', 'http'] }),
+}).and('OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI')
+  .messages({ 'object.and': 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be configured together.' });
