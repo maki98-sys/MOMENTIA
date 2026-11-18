@@ -75,4 +75,40 @@ describe('ConnectionsService', () => {
     expect(client.query).toHaveBeenNthCalledWith(3,
       expect.stringContaining('DELETE FROM user_relationships'), [userId, targetId]);
   });
+  it('returns paginated following users and hides blocked relationships', async () => {
+    const firstAt = new Date('2026-11-18T02:00:00.000Z');
+    const secondAt = new Date('2026-11-18T01:00:00.000Z');
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 2,
+      rows: [
+        {
+          relationship_id: '33333333-3333-4333-8333-333333333333',
+          created_at: firstAt, user_id: targetId, display_name: 'Friend',
+          avatar_media_id: null,
+        },
+        {
+          relationship_id: '44444444-4444-4444-8444-444444444444',
+          created_at: secondAt, user_id: '55555555-5555-4555-8555-555555555555',
+          display_name: 'Another friend', avatar_media_id: null,
+        },
+      ],
+    });
+
+    const result = await service.list(userId, 'following', undefined, 1);
+
+    expect(result.users).toHaveLength(1);
+    expect(result.users[0]).toMatchObject({ userId: targetId, displayName: 'Friend' });
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBeTruthy();
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining('user_blocks'),
+      [userId, 'following', null, null, 2],
+    );
+  });
+
+  it('rejects malformed relationship list cursors', async () => {
+    await expect(service.list(userId, 'requests', 'bad-cursor')).rejects.toBeInstanceOf(BadRequestException);
+    expect(database.query).not.toHaveBeenCalled();
+  });
+
 });
