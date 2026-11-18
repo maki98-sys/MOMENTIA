@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
