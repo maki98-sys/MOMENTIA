@@ -172,6 +172,9 @@ export class SpacesService {
       if (space.role !== 'owner' && space.role !== 'admin') {
         throw new ForbiddenException('Only owners and admins can create invitations.');
       }
+      if (input.role === 'admin' && space.role !== 'owner') {
+        throw new ForbiddenException('Only the owner can invite another admin.');
+      }
 
       const token = randomBytes(32).toString('base64url');
       const tokenHash = createHash('sha256').update(token).digest('hex');
@@ -214,12 +217,13 @@ export class SpacesService {
       if (invitation.type === 'COUPLE') throw new ConflictException('Couple invitations are not supported.');
 
       const existing = await client.query(
-        'SELECT state FROM space_memberships WHERE space_id = $1 AND user_id = $2 FOR UPDATE',
+        'SELECT state, role FROM space_memberships WHERE space_id = $1 AND user_id = $2 FOR UPDATE',
         [invitation.space_id, userId],
       );
-      const currentState = (existing.rows[0] as { state: string } | undefined)?.state;
+      const existingMembership = existing.rows[0] as { state: string; role: string } | undefined;
+      const currentState = existingMembership?.state;
       if (currentState === 'active') {
-        return { spaceId: invitation.space_id, role: invitation.role, alreadyMember: true };
+        return { spaceId: invitation.space_id, role: existingMembership.role, alreadyMember: true };
       }
       if (currentState === 'removed' || currentState === 'banned') {
         throw new ForbiddenException('This account cannot rejoin the space.');
