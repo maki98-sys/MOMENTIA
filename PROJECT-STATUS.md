@@ -52,10 +52,10 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 **Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
 - Migraciones y seeds: 95% (tres migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
-- Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; falta carga de volumen realista y ajuste fino).
+- Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; smoke test sintético de 10.000 entradas y consulta latest-50 completado; falta carga representativa prolongada y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
 - Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
-- Pruebas de integridad y migración: 95% (CI PostgreSQL 16, runner idempotente, restricciones, concurrencia, SQLite, seeds, EXPLAIN y backup/restore verdes; faltan pruebas de carga y casos límite ampliados).
+- Pruebas de integridad y migración: 95% (CI PostgreSQL 16, runner idempotente, restricciones, concurrencia, SQLite, seeds, EXPLAIN, backup/restore y smoke test de 10.000 entradas verdes; faltan pruebas de carga prolongada y casos límite ampliados).
 
 - Modelo relacional y restricciones: 25%.
 - Migraciones y seeds: 20%.
@@ -226,3 +226,25 @@ La Fase 1 permanece abierta hasta completar:
 Al cerrar Fase 1, la siguiente fase será Backend: bootstrap NestJS, configuración por entorno, validación de variables, logging/observabilidad, contratos, health/readiness, conexión PostgreSQL y módulos por dominio. No se implementará lógica que dependa de una política de retención no aprobada.
 
 **No declarar la aplicación creada hasta tener una versión ejecutable y comprobada en dispositivos/emuladores.**
+
+
+## 9. Inicio de implementación del backend
+
+**Estado: base técnica creada en la rama de trabajo; aceptación final pendiente de CI del commit más reciente.**
+
+Entregables añadidos:
+- Servicio NestJS modular en `services/api`, con TypeScript y configuración validada mediante Joi.
+- Pool PostgreSQL administrado por el ciclo de vida de NestJS.
+- Endpoints `GET /api/v1/health/live` y `GET /api/v1/health/ready`; readiness ejecuta `SELECT 1` y devuelve 503 si PostgreSQL no responde.
+- Seguridad HTTP inicial con Helmet, CORS denegado por defecto y ValidationPipe global.
+- Pruebas unitarias de validación de entorno.
+- Dockerfile multi-stage con ejecución como usuario no root.
+- Workflow `.github/workflows/api-check.yml` que aplica migraciones, instala dependencias, ejecuta typecheck, pruebas, build y build de imagen Docker.
+
+Límites deliberados de esta entrega:
+- No se exponen todavía rutas de cuenta, perfiles ni espacios.
+- No se ha elegido proveedor de identidad ni se inventará almacenamiento de contraseñas: el esquema actual no contiene hash de contraseña y la decisión de autenticación debe preceder a su implementación.
+- No se han activado retención, borrado automático ni políticas de conservación.
+- Observabilidad avanzada, trazas, métricas y alertas quedan pendientes.
+
+La aceptación del bootstrap requiere CI verde sobre el HEAD actual. El porcentaje global no aumenta hasta verificarlo.
