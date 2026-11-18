@@ -1,11 +1,15 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { OidcTokenVerifier } from './oidc-token-verifier.service';
+import { OidcIdentityService } from './oidc-identity.service';
 import type { AuthenticatedRequest } from './auth.types';
 
 @Injectable()
 export class OidcBearerGuard implements CanActivate {
-  constructor(private readonly verifier: OidcTokenVerifier) {}
+  constructor(
+    private readonly verifier: OidcTokenVerifier,
+    private readonly identities: OidcIdentityService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request & AuthenticatedRequest>();
@@ -14,7 +18,11 @@ export class OidcBearerGuard implements CanActivate {
       ? /^Bearer ([A-Za-z0-9._~+/-]+=*)$/.exec(authorization)
       : null;
     if (!match) throw new UnauthorizedException('A bearer access token is required.');
-    request.auth = await this.verifier.verifyAccessToken(match[1]);
+
+    const principal = await this.verifier.verifyAccessToken(match[1]);
+    const identity = await this.identities.resolveOrProvision(principal);
+    request.auth = principal;
+    request.userId = identity.userId;
     return true;
   }
 }
