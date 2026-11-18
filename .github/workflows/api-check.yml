@@ -1,0 +1,61 @@
+name: api-check
+
+on:
+  push:
+    paths:
+      - "services/api/**"
+      - "database/**"
+      - ".github/workflows/api-check.yml"
+  pull_request:
+    paths:
+      - "services/api/**"
+      - "database/**"
+      - ".github/workflows/api-check.yml"
+  workflow_dispatch:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: momentia
+          POSTGRES_PASSWORD: momentia_test
+          POSTGRES_DB: momentia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U momentia -d momentia_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://momentia:momentia_test@localhost:5432/momentia_test
+      NODE_ENV: test
+      DATABASE_SSL: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/api/package.json
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Apply database migrations
+        run: bash database/scripts/migrate.sh
+      - name: Install API dependencies
+        working-directory: services/api
+        run: npm install --no-audit --no-fund
+      - name: Type check
+        working-directory: services/api
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: services/api
+        run: npm test
+      - name: Build
+        working-directory: services/api
+        run: npm run build
