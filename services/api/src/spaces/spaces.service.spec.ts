@@ -70,4 +70,21 @@ describe('SpacesService', () => {
     expect(insertValues[2]).toMatch(/^[a-f0-9]{64}$/);
     expect(insertValues[2]).not.toBe(result.token);
   });
+
+  it('does not let admins change member roles', async () => {
+    const h = harness();
+    h.clientQuery.mockResolvedValueOnce({ rows: [{ status: 'active', role: 'admin' }] });
+    await expect(h.service.updateMemberRole('admin-1', 'space-1', 'member-1', 'moderator'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.clientQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not permit a member to remove another member', async () => {
+    const h = harness();
+    h.clientQuery.mockResolvedValueOnce({ rows: [{ type: 'EVENT', status: 'active', role: 'member' }] });
+    await expect(h.service.removeMember('member-1', 'space-1', 'member-2'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.clientQuery).toHaveBeenCalledTimes(1);
+  });
+
 });
