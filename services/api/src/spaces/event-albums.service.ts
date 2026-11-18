@@ -153,7 +153,7 @@ export class EventAlbumsService {
          JOIN event_album_items i ON i.album_id = a.id AND i.media_asset_id = $3
          WHERE a.id = $1 AND s.type = 'EVENT'
            AND sm.user_id = $2 AND sm.state = 'active'
-         FOR UPDATE OF a, i, sm`,
+         FOR UPDATE OF a, s, i, sm`,
         [albumId, userId, mediaAssetId],
       );
       const row = result.rows[0] as {
