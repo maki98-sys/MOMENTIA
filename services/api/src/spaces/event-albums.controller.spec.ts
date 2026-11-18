@@ -1,3 +1,7 @@
+jest.mock('../auth/oidc-bearer.guard', () => ({
+  OidcBearerGuard: class OidcBearerGuard {},
+}));
+
 import { BadRequestException } from '@nestjs/common';
 import { EventAlbumsController } from './event-albums.controller';
 import { EventAlbumsService } from './event-albums.service';
