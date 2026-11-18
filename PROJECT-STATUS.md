@@ -141,7 +141,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 | Eventos y álbumes colaborativos | API de álbum y membresía implementadas; carga/visualización real pendiente | No recalculado |
 | Parejas y diario privado | Espacio COUPLE y regla de dos miembros; diario y UX pendientes | No recalculado |
 | Círculos privados | Espacios CIRCLE y permisos base; UX y funciones completas pendientes | No recalculado |
-| Red social, feed e interacciones | Posts/feed/comentarios/reacciones y API de solicitudes follow/accept/reject/unfollow/block/unblock; discovery, listados y moderación pendientes | No recalculado |
+| Red social, feed e interacciones | Posts/feed/comentarios/reacciones, follow/accept/reject/unfollow/block/unblock y listados paginados de seguidores/seguidos/solicitudes; discovery y moderación pendientes | No recalculado |
 | Cámara, galería, EXIF y multimedia | Inicio/confirmación de carga privada en fase inicial; validación real, derivados y app pendientes | No recalculado |
 | Timeline y recuerdos | API de lectura cursor por espacio; integra posts visibles y fotos listas de álbumes de eventos; diarios/recuerdos avanzados pendientes | No recalculado |
 | Offline y sincronización | Diseño documentado; implementación cliente y cola pendientes | No recalculado |
@@ -237,7 +237,7 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - Espacios EVENT, CIRCLE y COUPLE; membresías, roles, salida e invitaciones con token hasheado.
 - Álbumes colaborativos de eventos: creación, listado y gestión de referencias a multimedia.
 - Social: publicaciones, feed con cursor, comentarios y reacciones; verificación de audiencia y bloqueos.
-- Relaciones: solicitudes follow, aceptación/rechazo, unfollow y bloqueo/desbloqueo; bloqueos eliminan relaciones en ambas direcciones.
+- Relaciones: solicitudes follow, aceptación/rechazo, unfollow, bloqueo/desbloqueo y listados paginados de following/followers/solicitudes; bloqueos eliminan relaciones en ambas direcciones.
 - Auditoría de operaciones sensibles.
 
 ### Multimedia — carga, verificación y procesamiento
@@ -271,3 +271,5 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 | 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado y validado por los tres controles CI |
 
 | 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | Pruebas unitarias de solicitudes recíprocas, bloqueos y self-follow; CI en ejecución | Implementado; CI pendiente |
+
+| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | Pruebas unitarias de paginación y cursor; CI pendiente | Implementado; CI pendiente |
