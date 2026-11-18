@@ -1,0 +1,10 @@
+import * as Joi from 'joi';
+
+export const environmentSchema = Joi.object({
+  NODE_ENV: Joi.string().valid('development', 'test', 'staging', 'production').default('development'),
+  PORT: Joi.number().port().default(3000),
+  DATABASE_URL: Joi.string().uri({ scheme: ['postgres', 'postgresql'] }).required(),
+  DATABASE_SSL: Joi.boolean().truthy('true').falsy('false').default(false),
+  DATABASE_POOL_MAX: Joi.number().integer().min(1).max(50).default(10),
+  CORS_ORIGINS: Joi.string().allow('').default(''),
+});
