@@ -162,7 +162,7 @@ export class SpacesService {
         `SELECT s.type, s.status, sm.role
          FROM spaces s JOIN space_memberships sm ON sm.space_id = s.id
          WHERE s.id = $1 AND sm.user_id = $2 AND sm.state = 'active'
-         FOR UPDATE OF s`,
+         FOR UPDATE OF s, sm`,
         [spaceId, userId],
       );
       const space = spaceResult.rows[0] as { type: SpaceType; status: string; role: string } | undefined;
@@ -201,7 +201,7 @@ export class SpacesService {
                 s.type, s.status
          FROM space_invitations i JOIN spaces s ON s.id = i.space_id
          WHERE i.token_hash = $1
-         FOR UPDATE OF i`,
+         FOR UPDATE OF i, s`,
         [tokenHash],
       );
       const invitation = result.rows[0] as (InvitationRow & { status: string }) | undefined;
