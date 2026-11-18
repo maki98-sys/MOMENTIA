@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Link } from 'expo-router';
 import { api } from '../src/api/client';
 import { getLocalDatabase } from '../src/storage/database';
 
@@ -31,6 +32,11 @@ export default function HomeScreen() {
           <Status label="Base local" value={localReady ? 'Preparada' : 'Inicializando'} />
           <Status label="Servidor" value={serviceState === 'online' ? 'Conectado' : serviceState === 'offline' ? 'Sin conexión' : 'Comprobando'} />
         </View>
+        <Link href="/(tabs)" asChild>
+          <Pressable style={styles.button}>
+            <Text style={styles.buttonText}>Entrar a MOMENTIA</Text>
+          </Pressable>
+        </Link>
         <Text style={styles.note}>Estamos preparando tu espacio. Tus operaciones pendientes se conservarán localmente cuando activemos la sincronización.</Text>
       </View>
     </SafeAreaView>
@@ -57,5 +63,7 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
   statusLabel: { color: '#AAB4C5', fontSize: 14 },
   statusValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  button: { backgroundColor: '#FFFFFF', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 24 },
+  buttonText: { color: '#10131A', fontSize: 14, fontWeight: '800' },
   note: { color: '#8D98AA', fontSize: 13, lineHeight: 20, marginTop: 22 },
 });
