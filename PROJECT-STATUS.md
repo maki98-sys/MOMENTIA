@@ -354,3 +354,14 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - El CI móvil anterior #44241266400 pasó (Expo dependency check y TypeScript) antes de incorporar el flujo de captura; los cambios de captura requieren una nueva validación.
 
 - El primer CI del flujo de captura (#44241552011) detectó una llave sobrante en la pantalla Social; se corrigió en `f21730ae024455bc73db12c75280a4b8e69ff4cd`. El nuevo CI #44241647278 está en ejecución.
+
+
+## 2026-11-18 — Verificación móvil y transferencia inicial de medios
+
+- CI móvil #44241647278: **success** en commit `f21730ae024455bc73db12c75280a4b8e69ff4cd`. Pasaron instalación, compatibilidad de dependencias Expo y TypeScript tras corregir el error sintáctico de la pantalla Social.
+- La aplicación móvil conserva capturas de cámara/galería en almacenamiento privado local y SQLite. No hay sincronización automática todavía.
+- Se añadió `PUT /api/v1/media/uploads/:uploadId/content`, autenticado por OIDC, para recibir bytes de un upload previamente creado.
+- La transferencia valida ownership, UUID, estado, límite de 50 MiB, tamaño declarado y SHA-256. Los archivos se escriben atómicamente en el adaptador local configurado por `MEDIA_STORAGE_DIR` (por defecto `/var/lib/momentia/media`); la base de datos marca el asset como `quarantined`, no como listo para publicación.
+- Se añadieron pruebas negativas de identificador, ownership/no existencia y discrepancia de tamaño.
+- **Pendiente de CI:** API #44244678460 se inició para el primer cambio de transferencia; los cambios posteriores de pruebas dispararon una nueva ejecución. No declarar esta transferencia aceptada hasta que el último CI API termine en verde.
+- Límites de esta entrega: el controlador todavía almacena el cuerpo en memoria hasta 50 MiB; el adaptador local es para desarrollo/una instancia y no almacenamiento compartido de producción; faltan detección MIME real, escaneo, procesamiento de variantes, limpieza de archivos huérfanos, adaptador S3-compatible y conexión del cliente móvil al flujo de upload.
