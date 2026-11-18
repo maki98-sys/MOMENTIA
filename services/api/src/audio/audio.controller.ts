@@ -29,6 +29,11 @@ export class AudioController {
     return this.audio.join(req.userId!, sessionId);
   }
 
+  @Post('audio-sessions/:sessionId/heartbeat')
+  heartbeat(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string) {
+    return this.audio.heartbeat(req.userId!, sessionId);
+  }
+
   @Post('audio-sessions/:sessionId/leave')
   leave(@Req() req: Request & AuthenticatedRequest, @Param('sessionId') sessionId: string) {
     return this.audio.leave(req.userId!, sessionId);
