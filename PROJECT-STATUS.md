@@ -228,39 +228,41 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 **No declarar la aplicación creada hasta tener una versión ejecutable y comprobada en dispositivos/emuladores.**
 
 
-## 9. Inicio de implementación del backend
+## 9. Implementación backend y estado actual
 
-**Estado: base técnica creada y aceptada por CI en el HEAD de la rama de trabajo.**
+**Rama activa:** `feature/profile-api-v1`. El trabajo está en PR #1 y no se ha fusionado a `main`.
 
-Entregables añadidos:
-- Servicio NestJS modular en `services/api`, con TypeScript y configuración validada mediante Joi.
-- Pool PostgreSQL administrado por el ciclo de vida de NestJS.
-- Endpoints `GET /api/v1/health/live` y `GET /api/v1/health/ready`; readiness ejecuta `SELECT 1` y devuelve 503 si PostgreSQL no responde.
-- Seguridad HTTP inicial con Helmet, CORS denegado por defecto y ValidationPipe global.
-- Pruebas unitarias de validación de entorno.
-- Dockerfile multi-stage con ejecución como usuario no root.
-- Workflow `.github/workflows/api-check.yml` que aplica migraciones, instala dependencias, ejecuta typecheck, pruebas, build y build de imagen Docker.
+### Funciones API implementadas parcialmente
+- Perfil autenticado: lectura y actualización del perfil propio.
+- Espacios EVENT, CIRCLE y COUPLE; membresías, roles, salida e invitaciones con token hasheado.
+- Álbumes colaborativos de eventos: creación, listado y gestión de referencias a multimedia.
+- Social: publicaciones, feed con cursor, comentarios y reacciones; verificación de audiencia y bloqueos.
+- Auditoría de operaciones sensibles.
 
-Límites deliberados de esta entrega:
-- No se exponen todavía rutas de cuenta, perfiles ni espacios.
-- No se ha elegido proveedor de identidad ni se inventará almacenamiento de contraseñas: el esquema actual no contiene hash de contraseña y la decisión de autenticación debe preceder a su implementación.
-- No se han activado retención, borrado automático ni políticas de conservación.
-- Observabilidad avanzada, trazas, métricas y alertas quedan pendientes.
+### Multimedia — fase inicial de transferencia
+- Inicio autenticado de carga con clave de idempotencia.
+- URLs PUT firmadas por 10 minutos para object storage S3-compatible privado.
+- Validación de campos, JPEG/PNG/WebP y tamaño declarado máximo de 25 MiB.
+- Confirmación con HEAD del objeto; el servidor compara tamaño y Content-Type.
+- Migración 0004 separa MIME/hash declarados por el cliente de valores que deberá verificar el procesamiento.
+- Los archivos siguen en estado pendiente: aún no se marcan como `ready`.
 
-La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit `d33dfa44732f0e44cea3d66ebd9c7ff8ad666c50`): migraciones PostgreSQL, instalación, typecheck, pruebas unitarias, build y build de imagen Docker finalizaron correctamente. Se contabiliza únicamente el 8% de la Fase 2 correspondiente al bootstrap; no se contabilizan aún módulos funcionales. La decisión de proveedor/protocolo de identidad está documentada en ADR-001 y sigue pendiente de aprobación.
+### Límites pendientes
+- El proveedor OIDC concreto no está seleccionado ni configurado.
+- No hay cliente móvil ni PWA implementados.
+- Falta inspección de magic bytes, recálculo de SHA-256, worker de imágenes, variantes, eliminación EXIF/GPS, entrega/descarga autorizada y limpieza de temporales.
+- Faltan follows/discovery, moderación operativa, timeline completa, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
+- No se ha conectado un bucket real ni desplegado producción.
 
+### Evidencia CI
+- API quality para el código multimedia: lint, TypeScript, pruebas unitarias y build aprobados.
+- database-check run #48: cuatro migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
+- api-check: el run #143 del commit 1c3e completó migraciones, typecheck, unit tests, build y contenedor Docker; el run #147 del commit más reciente está en ejecución.
+- Las aserciones de migraciones del workflow y del backup/restore se actualizaron para exigir las cuatro migraciones existentes.
 
-## 2026-11-18 — OIDC foundation (in progress)
-- User approved managed OIDC as the identity strategy; concrete provider remains unselected.
-- Added provider-neutral issuer/audience/JWKS configuration, HTTPS-only OIDC endpoints, JOSE JWT verification with RS256/ES256 allowlist, bearer guard and principal contract.
-- Added configuration tests and bearer-guard unit tests; AuthModule is registered but guard is not global and no private product routes are exposed.
-- Added implementation boundary and integration sequence in `services/api/src/auth/README.md`.
-- CI run #44210416238 was queued at the time of this update; do not count this work as accepted until CI is green. Account mapping, MOMENTIA sessions, refresh rotation, revocation and resource authorization remain unimplemented.
-
-
-### Registro adicional — rama feature/profile-api-v1
+## 10. Registro adicional — rama feature/profile-api-v1
 
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
-| 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; commits de rama feature/profile-api-v1 | API quality verde y api-check verde en el commit base previo a multimedia | Implementado parcialmente |
-| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia y confirmación HEAD; separación de metadatos declarados y verificados | PR #1; commit `1c3e19b18ee4808613be3f8c341c113f49ef64c9` | API quality verde; api-check: migraciones, TypeScript, unit tests y build aprobados; contenedor en verificación. database-check detectó una aserción de conteo obsoleta (esperaba 3); workflow actualizado para exigir las 4 migraciones | Implementado en fase inicial; no listo para producción |
+| 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, confirmación HEAD y separación de metadatos declarados/verificados | PR #1; commit `1c3e19b18ee4808613be3f8c341c113f49ef64c9` | API quality verde; database-check run #48 verde; api-check en nueva ejecución | Fase inicial; no listo para producción |
