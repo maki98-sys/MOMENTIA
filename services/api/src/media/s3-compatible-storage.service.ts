@@ -74,7 +74,7 @@ export class S3CompatibleStorageService {
     const canonicalUri = `/${objectPath}`;
     const host = endpoint.host;
     const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\\.\\d{3}/g, '');
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
     const dateStamp = amzDate.slice(0, 8);
     const scope = `${dateStamp}/${region}/s3/aws4_request`;
     const params = new URLSearchParams({
@@ -89,17 +89,17 @@ export class S3CompatibleStorageService {
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&');
     const canonicalHeaders = contentType
-      ? `content-type:${contentType.trim()}\\nhost:${host}\\n`
-      : `host:${host}\\n`;
+      ? `content-type:${contentType.trim()}\nhost:${host}\n`
+      : `host:${host}\n`;
     const signedHeaders = contentType ? 'content-type;host' : 'host';
     const canonicalRequest = [
       method, canonicalUri, canonicalQuery, canonicalHeaders, signedHeaders,
       'UNSIGNED-PAYLOAD',
-    ].join('\\n');
+    ].join('\n');
     const stringToSign = [
       'AWS4-HMAC-SHA256', amzDate, scope,
       createHash('sha256').update(canonicalRequest).digest('hex'),
-    ].join('\\n');
+    ].join('\n');
     const dateKey = hmac(`AWS4${secretKey}`, dateStamp);
     const regionKey = hmac(dateKey, region);
     const serviceKey = hmac(regionKey, 's3');
