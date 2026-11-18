@@ -239,12 +239,12 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - Social: publicaciones, feed con cursor, comentarios y reacciones; verificación de audiencia y bloqueos.
 - Auditoría de operaciones sensibles.
 
-### Multimedia — fase inicial de transferencia
+### Multimedia — carga, verificación y procesamiento
 - Inicio autenticado de carga con clave de idempotencia.
 - URLs PUT firmadas por 10 minutos para object storage S3-compatible privado.
 - Validación de campos, JPEG/PNG/WebP y tamaño declarado máximo de 25 MiB.
-- Confirmación con HEAD del objeto; el servidor compara tamaño y Content-Type.
-- Migración 0004 separa MIME/hash declarados por el cliente de valores que deberá verificar el procesamiento.
+- Confirmación con HEAD, lectura limitada del objeto, validación de firmas binarias JPEG/PNG/WebP y recálculo server-side de SHA-256; los datos incorrectos se ponen en cuarentena.
+- Migraciones 0004–0005 separan metadatos declarados/verificados y crean la cola durable de procesamiento.
 - Los archivos se marcan `ready` solo después de que el worker genere y registre todas las variantes; si falla, reintenta con backoff y termina en `failed` al agotar intentos.
 
 ### Límites pendientes
@@ -255,15 +255,14 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - No se ha conectado un bucket real ni desplegado producción.
 
 ### Evidencia CI
-- API quality para el código multimedia: lint, TypeScript, pruebas unitarias y build aprobados.
-- database-check run #48: cuatro migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
-- api-check: el run #143 del commit 1c3e completó migraciones, typecheck, unit tests, build y contenedor Docker; el run #147 del commit más reciente está en ejecución.
-- Las aserciones de migraciones del workflow y del backup/restore se actualizaron para exigir las cuatro migraciones existentes.
+- API quality run #166 (commit `5855184`): lint, TypeScript, pruebas unitarias (incluida generación y verificación de variantes con Sharp) y build aprobados.
+- database-check run #77 (commit `5855184`): cinco migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
+- api-check run #191 (commit `5855184`): migraciones aplicadas; instalación de dependencias y verificaciones posteriores todavía en ejecución al actualizar este estado.
 
 ## 10. Registro adicional — rama feature/profile-api-v1
 
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
-| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y API check verdes en commit `19714f0`; database-check verde | Verificado en CI; sin bucket real |
-| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | Lint, typecheck, unit tests y build aprobados en API quality; database-check en curso al registrar esta línea | Implementado; validación de CI completa pendiente |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y database-check verdes en commit `5855184`; api-check en ejecución | Verificado en CI; sin bucket real |
+| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #166 y database-check run #77 aprobados; api-check run #191 pendiente | Implementado y validado por API quality y database-check; api-check completo pendiente |
