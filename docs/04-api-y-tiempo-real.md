@@ -15,7 +15,7 @@
 
 **Espacios (implementación inicial):** POST /spaces crea EVENT, CIRCLE o COUPLE; GET /spaces lista espacios activos del usuario; GET /spaces/{spaceId} consulta detalles solo si es miembro activo; POST /spaces/{spaceId}/invitations crea invitaciones (solo owner/admin, token aleatorio mostrado una vez y almacenado como SHA-256); POST /invitations/accept consume invitación válida bajo bloqueo transaccional. COUPLE requiere un segundo usuario activo y crea exactamente dos membresías en la misma transacción. Los endpoints de actualización, miembros y gestión de roles siguen pendientes.
 
-**Eventos/media:** POST /spaces/{spaceId}/albums; GET /spaces/{spaceId}/timeline; POST /spaces/{spaceId}/media; GET /media/{mediaId}; POST /media/{mediaId}/download-grant.
+**Álbumes colaborativos de eventos (implementación inicial):** POST/GET /spaces/{spaceId}/albums; GET /albums/{albumId} lista elementos; POST /albums/{albumId}/items agrega un recurso multimedia listo propiedad del usuario autenticado; DELETE /albums/{albumId}/items/{mediaAssetId} permite retirar el elemento a quien lo aportó o a un moderador/administrador/propietario. Solo espacios EVENT y miembros activos. Creación de álbum limitada a owner/admin/moderator. Los endpoints de carga y entrega segura de multimedia siguen pendientes.\n\n**Eventos/media (pendiente):** GET /spaces/{spaceId}/timeline; POST /spaces/{spaceId}/media; GET /media/{mediaId}; POST /media/{mediaId}/download-grant.
 
 **Social:** POST /posts; GET /feed; GET /posts/{postId}; POST /posts/{postId}/comments; POST /posts/{postId}/reactions; POST /users/{userId}/follow; POST /users/{userId}/block; POST /reports.
 
@@ -23,7 +23,7 @@
 
 **Sync/uploads:** POST /sync/operations; GET /sync/changes?cursor=...; POST /uploads; POST /uploads/{uploadId}/complete|abort.
 
-Los endpoints marcados como implementados existen en código; el resto sigue siendo contrato de diseño y no debe considerarse disponible. La aceptación de invitaciones comprueba expiración, revocación, límite de usos, estado del espacio y membresías expulsadas; los tokens en claro nunca se guardan. Cada nuevo endpoint debe añadir DTO/validación, permisos, pruebas y documentación antes de marcarse como implementado.
+Los endpoints marcados como implementados existen en código; el resto sigue siendo contrato de diseño y no debe considerarse disponible. La aceptación de invitaciones comprueba expiración, revocación, límite de usos, estado del espacio y membresías expulsadas; los tokens en claro nunca se guardan. Los álbumes comprueban membresía activa, tipo EVENT, propiedad del recurso multimedia y estado `ready`; los metadatos de almacenamiento no se exponen en la API. Cada nuevo endpoint debe añadir DTO/validación, permisos, pruebas y documentación antes de marcarse como implementado.
 
 ## Autorización por petición
 Comprobar identidad, sesión, estado de cuenta, pertenencia activa, rol, permiso, audiencia, bloqueos, moderación y estado del recurso. Proteger contra BOLA/IDOR. Nunca confiar en controles de interfaz.
