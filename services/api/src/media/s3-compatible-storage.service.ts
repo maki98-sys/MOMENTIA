@@ -2,6 +2,8 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, createHash } from 'node:crypto';
 
+const MAX_OBJECT_BYTES = 25 * 1024 * 1024;
+
 @Injectable()
 export class S3CompatibleStorageService {
   constructor(private readonly config: ConfigService) {}
@@ -20,14 +22,34 @@ export class S3CompatibleStorageService {
       throw new ServiceUnavailableException('Could not verify the uploaded object in private storage.');
     }
     const size = Number(response.headers.get('content-length'));
-    if (!Number.isSafeInteger(size) || size < 1) {
+    if (!Number.isSafeInteger(size) || size < 1 || size > MAX_OBJECT_BYTES) {
       throw new ServiceUnavailableException('Storage returned an invalid object size.');
     }
     return { size, contentType: response.headers.get('content-type') };
   }
 
+  async getObjectBytes(key: string, expectedSize: number): Promise<Buffer> {
+    if (!Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > MAX_OBJECT_BYTES) {
+      throw new ServiceUnavailableException('Object size is outside the permitted processing limit.');
+    }
+    const url = await this.presign('GET', key, 60);
+    const response = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) {
+      throw new ServiceUnavailableException('Could not read the uploaded object from private storage.');
+    }
+    const declaredLength = Number(response.headers.get('content-length'));
+    if (Number.isSafeInteger(declaredLength) && declaredLength !== expectedSize) {
+      throw new ServiceUnavailableException('Storage returned an unexpected object length.');
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length !== expectedSize || bytes.length > MAX_OBJECT_BYTES) {
+      throw new ServiceUnavailableException('Downloaded object length does not match the verified upload size.');
+    }
+    return bytes;
+  }
+
   private async presign(
-    method: 'PUT' | 'HEAD',
+    method: 'PUT' | 'HEAD' | 'GET',
     key: string,
     expiresSeconds: number,
     contentType?: string,
@@ -47,12 +69,12 @@ export class S3CompatibleStorageService {
     }
     const objectPath = [endpoint.pathname.replace(/\/$/, ''), bucket, ...key.split('/')]
       .filter(Boolean)
-      .map((part, index) => index < 2 ? encodeURIComponent(part) : encodeURIComponent(part))
+      .map((part) => encodeURIComponent(part))
       .join('/');
     const canonicalUri = `/${objectPath}`;
     const host = endpoint.host;
     const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const amzDate = now.toISOString().replace(/[:-]|\\.\\d{3}/g, '');
     const dateStamp = amzDate.slice(0, 8);
     const scope = `${dateStamp}/${region}/s3/aws4_request`;
     const params = new URLSearchParams({
@@ -67,17 +89,17 @@ export class S3CompatibleStorageService {
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&');
     const canonicalHeaders = contentType
-      ? `content-type:${contentType.trim()}\nhost:${host}\n`
-      : `host:${host}\n`;
+      ? `content-type:${contentType.trim()}\\nhost:${host}\\n`
+      : `host:${host}\\n`;
     const signedHeaders = contentType ? 'content-type;host' : 'host';
     const canonicalRequest = [
       method, canonicalUri, canonicalQuery, canonicalHeaders, signedHeaders,
       'UNSIGNED-PAYLOAD',
-    ].join('\n');
+    ].join('\\n');
     const stringToSign = [
       'AWS4-HMAC-SHA256', amzDate, scope,
       createHash('sha256').update(canonicalRequest).digest('hex'),
-    ].join('\n');
+    ].join('\\n');
     const dateKey = hmac(`AWS4${secretKey}`, dateStamp);
     const regionKey = hmac(dateKey, region);
     const serviceKey = hmac(regionKey, 's3');
