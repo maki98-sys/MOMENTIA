@@ -51,7 +51,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 **Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
-- Migraciones y seeds: 95% (cuatro migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
+- Migraciones y seeds: 95% (seis migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
 - Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; smoke test sintético de 10.000 entradas y consulta latest-50 completado; falta carga representativa prolongada y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
 - Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
@@ -244,13 +244,13 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - URLs PUT firmadas por 10 minutos para object storage S3-compatible privado.
 - Validación de campos, JPEG/PNG/WebP y tamaño declarado máximo de 25 MiB.
 - Confirmación con HEAD, lectura limitada del objeto, validación de firmas binarias JPEG/PNG/WebP y recálculo server-side de SHA-256; los datos incorrectos se ponen en cuarentena.
-- Migraciones 0004–0005 separan metadatos declarados/verificados y crean la cola durable de procesamiento.
+- Migraciones 0004–0005 separan metadatos declarados/verificados y crean la cola durable de procesamiento; migración 0006 garantiza una sola entrada multimedia por espacio.
 - Los archivos se marcan `ready` solo después de que el worker genere y registre todas las variantes; si falla, reintenta con backoff y termina en `failed` al agotar intentos.
 
 ### Límites pendientes
 - El proveedor OIDC concreto no está seleccionado ni configurado.
 - No hay cliente móvil ni PWA implementados.
-- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración automática con timeline, antivirus y limpieza operativa de objetos huérfanos.
+- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración de otras fuentes de memoria en timeline, antivirus y limpieza operativa de objetos huérfanos.
 - Faltan follows/discovery, moderación operativa, recuerdos/diario avanzado, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
 - No se ha conectado un bucket real ni desplegado producción.
 
@@ -265,6 +265,6 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 |---|---|---|---|---|
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
 | 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y database-check verdes en commit `5855184`; api-check en ejecución | Verificado en CI; sin bucket real |
-| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #181 y database-check run #83 aprobados; api-check run #203 en ejecución | Implementado y validado por API quality y database-check; api-check completo pendiente |
+| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado y validado por API quality y database-check; api-check completo pendiente |
 
-| 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | Pruebas unitarias de servicio y álbum; migración 0006 con verificación CI pendiente | Implementado; CI pendiente |
+| 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado; CI pendiente |
