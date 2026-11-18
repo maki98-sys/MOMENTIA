@@ -134,11 +134,17 @@ export class MediaService {
          WHERE id = $1 AND owner_id = $4 AND status = 'pending'`,
         [row.media_asset_id, detectedMime, actualChecksum, userId],
       );
+      await client.query(
+        `INSERT INTO media_processing_jobs (media_asset_id, status, available_at)
+         VALUES ($1, 'queued', now())
+         ON CONFLICT (media_asset_id) DO NOTHING`,
+        [row.media_asset_id],
+      );
     });
     return {
       uploadId, mediaAssetId: row.media_asset_id, state: 'uploaded',
       processing: 'pending', verified: true,
-      message: 'File size, image signature and SHA-256 verified; decoding, metadata removal and derivatives remain pending.',
+      message: 'File size, image signature and SHA-256 verified; a durable processing job has been queued for decoding, metadata removal and derivatives.',
     };
   }
 }
