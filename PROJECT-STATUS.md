@@ -250,7 +250,7 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 ### Límites pendientes
 - El proveedor OIDC concreto no está seleccionado ni configurado.
 - No hay cliente móvil ni PWA implementados.
-- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. Faltan pruebas con bucket real, endpoint de entrega/descarga autorizada, integración automática con timeline, antivirus y limpieza operativa de objetos huérfanos.
+- Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración automática con timeline, antivirus y limpieza operativa de objetos huérfanos.
 - Faltan follows/discovery, moderación operativa, timeline completa, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
 - No se ha conectado un bucket real ni desplegado producción.
 
