@@ -32,7 +32,7 @@ This is the physical PostgreSQL schema inventory for the current database founda
 - `posts`: social and space-scoped publications.
 - `post_comments`: comments and replies.
 - `content_reactions`: reactions to supported content targets.
-- `timeline_entries`: chronological memory/feed projection.
+- `timeline_entries`: chronological memory/feed projection; a partial unique index guarantees one media item per space.
 - `event_albums`, `event_album_items`: collaborative event albums and media ordering.
 
 ### Audio, notifications and reliability
