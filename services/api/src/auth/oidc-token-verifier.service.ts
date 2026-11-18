@@ -7,15 +7,13 @@ import type { OidcPrincipal } from './auth.types';
 export class OidcTokenVerifier {
   private readonly issuer: string;
   private readonly audience: string;
-  private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
+  private readonly jwks?: ReturnType<typeof createRemoteJWKSet>;
 
   constructor(config: ConfigService) {
     this.issuer = config.get<string>('OIDC_ISSUER') ?? '';
     this.audience = config.get<string>('OIDC_AUDIENCE') ?? '';
     const jwksUri = config.get<string>('OIDC_JWKS_URI');
-    if (!this.issuer || !this.audience || !jwksUri) {
-      throw new ServiceUnavailableException('OIDC identity provider is not configured.');
-    }
+    if (!this.issuer || !this.audience || !jwksUri) return;
     this.jwks = createRemoteJWKSet(new URL(jwksUri), {
       timeoutDuration: 5_000,
       cooldownDuration: 30_000,
@@ -24,6 +22,7 @@ export class OidcTokenVerifier {
   }
 
   async verifyAccessToken(token: string): Promise<OidcPrincipal> {
+    if (!this.jwks) throw new ServiceUnavailableException('OIDC identity provider is not configured.');
     try {
       const { payload } = await jwtVerify(token, this.jwks, {
         issuer: this.issuer,
