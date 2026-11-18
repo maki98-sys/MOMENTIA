@@ -255,9 +255,9 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - No se ha conectado un bucket real ni desplegado producción.
 
 ### Evidencia CI
-- API quality run #166 (commit `5855184`): lint, TypeScript, pruebas unitarias (incluida generación y verificación de variantes con Sharp) y build aprobados.
-- database-check run #77 (commit `5855184`): cinco migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
-- api-check run #191 (commit `5855184`): migraciones aplicadas; instalación de dependencias y verificaciones posteriores todavía en ejecución al actualizar este estado.
+- API quality run #181 (commit `6d5dc1c`): lint, TypeScript, pruebas unitarias (worker Sharp, variantes sin EXIF y autorización de URL) y build aprobados.
+- database-check run #83 (commit `6d5dc1c`): cinco migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
+- api-check run #203 (commit `6d5dc1c`): migraciones, instalación de dependencias y typecheck aprobados; pruebas unitarias y build/Docker todavía en ejecución al actualizar este estado.
 
 ## 10. Registro adicional — rama feature/profile-api-v1
 
@@ -265,4 +265,4 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 |---|---|---|---|---|
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
 | 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y database-check verdes en commit `5855184`; api-check en ejecución | Verificado en CI; sin bucket real |
-| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #166 y database-check run #77 aprobados; api-check run #191 pendiente | Implementado y validado por API quality y database-check; api-check completo pendiente |
+| 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #181 y database-check run #83 aprobados; api-check run #203 en ejecución | Implementado y validado por API quality y database-check; api-check completo pendiente |
