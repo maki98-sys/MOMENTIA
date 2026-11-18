@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { SpacesModule } from './spaces/spaces.module';
 import { SocialModule } from './social/social.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SocialModule } from './social/social.module';
     ProfilesModule,
     SpacesModule,
     SocialModule,
+    MediaModule,
   ],
 })
 export class AppModule {}
