@@ -23,5 +23,3 @@ const styles = StyleSheet.create({
   captureButton: { backgroundColor: '#FFFFFF', borderRadius: 13, padding: 15, alignItems: 'center', marginTop: 22 },
   captureText: { color: '#10131A', fontWeight: '800' },
 });
-
-}
