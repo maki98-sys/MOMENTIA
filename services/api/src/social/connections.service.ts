@@ -25,8 +25,15 @@ export class ConnectionsService {
       const outgoing = existing.rows.find((row) => row.requester_id === userId);
       const incoming = existing.rows.find((row) => row.requester_id === targetId);
 
-      if (outgoing?.state === 'accepted' || outgoing?.state === 'pending') {
-        return { state: outgoing.state };
+      if (outgoing?.state === 'accepted') {
+        if (incoming?.state === 'pending') {
+          await client.query(
+            `UPDATE user_relationships SET state = 'accepted', updated_at = now()
+             WHERE requester_id = $1 AND target_id = $2`,
+            [targetId, userId],
+          );
+        }
+        return { state: 'accepted' };
       }
       if (incoming?.state === 'pending' || incoming?.state === 'accepted') {
         await client.query(
@@ -43,6 +50,7 @@ export class ConnectionsService {
         );
         return { state: 'accepted' };
       }
+      if (outgoing?.state === 'pending') return { state: 'pending' };
       if (outgoing) {
         await client.query(
           `UPDATE user_relationships SET state = 'pending', updated_at = now()
