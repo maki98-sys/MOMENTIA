@@ -22,6 +22,13 @@ describe('SpacesService', () => {
       .toThrow(BadRequestException);
   });
 
+  it('does not add a partner to a couple space without an acceptance flow', async () => {
+    await expect(service.create('user-1', {
+      type: 'COUPLE', name: 'Us', visibility: 'private', partnerUserId: 'user-2',
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid date ranges and unsupported properties', () => {
     expect(() => service.validateCreateInput({
       type: 'EVENT', name: 'Event', startsAt: '2026-12-02T10:00:00Z',
