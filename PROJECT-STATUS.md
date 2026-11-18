@@ -352,3 +352,5 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - La pantalla muestra los borradores locales y no afirma que estén subidos.
 - El backend de medios todavía no transfiere bytes a object storage; faltan endpoint/adaptador de almacenamiento, confirmación y flujo de sincronización.
 - El CI móvil anterior #44241266400 pasó (Expo dependency check y TypeScript) antes de incorporar el flujo de captura; los cambios de captura requieren una nueva validación.
+
+- El primer CI del flujo de captura (#44241552011) detectó una llave sobrante en la pantalla Social; se corrigió en `f21730ae024455bc73db12c75280a4b8e69ff4cd`. El nuevo CI #44241647278 está en ejecución.
