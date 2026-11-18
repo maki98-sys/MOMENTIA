@@ -59,3 +59,5 @@ jobs:
       - name: Build
         working-directory: services/api
         run: npm run build
+      - name: Build production container
+        run: docker build --tag momentia-api:ci services/api
