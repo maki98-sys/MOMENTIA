@@ -16,7 +16,7 @@ import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { PostsService } from './posts.service';
-import type { CreatePostInput, FeedCursor, PostAudience, ReactionType } from './post.types';
+import type { CreatePostInput, FeedCursor, PostAudience } from './post.types';
 
 @Controller()
 @UseGuards(OidcBearerGuard)
