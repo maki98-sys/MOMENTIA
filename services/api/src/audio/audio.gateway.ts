@@ -1,6 +1,6 @@
 import {
   ConnectedSocket, MessageBody, OnGatewayConnection, OnGatewayDisconnect,
-  OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer,
+  OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer, OnModuleInit, OnModuleDestroy,
 } from '@nestjs/websockets';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Server, Socket } from 'socket.io';
@@ -20,9 +20,10 @@ const room = (id: string) => `audio-session:${id}`;
   },
   transports: ['websocket'],
 })
-export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(AudioGateway.name);
+  private cleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly verifier: OidcTokenVerifier,
@@ -32,6 +33,30 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
 
   afterInit() {
     this.logger.log('Social Audio realtime gateway initialized.');
+  }
+
+  onModuleInit() {
+    const configured = Number(process.env.AUDIO_PRESENCE_TIMEOUT_SECONDS ?? 45);
+    const timeout = Number.isSafeInteger(configured) && configured >= 15 && configured <= 3600 ? configured : 45;
+    this.cleanupTimer = setInterval(() => {
+      void this.expireStaleParticipants(timeout);
+    }, 15_000);
+    this.cleanupTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+  }
+
+  private async expireStaleParticipants(timeoutSeconds: number) {
+    try {
+      const sessionIds = await this.audio.cleanupStaleParticipants(timeoutSeconds);
+      for (const sessionId of sessionIds) {
+        this.server?.to(room(sessionId)).emit('audio:presence:expired', { sessionId });
+      }
+    } catch (error) {
+      this.logger.error('Could not expire stale Social Audio participants.', error instanceof Error ? error.stack : undefined);
+    }
   }
 
   async handleConnection(client: Socket) {
