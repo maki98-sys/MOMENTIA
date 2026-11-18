@@ -8,8 +8,39 @@ const MAX_OBJECT_BYTES = 25 * 1024 * 1024;
 export class S3CompatibleStorageService {
   constructor(private readonly config: ConfigService) {}
 
+  isConfigured(): boolean {
+    return Boolean(this.config.get<string>('S3_ENDPOINT')
+      && this.config.get<string>('S3_BUCKET')
+      && this.config.get<string>('S3_ACCESS_KEY_ID')
+      && this.config.get<string>('S3_SECRET_ACCESS_KEY'));
+  }
+
   async presignPut(key: string, contentType: string, expiresSeconds: number): Promise<string> {
     return this.presign('PUT', key, expiresSeconds, contentType);
+  }
+
+  async putObjectBytes(key: string, contentType: string, bytes: Buffer): Promise<void> {
+    if (bytes.length < 1 || bytes.length > MAX_OBJECT_BYTES) {
+      throw new ServiceUnavailableException('Processed image exceeds the permitted object size.');
+    }
+    const url = await this.presignPut(key, contentType, 60);
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: new Uint8Array(bytes),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      throw new ServiceUnavailableException('Could not write the processed image to private storage.');
+    }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    const url = await this.presign('DELETE', key, 60);
+    const response = await fetch(url, { method: 'DELETE', signal: AbortSignal.timeout(10_000) });
+    if (!response.ok && response.status !== 404) {
+      throw new ServiceUnavailableException('Could not remove the original upload from private storage.');
+    }
   }
 
   async headObject(key: string): Promise<{ size: number; contentType: string | null }> {
@@ -68,7 +99,7 @@ export class S3CompatibleStorageService {
   }
 
   private async presign(
-    method: 'PUT' | 'HEAD' | 'GET',
+    method: 'PUT' | 'HEAD' | 'GET' | 'DELETE',
     key: string,
     expiresSeconds: number,
     contentType?: string,
