@@ -1,7 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { UnauthorizedException, Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
-import type { AuthenticatedRequest, ProfileVisibility } from '../auth/auth.types';
+import type { AuthenticatedRequest } from '../auth/auth.types';
+import type { ProfileVisibility } from './profile.types';
 import { ProfilesService } from './profiles.service';
 import type { UpdateProfileInput } from './profile.types';
 
@@ -27,7 +28,7 @@ export class ProfilesController {
 }
 
 function requireUserId(request: AuthenticatedRequest): string {
-  if (!request.userId) throw new BadRequestException('Authenticated user context is missing.');
+  if (!request.userId) throw new UnauthorizedException('Authenticated user context is missing.');
   return request.userId;
 }
 
