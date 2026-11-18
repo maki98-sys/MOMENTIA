@@ -325,3 +325,15 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 
 - Primera validación del gateway detectó un error de tipado en el snapshot (`server_version`); se amplió el tipo de retorno de `withQueue` y se corrigió la importación de interfaces de ciclo de vida NestJS.
 - Las ejecuciones intermedias fueron canceladas por los nuevos commits (concurrency `cancel-in-progress`). La validación más reciente #44240792982 está en cola; no se declara aprobada todavía.
+
+## 2026-11-18 — Primera base de aplicación móvil
+
+- Creada `apps/mobile` con React Native, Expo SDK 54, TypeScript y Expo Router.
+- Añadida pantalla inicial que comprueba la API `/health` y la inicialización de SQLite.
+- Añadido cliente HTTP centralizado con Bearer token y errores tipados.
+- Añadido almacenamiento de token con Expo SecureStore.
+- SQLite crea tablas locales para operaciones pendientes y entidades cacheadas. El motor de sincronización aún no está implementado.
+- Añadidos permisos/configuración inicial para cámara y galería; todavía no existe el flujo de captura/carga.
+- Añadido workflow `.github/workflows/mobile-check.yml` para comprobar compatibilidad Expo y TypeScript.
+- No se han ejecutado builds nativos ni pruebas en emuladores/dispositivos.
+- CI API: typecheck pasa en el último run observado; la suite estaba ejecutándose. La ejecución anterior falló al cargar `jose` ESM en Jest; el test del gateway fue aislado mediante mocks y la nueva validación está pendiente.
