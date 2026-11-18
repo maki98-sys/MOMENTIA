@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { fromByteArray, toByteArray } from 'base64-js';
+import { toByteArray } from 'base64-js';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 import { env } from '../config/env';
