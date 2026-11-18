@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ProfilesController } from './profiles.controller';
 import { ProfilesService } from './profiles.service';
 
@@ -50,6 +50,6 @@ describe('ProfilesController', () => {
   });
 
   it('requires authenticated user context', async () => {
-    await expect(controller.findMine({} as never)).rejects.toBeInstanceOf(Error);
+    await expect(controller.findMine({} as never)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
