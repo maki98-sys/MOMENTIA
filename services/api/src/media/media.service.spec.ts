@@ -12,6 +12,7 @@ describe('MediaService', () => {
   const storage = {
     presignPut: jest.fn().mockResolvedValue('https://storage.example/signed'),
     headObject: jest.fn(),
+    getObjectBytes: jest.fn(),
   } as unknown as S3CompatibleStorageService;
   const service = new MediaService(database, storage);
   const input = {
@@ -90,4 +91,48 @@ describe('MediaService', () => {
     await expect(service.completeUpload('user-1', 'upload-1')).rejects.toBeInstanceOf(ConflictException);
     expect(database.transaction).not.toHaveBeenCalled();
   });
+  it('verifies the actual PNG signature and SHA-256 before accepting an upload', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const checksum = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        upload_id: 'upload-1', media_asset_id: 'asset-1', state: 'created',
+        storage_key_original: 'original/user-1/asset-1', size_bytes: String(bytes.length),
+        mime_type_declared: 'image/png', checksum_sha256_declared: checksum,
+      }],
+    });
+    (storage.headObject as jest.Mock).mockResolvedValue({ size: bytes.length, contentType: 'image/png' });
+    (storage.getObjectBytes as jest.Mock).mockResolvedValue(bytes);
+
+    const result = await service.completeUpload('user-1', 'upload-1');
+
+    expect(result).toMatchObject({ state: 'uploaded', verified: true, processing: 'pending' });
+    expect(storage.getObjectBytes).toHaveBeenCalledWith('original/user-1/asset-1', bytes.length);
+    expect(transactionClient.query).toHaveBeenCalledWith(
+      expect.stringContaining('mime_type_detected = $2'),
+      ['asset-1', 'image/png', checksum, 'user-1'],
+    );
+  });
+
+  it('quarantines content when the bytes do not match the declared checksum', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        upload_id: 'upload-2', media_asset_id: 'asset-2', state: 'created',
+        storage_key_original: 'original/user-1/asset-2', size_bytes: String(bytes.length),
+        mime_type_declared: 'image/png', checksum_sha256_declared: 'f'.repeat(64),
+      }],
+    });
+    (storage.headObject as jest.Mock).mockResolvedValue({ size: bytes.length, contentType: 'image/png' });
+    (storage.getObjectBytes as jest.Mock).mockResolvedValue(bytes);
+
+    await expect(service.completeUpload('user-1', 'upload-2')).rejects.toBeInstanceOf(ConflictException);
+    expect(transactionClient.query).toHaveBeenCalledWith(
+      expect.stringContaining("status = 'quarantined'"),
+      ['asset-2', 'user-1'],
+    );
+  });
+
 });
