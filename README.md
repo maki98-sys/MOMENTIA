@@ -47,4 +47,4 @@ Las decisiones de proveedor, versiones, costos, límites de SDK y licencias se v
 
 ## Estado
 
-Documentación fundacional v1 en preparación. Este repositorio contiene especificaciones, no una aplicación implementada. Los porcentajes de desarrollo solo se actualizarán con entregables y pruebas verificables.
+Implementación en curso. El repositorio ya contiene migraciones PostgreSQL, pruebas de integridad de datos y un backend NestJS inicial con health checks y autenticación OIDC/JWKS. En la rama `feature/profile-api-v1` se incorpora el primer flujo funcional de perfil propio (`GET/PUT /api/v1/me/profile`) protegido por autenticación. Aún no es una aplicación móvil/web completa ni está lista para producción. El avance se medirá por funcionalidades integradas y pruebas verificadas.
