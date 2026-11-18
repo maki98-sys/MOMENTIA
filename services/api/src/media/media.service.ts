@@ -55,6 +55,7 @@ export class MediaService {
     const mediaAssetId = randomUUID();
     const uploadId = randomUUID();
     const storageKey = `original/${userId}/${mediaAssetId}`;
+    const uploadUrl = await this.storage.presignPut(storageKey, input.contentType, 600);
     await this.database.transaction(async (client) => {
       await client.query(
         `INSERT INTO media_assets
@@ -69,7 +70,6 @@ export class MediaService {
         [uploadId, mediaAssetId, userId, idempotencyKey],
       );
     });
-    const uploadUrl = await this.storage.presignPut(storageKey, input.contentType, 600);
     return {
       uploadId, mediaAssetId, state: 'created', uploadUrl, method: 'PUT',
       requiredHeaders: { 'Content-Type': input.contentType }, expiresInSeconds: 600,
