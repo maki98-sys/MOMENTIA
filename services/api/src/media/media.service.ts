@@ -1,7 +1,7 @@
 import {
   BadRequestException, ConflictException, Injectable, NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 import { S3CompatibleStorageService } from './s3-compatible-storage.service';
 
@@ -80,10 +80,10 @@ export class MediaService {
   async completeUpload(userId: string, uploadId: string) {
     const result = await this.database.query<{
       upload_id: string; media_asset_id: string; state: string; storage_key_original: string;
-      size_bytes: string; mime_type_declared: string;
+      size_bytes: string; mime_type_declared: string; checksum_sha256_declared: string;
     }>(
       `SELECT u.id AS upload_id, u.media_asset_id, u.state, m.storage_key_original,
-              m.size_bytes, m.mime_type_declared
+              m.size_bytes, m.mime_type_declared, m.checksum_sha256_declared
        FROM media_uploads u JOIN media_assets m ON m.id = u.media_asset_id
        WHERE u.id = $1 AND u.uploader_id = $2 AND m.owner_id = $2 AND m.deleted_at IS NULL`,
       [uploadId, userId],
@@ -104,6 +104,25 @@ export class MediaService {
     if (!object.contentType || object.contentType.split(';')[0].trim().toLowerCase() !== row.mime_type_declared) {
       throw new ConflictException('Uploaded file content type does not match the declared type.');
     }
+
+    const bytes = await this.storage.getObjectBytes(row.storage_key_original, object.size);
+    const detectedMime = detectImageMime(bytes);
+    const actualChecksum = createHash('sha256').update(bytes).digest('hex');
+    if (detectedMime !== row.mime_type_declared || actualChecksum !== row.checksum_sha256_declared.trim()) {
+      await this.database.transaction(async (client) => {
+        await client.query(
+          `UPDATE media_assets SET status = 'quarantined' WHERE id = $1 AND owner_id = $2 AND status = 'pending'`,
+          [row.media_asset_id, userId],
+        );
+        await client.query(
+          `UPDATE media_uploads SET state = 'failed', last_error_code = 'CONTENT_VALIDATION_FAILED', updated_at = now()
+           WHERE id = $1 AND uploader_id = $2 AND state IN ('created','uploading')`,
+          [uploadId, userId],
+        );
+      });
+      throw new ConflictException('Image content does not match its declared MIME type or SHA-256 checksum; asset quarantined.');
+    }
+
     await this.database.transaction(async (client) => {
       await client.query(
         `UPDATE media_uploads SET state = 'uploaded', bytes_received = $2, updated_at = now()
@@ -111,20 +130,38 @@ export class MediaService {
         [uploadId, object.size, userId],
       );
       await client.query(
-        `UPDATE media_assets SET status = 'pending' WHERE id = $1 AND owner_id = $2 AND status = 'pending'`,
-        [row.media_asset_id, userId],
+        `UPDATE media_assets SET mime_type_detected = $2, checksum_sha256 = $3
+         WHERE id = $1 AND owner_id = $4 AND status = 'pending'`,
+        [row.media_asset_id, detectedMime, actualChecksum, userId],
       );
     });
     return {
       uploadId, mediaAssetId: row.media_asset_id, state: 'uploaded',
-      processing: 'pending', message: 'File received; image validation and derivative processing are not yet implemented.',
+      processing: 'pending', verified: true,
+      message: 'File size, image signature and SHA-256 verified; decoding, metadata removal and derivatives remain pending.',
     };
   }
 }
 
+function detectImageMime(bytes: Buffer): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 8
+    && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (bytes.length >= 12
+    && bytes.toString('ascii', 0, 4) === 'RIFF'
+    && bytes.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
+
 function validateInput(input: CreateMediaUploadInput): void {
   if (!input.fileName.trim() || input.fileName.length > 180
-    || input.fileName.includes('/') || input.fileName.includes('\\')) {
+    || input.fileName.includes('/') || input.fileName.includes('\\\\')) {
     throw new BadRequestException('fileName must be a simple file name of at most 180 characters.');
   }
   if (!ALLOWED_TYPES.has(input.contentType.toLowerCase())) {
