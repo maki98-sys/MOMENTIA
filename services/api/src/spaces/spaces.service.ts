@@ -247,6 +247,120 @@ export class SpacesService {
     });
   }
 
+
+  async listMembers(userId: string, spaceId: string) {
+    const access = await this.database.query(
+      `SELECT 1 FROM space_memberships
+       WHERE space_id = $1 AND user_id = $2 AND state = 'active'
+       LIMIT 1`,
+      [spaceId, userId],
+    );
+    if (!access.rowCount) throw new NotFoundException('Space not found.');
+    const result = await this.database.query(
+      `SELECT sm.user_id, sm.role, sm.joined_at, up.display_name
+       FROM space_memberships sm
+       LEFT JOIN user_profiles up ON up.user_id = sm.user_id
+       WHERE sm.space_id = $1 AND sm.state = 'active'
+       ORDER BY CASE sm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1
+         WHEN 'moderator' THEN 2 ELSE 3 END, sm.joined_at ASC, sm.user_id ASC`,
+      [spaceId],
+    );
+    return result.rows.map((row) => ({
+      userId: row.user_id,
+      displayName: row.display_name,
+      role: row.role,
+      joinedAt: toIsoString(row.joined_at as Date | string),
+    }));
+  }
+
+  async updateMemberRole(actorId: string, spaceId: string, memberId: string,
+    role: 'admin' | 'moderator' | 'member' | 'guest'): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const access = await client.query(
+        `SELECT s.status, sm.role
+         FROM spaces s JOIN space_memberships sm ON sm.space_id = s.id
+         WHERE s.id = $1 AND sm.user_id = $2 AND sm.state = 'active'
+         FOR UPDATE OF s, sm`,
+        [spaceId, actorId],
+      );
+      const actor = access.rows[0] as { status: string; role: string } | undefined;
+      if (!actor) throw new NotFoundException('Space not found.');
+      if (actor.status !== 'active') throw new ConflictException('The space is not active.');
+      if (actor.role !== 'owner') throw new ForbiddenException('Only the owner can change member roles.');
+
+      const targetResult = await client.query(
+        `SELECT role FROM space_memberships
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active'
+         FOR UPDATE`,
+        [spaceId, memberId],
+      );
+      const target = targetResult.rows[0] as { role: string } | undefined;
+      if (!target) throw new NotFoundException('Active member not found.');
+      if (target.role === 'owner') throw new ConflictException('The owner role cannot be changed here.');
+      await client.query(
+        'UPDATE space_memberships SET role = $3 WHERE space_id = $1 AND user_id = $2',
+        [spaceId, memberId, role],
+      );
+      await this.audit(client, spaceId, actorId, 'space.member.role_changed', 'membership', memberId);
+    });
+  }
+
+  async removeMember(actorId: string, spaceId: string, memberId: string): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const access = await client.query(
+        `SELECT s.type, s.status, sm.role
+         FROM spaces s JOIN space_memberships sm ON sm.space_id = s.id
+         WHERE s.id = $1 AND sm.user_id = $2 AND sm.state = 'active'
+         FOR UPDATE OF s, sm`,
+        [spaceId, actorId],
+      );
+      const actor = access.rows[0] as { type: SpaceType; status: string; role: string } | undefined;
+      if (!actor) throw new NotFoundException('Space not found.');
+      if (actor.status !== 'active') throw new ConflictException('The space is not active.');
+      if (actor.type === 'COUPLE') throw new ConflictException('Couple membership changes require the couple closure flow.');
+      if (actor.role !== 'owner') throw new ForbiddenException('Only the owner can remove members.');
+
+      const targetResult = await client.query(
+        `SELECT role FROM space_memberships
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active'
+         FOR UPDATE`,
+        [spaceId, memberId],
+      );
+      const target = targetResult.rows[0] as { role: string } | undefined;
+      if (!target) throw new NotFoundException('Active member not found.');
+      if (target.role === 'owner') throw new ConflictException('The owner cannot be removed.');
+      await client.query(
+        `UPDATE space_memberships SET state = 'removed', left_at = now()
+         WHERE space_id = $1 AND user_id = $2`,
+        [spaceId, memberId],
+      );
+      await this.audit(client, spaceId, actorId, 'space.member.removed', 'membership', memberId);
+    });
+  }
+
+  async leaveSpace(userId: string, spaceId: string): Promise<void> {
+    await this.database.transaction(async (client) => {
+      const result = await client.query(
+        `SELECT s.type, s.status, sm.role
+         FROM spaces s JOIN space_memberships sm ON sm.space_id = s.id
+         WHERE s.id = $1 AND sm.user_id = $2 AND sm.state = 'active'
+         FOR UPDATE OF s, sm`,
+        [spaceId, userId],
+      );
+      const membership = result.rows[0] as { type: SpaceType; status: string; role: string } | undefined;
+      if (!membership) throw new NotFoundException('Active membership not found.');
+      if (membership.status !== 'active') throw new ConflictException('The space is not active.');
+      if (membership.role === 'owner') throw new ConflictException('Transfer ownership or close the space before leaving.');
+      if (membership.type === 'COUPLE') throw new ConflictException('Couple membership changes require the couple closure flow.');
+      await client.query(
+        `UPDATE space_memberships SET state = 'left', left_at = now()
+         WHERE space_id = $1 AND user_id = $2`,
+        [spaceId, userId],
+      );
+      await this.audit(client, spaceId, userId, 'space.member.left', 'membership', userId);
+    });
+  }
+
   private async audit(
     client: PoolClient,
     spaceId: string,
