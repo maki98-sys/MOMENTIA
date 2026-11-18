@@ -18,6 +18,14 @@ The service locks both active user rows in deterministic UUID order before chang
 
 Blocking is directional for the block record, but either direction prevents a new follow relationship. Existing feed and media visibility queries already suppress content across user blocks.
 
+## Lists and request inbox
+
+- `GET /api/v1/me/following`
+- `GET /api/v1/me/followers`
+- `GET /api/v1/me/follow-requests`
+
+Each list accepts `limit` (1–50, default 20) and an opaque cursor. The query filters inactive accounts and either-direction blocks before returning profile display name and avatar media ID.
+
 ## Boundaries
 
 This module manages relationship state and blocks. Push notifications, request inbox UI, discovery/search, profile recommendations, and full follower/following list APIs are separate work items.
