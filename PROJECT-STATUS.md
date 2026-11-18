@@ -248,3 +248,11 @@ Límites deliberados de esta entrega:
 - Observabilidad avanzada, trazas, métricas y alertas quedan pendientes.
 
 La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit `d33dfa44732f0e44cea3d66ebd9c7ff8ad666c50`): migraciones PostgreSQL, instalación, typecheck, pruebas unitarias, build y build de imagen Docker finalizaron correctamente. Se contabiliza únicamente el 8% de la Fase 2 correspondiente al bootstrap; no se contabilizan aún módulos funcionales. La decisión de proveedor/protocolo de identidad está documentada en ADR-001 y sigue pendiente de aprobación.
+
+
+## 2026-11-18 — OIDC foundation (in progress)
+- User approved managed OIDC as the identity strategy; concrete provider remains unselected.
+- Added provider-neutral issuer/audience/JWKS configuration, HTTPS-only OIDC endpoints, JOSE JWT verification with RS256/ES256 allowlist, bearer guard and principal contract.
+- Added configuration tests and bearer-guard unit tests; AuthModule is registered but guard is not global and no private product routes are exposed.
+- Added implementation boundary and integration sequence in `services/api/src/auth/README.md`.
+- CI run #44210416238 was queued at the time of this update; do not count this work as accepted until CI is green. Account mapping, MOMENTIA sessions, refresh rotation, revocation and resource authorization remain unimplemented.
