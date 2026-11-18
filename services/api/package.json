@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "MOMENTIA modular NestJS API",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
@@ -37,6 +39,7 @@
     "eslint": "^9.0.0",
     "jest": "^30.0.0",
     "typescript": "^5.8.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "ts-jest": "^29.4.0"
   }
 }
