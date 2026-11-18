@@ -27,6 +27,18 @@ export function getLocalDatabase() {
         );
         CREATE INDEX IF NOT EXISTS sync_operations_ready_idx
           ON sync_operations(state, next_retry_at, created_at);
+        CREATE TABLE IF NOT EXISTS media_drafts (
+          draft_id TEXT PRIMARY KEY NOT NULL,
+          local_uri TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          mime_type TEXT,
+          size_bytes INTEGER,
+          captured_at TEXT,
+          created_at TEXT NOT NULL,
+          sync_state TEXT NOT NULL DEFAULT 'LOCAL_ONLY'
+            CHECK (sync_state IN ('LOCAL_ONLY','QUEUED','UPLOADING','SYNCED','FAILED'))
+        );
+        CREATE INDEX IF NOT EXISTS media_drafts_created_idx ON media_drafts(created_at DESC);
         CREATE TABLE IF NOT EXISTS cached_entities (
           entity_type TEXT NOT NULL,
           entity_id TEXT NOT NULL,
