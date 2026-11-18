@@ -164,9 +164,14 @@ export class PostsService {
        JOIN users u ON u.id = c.author_id AND u.status = 'active'
        LEFT JOIN user_profiles up ON up.user_id = c.author_id
        WHERE c.post_id = $1 AND c.status = 'visible'
+         AND NOT EXISTS (
+           SELECT 1 FROM user_blocks b
+           WHERE (b.blocker_id = $2 AND b.blocked_id = c.author_id)
+              OR (b.blocker_id = c.author_id AND b.blocked_id = $2)
+         )
        ORDER BY c.created_at ASC, c.id ASC
-       LIMIT $2`,
-      [postId, limit],
+       LIMIT $3`,
+      [postId, userId, limit],
     );
     return result.rows.map((row) => ({
       id: row.id,
