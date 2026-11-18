@@ -47,4 +47,4 @@ Las decisiones de proveedor, versiones, costos, límites de SDK y licencias se v
 
 ## Estado
 
-Documentación fundacional v1 en preparación. Este repositorio contiene especificaciones, no una aplicación implementada. Los porcentajes de desarrollo solo se actualizarán con entregables y pruebas verificables.
+La API NestJS y la primera base de la app móvil Expo/React Native están en desarrollo en esta rama. La app móvil aún no está lista para instalar ni para producción. La PWA de invitados, sincronización offline efectiva, autenticación UI completa y pruebas nativas siguen pendientes. Los porcentajes de desarrollo solo se actualizarán con entregables y pruebas verificables.
