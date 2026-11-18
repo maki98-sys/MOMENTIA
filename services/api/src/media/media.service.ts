@@ -25,11 +25,11 @@ export class MediaService {
   async createUpload(userId: string, idempotencyKey: string, input: CreateMediaUploadInput) {
     validateInput(input);
     const existing = await this.database.query<{
-      id: string; media_asset_id: string; size_bytes: string; checksum_sha256: string;
-      mime_type_detected: string; storage_key_original: string; state: string;
+      id: string; media_asset_id: string; size_bytes: string; checksum_sha256_declared: string;
+      mime_type_declared: string; storage_key_original: string; state: string;
     }>(
-      `SELECT u.id, u.media_asset_id, m.size_bytes, m.checksum_sha256,
-              u.state, m.mime_type_detected, m.storage_key_original
+      `SELECT u.id, u.media_asset_id, m.size_bytes, m.checksum_sha256_declared,
+              u.state, m.mime_type_declared, m.storage_key_original
        FROM media_uploads u JOIN media_assets m ON m.id = u.media_asset_id
        WHERE u.uploader_id = $1 AND u.idempotency_key = $2`,
       [userId, idempotencyKey],
@@ -37,8 +37,8 @@ export class MediaService {
     if (existing.rowCount) {
       const row = existing.rows[0];
       if (Number(row.size_bytes) !== input.sizeBytes
-        || row.checksum_sha256.trim() !== input.checksumSha256
-        || row.mime_type_detected !== input.contentType) {
+        || row.checksum_sha256_declared.trim() !== input.checksumSha256
+        || row.mime_type_declared !== input.contentType) {
         throw new ConflictException('Idempotency key was already used with different upload metadata.');
       }
       if (row.state !== 'created' && row.state !== 'uploading') {
@@ -59,9 +59,10 @@ export class MediaService {
     await this.database.transaction(async (client) => {
       await client.query(
         `INSERT INTO media_assets
-          (id, owner_id, storage_key_original, mime_type_detected, size_bytes, checksum_sha256, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
-        [mediaAssetId, userId, storageKey, input.contentType, input.sizeBytes, input.checksumSha256],
+          (id, owner_id, storage_key_original, mime_type_detected, mime_type_declared,
+           size_bytes, checksum_sha256, checksum_sha256_declared, status)
+         VALUES ($1, $2, $3, 'application/octet-stream', $4, $5, $6, $7, 'pending')`,
+        [mediaAssetId, userId, storageKey, input.contentType, input.sizeBytes, '0'.repeat(64), input.checksumSha256],
       );
       await client.query(
         `INSERT INTO media_uploads
@@ -79,10 +80,10 @@ export class MediaService {
   async completeUpload(userId: string, uploadId: string) {
     const result = await this.database.query<{
       upload_id: string; media_asset_id: string; state: string; storage_key_original: string;
-      size_bytes: string; mime_type_detected: string;
+      size_bytes: string; mime_type_declared: string;
     }>(
       `SELECT u.id AS upload_id, u.media_asset_id, u.state, m.storage_key_original,
-              m.size_bytes, m.mime_type_detected
+              m.size_bytes, m.mime_type_declared
        FROM media_uploads u JOIN media_assets m ON m.id = u.media_asset_id
        WHERE u.id = $1 AND u.uploader_id = $2 AND m.owner_id = $2 AND m.deleted_at IS NULL`,
       [uploadId, userId],
@@ -100,7 +101,7 @@ export class MediaService {
     if (object.size !== Number(row.size_bytes)) {
       throw new ConflictException('Uploaded file size does not match the declared size.');
     }
-    if (object.contentType && object.contentType.split(';')[0].trim().toLowerCase() !== row.mime_type_detected) {
+    if (object.contentType && object.contentType.split(';')[0].trim().toLowerCase() !== row.mime_type_declared) {
       throw new ConflictException('Uploaded file content type does not match the declared type.');
     }
     await this.database.transaction(async (client) => {
