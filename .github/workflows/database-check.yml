@@ -41,7 +41,7 @@ jobs:
       - name: Verify migration runner is idempotent
         run: bash database/scripts/migrate.sh
       - name: Verify migration ledger
-        run: test "$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM schema_migrations WHERE version IN ('0001_initial_schema','0002_space_integrity_and_event_albums','0003_platform_operations_and_ownership','0004_media_declared_metadata','0005_media_processing_queue')")" = "5"
+        run: test "$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM schema_migrations WHERE version IN ('0001_initial_schema','0002_space_integrity_and_event_albums','0003_platform_operations_and_ownership','0004_media_declared_metadata','0005_media_processing_queue','0006_timeline_media_uniqueness')")" = "6"
       - name: Run integrity checks
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
       - name: Load synthetic development data
