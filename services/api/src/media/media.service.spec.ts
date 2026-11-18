@@ -114,6 +114,10 @@ describe('MediaService', () => {
       expect.stringContaining('mime_type_detected = $2'),
       ['asset-1', 'image/png', checksum, 'user-1'],
     );
+    expect(transactionClient.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO media_processing_jobs'),
+      ['asset-1'],
+    );
   });
 
   it('quarantines content when the bytes do not match the declared checksum', async () => {
