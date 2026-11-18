@@ -84,6 +84,19 @@ export class AudioService {
     });
   }
 
+  async heartbeat(userId: string, sessionId: string) {
+    this.id(sessionId, 'session id');
+    const r = await this.db.query(`UPDATE audio_participants p
+      SET last_heartbeat_at=now()
+      FROM audio_sessions s
+      JOIN space_memberships sm ON sm.space_id=s.space_id AND sm.user_id=$2 AND sm.state='active'
+      WHERE p.session_id=s.id AND p.session_id=$1 AND p.user_id=$2
+        AND p.left_at IS NULL AND s.state IN ('created','playing','paused')
+      RETURNING p.session_id,p.last_heartbeat_at`, [sessionId,userId]);
+    if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
+    return { sessionId: r.rows[0].session_id, heartbeatAt: r.rows[0].last_heartbeat_at };
+  }
+
   async leave(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
     const r = await this.db.query(`UPDATE audio_participants SET left_at=now()
