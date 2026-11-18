@@ -11,18 +11,19 @@ const MAX_OUTPUT_BYTES = 25 * 1024 * 1024;
 const LEASE_MINUTES = 10;
 const POLL_INTERVAL_MS = 5_000;
 
-interface ClaimedJob {
+type ClaimedJob = {
   id: string;
   media_asset_id: string;
   attempts: number;
-}
+  max_attempts: number;
+};
 
-interface SourceAsset {
+type SourceAsset = {
   id: string;
   storage_key_original: string;
   size_bytes: string;
   status: string;
-}
+};
 
 interface ProcessedVariant {
   type: 'thumbnail' | 'preview' | 'display';
@@ -79,6 +80,7 @@ export class MediaProcessingWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async claimNextJob(): Promise<ClaimedJob | null> {
+    await this.failExhaustedLeases();
     const result = await this.database.query<ClaimedJob>(
       `WITH candidate AS (
          SELECT id
@@ -97,14 +99,11 @@ export class MediaProcessingWorker implements OnModuleInit, OnModuleDestroy {
            locked_at = now(), locked_by = $1, updated_at = now()
        FROM candidate
        WHERE job.id = candidate.id
-       RETURNING job.id, job.media_asset_id, job.attempts`,
+       RETURNING job.id, job.media_asset_id, job.attempts, job.max_attempts`,
       [this.workerId, LEASE_MINUTES],
     );
 
-    if (!result.rowCount) {
-      await this.failExhaustedLeases();
-      return null;
-    }
+    if (!result.rowCount) return null;
 
     const job = result.rows[0];
     await this.database.transaction(async (client) => {
@@ -265,7 +264,7 @@ export class MediaProcessingWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Media asset ${asset.id} processed with three sanitized variants.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'UNKNOWN';
-      const terminal = job.attempts >= 5;
+      const terminal = job.attempts >= job.max_attempts;
       await this.database.transaction(async (client) => {
         await client.query(
           `UPDATE media_processing_jobs
