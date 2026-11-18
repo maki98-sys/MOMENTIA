@@ -50,3 +50,44 @@ El módulo `AudioModule` está registrado en NestJS y protegido por `OidcBearerG
 - El endpoint no incrementa `server_version`: un ping de presencia no es un cambio de reproducción ni debe invalidar comandos optimistas de playback.
 - Si el usuario ya salió, fue retirado del espacio o la sesión terminó, responde como participación no encontrada.
 - Este endpoint permite establecer presencia básica; no reemplaza WebSockets, detección automática de desconexión ni sincronización audiovisual en tiempo real.
+
+
+## Canal en tiempo real (Socket.IO)
+
+Namespace: `/audio`, transporte WebSocket. El servidor solo acepta el transporte `websocket`; no habilita polling como fallback.
+
+### Autenticación y conexión
+
+El cliente entrega el access token OIDC en el handshake autenticado de Socket.IO:
+
+```ts
+const socket = io(`${API_URL}/audio`, {
+  transports: ['websocket'],
+  auth: { accessToken },
+});
+```
+
+El gateway verifica firma, issuer, audience y expiración mediante el mismo verificador OIDC que protege la API. El token no debe enviarse en query strings ni registrarse en logs. Las conexiones sin token válido se cierran.
+
+### Eventos cliente → servidor
+
+- `audio:join` con `{ sessionId }`: comprueba membresía consultando la sesión y sus permisos, une el socket a la sala privada y emite `audio:snapshot`.
+- `audio:leave`: abandona la sala actual.
+- `audio:heartbeat`: renueva la presencia activa; requiere estar dentro de una sesión.
+
+### Eventos servidor → cliente
+
+- `audio:snapshot`: estado inicial, cola y participantes.
+- `audio:participant:joined` y `audio:participant:left`: snapshot actualizado tras cambios REST.
+- `audio:queue:updated` y `audio:queue:vote-updated`: snapshot actualizado de cola.
+- `audio:playback:updated`: snapshot actualizado de reproducción.
+- `audio:joined`, `audio:left`, `audio:heartbeat:ack` y `audio:error`: respuestas de control.
+
+El gateway autoriza cada unión de sala en servidor; el cliente no puede elegir una sala arbitraria ni publicar comandos de reproducción directamente por WebSocket. Las mutaciones continúan pasando por endpoints REST que aplican validaciones, permisos, transacciones y control de `expectedVersion`; después el servidor difunde el snapshot actualizado.
+
+### Límites pendientes
+
+- El heartbeat del socket debe enviarse periódicamente por el cliente; el gateway no inventa una reproducción ni mantiene audio.
+- La desconexión de red aún no marca automáticamente la participación como salida ni hace limpieza por timeout.
+- No hay Redis adapter ni fan-out multi-instancia: este gateway funciona en una instancia API. Antes de escalar horizontalmente se necesita un adapter compartido y una estrategia de presencia distribuida.
+- No se transmite audio ni se sincroniza la posición del reproductor del proveedor. Cada cliente necesitará SDK y autorización del proveedor musical compatible.
