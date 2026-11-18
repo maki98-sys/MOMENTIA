@@ -63,6 +63,20 @@ describe('MediaService', () => {
     expect(database.transaction).not.toHaveBeenCalled();
   });
 
+  it('rejects completion when storage omits the Content-Type header', async () => {
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        upload_id: 'upload-1', media_asset_id: 'asset-1', state: 'created',
+        storage_key_original: 'original/user-1/asset-1', size_bytes: '1024',
+        mime_type_declared: 'image/jpeg',
+      }],
+    });
+    (storage.headObject as jest.Mock).mockResolvedValue({ size: 1024, contentType: null });
+    await expect(service.completeUpload('user-1', 'upload-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects completion when storage reports a different byte size', async () => {
     (database.query as jest.Mock).mockResolvedValueOnce({
       rowCount: 1,
