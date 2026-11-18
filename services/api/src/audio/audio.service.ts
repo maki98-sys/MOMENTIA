@@ -34,7 +34,7 @@ export class AudioService {
         RETURNING id,space_id,host_user_id,state,source_provider,position_ms,playback_state,server_version,created_at,updated_at`, [spaceId,userId,provider]);
       const session = result.rows[0];
       await client.query(`INSERT INTO audio_participants(session_id,user_id,role,last_heartbeat_at)
-        VALUES($1,$2,'host',now()) ON CONFLICT(session_id,user_id,device_id)
+        VALUES($1,$2,'host',now()) ON CONFLICT(session_id,user_id) WHERE device_id IS NULL
         DO UPDATE SET left_at=NULL,role='host',last_heartbeat_at=now()`, [session.id,userId]);
       return session;
     });
@@ -77,7 +77,7 @@ export class AudioService {
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
       if (s.rows[0].state === 'ended') throw new ConflictException('Audio session has ended.');
       await client.query(`INSERT INTO audio_participants(session_id,user_id,role,last_heartbeat_at)
-        VALUES($1,$2,'listener',now()) ON CONFLICT(session_id,user_id,device_id)
+        VALUES($1,$2,'listener',now()) ON CONFLICT(session_id,user_id) WHERE device_id IS NULL
         DO UPDATE SET left_at=NULL,last_heartbeat_at=now()`, [sessionId,userId]);
       await client.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
       return { joined: true, sessionId };
