@@ -11,6 +11,7 @@ import { MembershipsModule } from './memberships/memberships.module';
 import { SocialModule } from './social/social.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { AlbumsModule } from './albums/albums.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AlbumsModule } from './albums/albums.module';
     SocialModule,
     TimelineModule,
     AlbumsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}
