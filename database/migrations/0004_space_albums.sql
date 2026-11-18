@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE space_albums (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  space_id uuid NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -27,3 +29,6 @@ CREATE TABLE space_album_items (
 );
 CREATE INDEX space_album_items_album_time_idx ON space_album_items(album_id,occurred_at DESC,id);
 CREATE INDEX space_album_items_media_idx ON space_album_items(media_asset_id);
+
+INSERT INTO schema_migrations(version) VALUES ('0004_space_albums');
+COMMIT;
