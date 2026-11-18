@@ -87,4 +87,16 @@ describe('SpacesService', () => {
     expect(h.clientQuery).toHaveBeenCalledTimes(1);
   });
 
+
+  it('does not let an admin issue an invitation that grants admin role', async () => {
+    const h = harness();
+    h.clientQuery.mockResolvedValueOnce({
+      rows: [{ type: 'EVENT', status: 'active', role: 'admin' }],
+    });
+    await expect(h.service.createInvitation('admin-1', 'space-1', {
+      role: 'admin', expiresInHours: 72, maxUses: 1,
+    })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.clientQuery).toHaveBeenCalledTimes(1);
+  });
+
 });
