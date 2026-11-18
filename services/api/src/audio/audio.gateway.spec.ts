@@ -1,3 +1,6 @@
+jest.mock('../auth/oidc-token-verifier.service', () => ({ OidcTokenVerifier: class OidcTokenVerifier {} }));
+jest.mock('../auth/oidc-identity.service', () => ({ OidcIdentityService: class OidcIdentityService {} }));
+
 import { AudioGateway } from './audio.gateway';
 import { OidcTokenVerifier } from '../auth/oidc-token-verifier.service';
 import { OidcIdentityService } from '../auth/oidc-identity.service';
