@@ -143,7 +143,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 | Círculos privados | Espacios CIRCLE y permisos base; UX y funciones completas pendientes | No recalculado |
 | Red social, feed e interacciones | Posts, feed, comentarios y reacciones API; follows/discovery/moderación pendientes | No recalculado |
 | Cámara, galería, EXIF y multimedia | Inicio/confirmación de carga privada en fase inicial; validación real, derivados y app pendientes | No recalculado |
-| Timeline y recuerdos | Esquema y entradas parciales desde publicaciones en espacios; consulta y recuerdos pendientes | No recalculado |
+| Timeline y recuerdos | API de lectura cursor por espacio; integra posts visibles y fotos listas de álbumes de eventos; diarios/recuerdos avanzados pendientes | No recalculado |
 | Offline y sincronización | Diseño documentado; implementación cliente y cola pendientes | No recalculado |
 | Social Audio | Esquema de datos; backend, proveedor autorizado y cliente pendientes | No recalculado |
 | Notificaciones | Esquema de datos; entrega y preferencias pendientes | No recalculado |
@@ -251,13 +251,13 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 - El proveedor OIDC concreto no está seleccionado ni configurado.
 - No hay cliente móvil ni PWA implementados.
 - Verificación de magic bytes y SHA-256, cola durable y worker Sharp con re-encode WebP, eliminación EXIF/GPS y variantes thumbnail/preview/display están implementados en código. También existe endpoint de entrega con URL firmada de 60 segundos y autorización por propietario, grants, álbum de evento y audiencia de publicación. Faltan pruebas con bucket real, integración automática con timeline, antivirus y limpieza operativa de objetos huérfanos.
-- Faltan follows/discovery, moderación operativa, timeline completa, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
+- Faltan follows/discovery, moderación operativa, recuerdos/diario avanzado, notificaciones, Social Audio, offline/sync, cuotas y pruebas end-to-end.
 - No se ha conectado un bucket real ni desplegado producción.
 
 ### Evidencia CI
 - API quality run #181 (commit `6d5dc1c`): lint, TypeScript, pruebas unitarias (worker Sharp, variantes sin EXIF y autorización de URL) y build aprobados.
-- database-check run #83 (commit `6d5dc1c`): cinco migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
-- api-check run #203 (commit `6d5dc1c`): migraciones, instalación de dependencias y typecheck aprobados; pruebas unitarias y build/Docker todavía en ejecución al actualizar este estado.
+- database-check run #83 (commit `6d5dc1c`): cinco migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados. La migración 0006 de unicidad de timeline se añadió después y su nueva verificación está en curso.
+- api-check run #204 (commit `903c085`): nueva ejecución para el código de entrega de medios; migraciones, instalación, typecheck, tests y build se verifican antes de Docker.
 
 ## 10. Registro adicional — rama feature/profile-api-v1
 
@@ -266,3 +266,5 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; rama feature/profile-api-v1 | API quality verde; api-check base verde | Implementado parcialmente |
 | 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia, verificación server-side de MIME/hash y cuarentena de archivos no coincidentes | PR #1; rama `feature/profile-api-v1` | API quality y database-check verdes en commit `5855184`; api-check en ejecución | Verificado en CI; sin bucket real |
 | 2026-11-18 | Migración 0005: cola durable de procesamiento; worker Sharp con leases, reintentos, límites de píxeles, WebP saneado y tres variantes | PR #1; rama `feature/profile-api-v1` | API quality run #181 y database-check run #83 aprobados; api-check run #203 en ejecución | Implementado y validado por API quality y database-check; api-check completo pendiente |
+
+| 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | Pruebas unitarias de servicio y álbum; migración 0006 con verificación CI pendiente | Implementado; CI pendiente |
