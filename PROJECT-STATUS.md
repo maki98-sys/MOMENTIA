@@ -301,3 +301,14 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - El CI de base de datos #44238922792 falló porque el workflow esperaba exactamente seis migraciones aunque ya existían siete. Se corrigió el chequeo para calcular el total desde los archivos SQL; #44239290972 está pendiente.
 - La documentación del contrato y límites está en `docs/07-social-audio-api.md`.
 - Social Audio aún no transmite música ni sincroniza audio real entre teléfonos: faltan WebSocket, heartbeat, cliente móvil y SDK/proveedor con derechos de reproducción.
+
+
+## 2026-11-18 — Actualización de verificación y presencia Social Audio
+
+- CI de base de datos #44239437698: **success** en commit `4a089cbc718d30f4be7253aae2b17d365ea00d68`. Pasaron migraciones, idempotencia, ledger, integridad, seeds, planes de consulta, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE.
+- CI API #44239437933: **success** en el mismo commit. Pasaron migraciones, typecheck, unit tests, build y contenedor Docker de producción.
+- Se corrigió el test de backup/restore para comparar el ledger con el número real de archivos SQL, en lugar de fijarlo a seis.
+- Social Audio: agregado `POST /audio-sessions/:sessionId/heartbeat`. Solo renueva presencia cuando la sesión está activa, el participante no ha salido y la membresía del espacio sigue activa. No incrementa la versión de playback.
+- Se añadieron pruebas unitarias de heartbeat válido y participación inactiva.
+- CI API #44239760139 está **in_progress** para el commit `9cec1022e5f1aada7060133fb854271f6c125eea`; todavía no se contabiliza como aprobado.
+- La presencia sigue siendo REST. WebSockets, reconexión automática, timeout/limpieza de participantes y sincronización real entre clientes siguen pendientes. La API no transporta audio ni inicia reproducción musical en dispositivos.
