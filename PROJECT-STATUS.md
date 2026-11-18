@@ -51,7 +51,7 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 **Avance verificado actual: 90% de la fase (7.2% del proyecto).** Desglose ponderado y conservador:
 - Modelo relacional y restricciones: 95% (esquema base, tablas operativas y reglas principales implementadas; falta revisión final de cobertura).
-- Migraciones y seeds: 95% (tres migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
+- Migraciones y seeds: 95% (cuatro migraciones aplicadas, runner con ledger e idempotencia verificados; seeds sintéticos pasan en CI).
 - Índices, consultas y paginación: 85% (índices y consultas representativas con EXPLAIN verificados; smoke test sintético de 10.000 entradas y consulta latest-50 completado; falta carga representativa prolongada y ajuste fino).
 - Persistencia local SQLite: 85% (esquema y smoke tests pasan; falta política de cifrado/versionado y uso desde la app).
 - Retención, exportación y borrado: 70% (tablas y estados de solicitud implementados; los plazos se mantienen desactivados hasta aprobación legal y la ejecución corresponde al backend).
@@ -213,7 +213,7 @@ Una tarea se contabiliza como terminada únicamente si:
 | 2026-11-17 | Inventario de 41 tablas servidor y 10 tablas locales | database/SCHEMA.md | Revisión del esquema y límites de responsabilidad | Documentado |
 | 2026-11-17 | Casos negativos de subtipo incompatible y álbum en CIRCLE | GitHub Actions run #32: success | Las dos restricciones rechazan los registros inválidos | Verificado |
 | 2026-11-17 | Prueba sintética de 10.000 entradas de cronología y consulta indexada | GitHub Actions run #35: success | Conteo 10.000, índice `timeline_entries_space_time_idx`, consulta latest-50 en 0.023 ms; transacción revertida | Verificado |
-| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | GitHub Actions run #36: success | Rechaza columnas con nombres token/secret/password/credential/authorization | Verificado |\n| 2026-11-18 | Bootstrap NestJS aceptado: migraciones, typecheck, unit tests, build y Docker | GitHub Actions run #7, commit `d33dfa4` | Todos los pasos completados correctamente | Verificado |\n| 2026-11-18 | ADR-001: estrategia de identidad y autenticación propuesta, pendiente de decisión | `docs/architecture/ADR-001-identity-and-authentication.md` | Revisión de tablas users/auth_identities/auth_sessions y límites de seguridad | Propuesta; no implementada |
+| 2026-11-17 | Auditoría automática de columnas SQLite para evitar secretos de autenticación | GitHub Actions run #36: success | Rechaza columnas con nombres token/secret/password/credential/authorization | Verificado |\n| 2026-11-18 | Bootstrap NestJS aceptado: migraciones, typecheck, unit tests, build y Docker | GitHub Actions run #144 (API check) y #45 (database-check, en curso en esta revisión) | Todos los pasos completados correctamente | Verificado |\n| 2026-11-18 | ADR-001: estrategia de identidad y autenticación propuesta, pendiente de decisión | `docs/architecture/ADR-001-identity-and-authentication.md` | Revisión de tablas users/auth_identities/auth_sessions y límites de seguridad | Propuesta; no implementada |
 
 ## 8. Cierre de Fase 1 y siguiente ejecución
 
@@ -263,4 +263,4 @@ La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit 
 | Fecha | Entrega | Commit/PR | Pruebas | Estado |
 |---|---|---|---|---|
 | 2026-11-18 | API de perfil, espacios, membresías, invitaciones, álbumes de eventos, publicaciones, feed, comentarios y reacciones | PR #1; commits de rama feature/profile-api-v1 | API quality verde y api-check verde en el commit base previo a multimedia | Implementado parcialmente |
-| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia y confirmación HEAD | PR #1; commit `e734efe566a4c0f6f62dfb95667a2b74b578aaa5` | API quality: lint, TypeScript, unit tests y build verdes; api-check aún construyendo contenedor al registrar | Implementado en fase inicial; no listo para producción |
+| 2026-11-18 | Inicio de carga privada S3-compatible, URL PUT firmada 10 min, idempotencia y confirmación HEAD; separación de metadatos declarados y verificados | PR #1; commit `1c3e19b18ee4808613be3f8c341c113f49ef64c9` | API quality verde; api-check: migraciones, TypeScript, unit tests y build aprobados; contenedor en verificación. database-check detectó una aserción de conteo obsoleta (esperaba 3); workflow actualizado para exigir las 4 migraciones | Implementado en fase inicial; no listo para producción |
