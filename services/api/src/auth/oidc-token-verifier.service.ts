@@ -1,6 +1,6 @@
 import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
+import { createRemoteJWKSet, jwtVerify, errors, JWTPayload } from 'jose';
 import type { OidcPrincipal } from './auth.types';
 
 @Injectable()
@@ -43,7 +43,13 @@ export class OidcTokenVerifier {
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
-      throw new UnauthorizedException('Bearer token is invalid or expired.');
+      // JOSE validation failures mean the presented token cannot be trusted.
+      if (error instanceof errors.JOSEError) {
+        throw new UnauthorizedException('Bearer token is invalid or expired.');
+      }
+      // Network, timeout, or JWKS availability failures are infrastructure errors,
+      // not evidence that the user's credentials are invalid.
+      throw new ServiceUnavailableException('OIDC verification service is temporarily unavailable.');
     }
   }
 }
