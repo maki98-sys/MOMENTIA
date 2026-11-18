@@ -23,7 +23,7 @@ describe('MediaService', () => {
     jest.clearAllMocks();
     (database.query as jest.Mock).mockResolvedValue({ rowCount: 0, rows: [] });
     (database.transaction as jest.Mock).mockImplementation(
-      async (operation: (client: typeof client) => Promise<unknown>) => operation(client),
+      async (operation: (txClient: typeof transactionClient) => Promise<unknown>) => operation(transactionClient),
     );
     (storage.presignPut as jest.Mock).mockResolvedValue('https://storage.example/signed');
   });
