@@ -1,3 +1,9 @@
+jest.mock('jose', () => ({
+  createRemoteJWKSet: jest.fn(),
+  jwtVerify: jest.fn(),
+  errors: { JOSEError: class JOSEError extends Error {} },
+}));
+
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { OidcBearerGuard } from './oidc-bearer.guard';
 import { OidcTokenVerifier } from './oidc-token-verifier.service';
