@@ -15,7 +15,7 @@ Las cuatro primeras variables deben configurarse juntas. No incluir credenciales
 
 1. El cliente autenticado solicita `POST /api/v1/media/uploads` con `Idempotency-Key`, nombre de archivo, MIME declarado, tamaño y SHA-256 declarado.
 2. El servidor valida campos, permite JPEG/PNG/WebP y limita el archivo a 25 MiB.
-3. La API crea registros de propietario y carga y genera una URL PUT firmada de 10 minutos para una clave opaca.
+3. La API crea registros de propietario y carga, mantiene el MIME y checksum declarados en columnas separadas de los valores verificados, y genera una URL PUT firmada de 10 minutos para una clave opaca.
 4. El cliente envía los bytes directamente al bucket usando exactamente el encabezado Content-Type devuelto.
 5. El cliente llama `POST /api/v1/media/uploads/:uploadId/complete`.
 6. El servidor realiza HEAD al objeto privado y compara tamaño y Content-Type antes de marcar la transferencia como recibida.
@@ -24,9 +24,11 @@ Las URLs firmadas son temporales. El endpoint de finalización exige que la carg
 
 ## Limitaciones explícitas de esta fase
 
-- El MIME y SHA-256 enviados al iniciar la carga son declaraciones del cliente. HEAD confirma tamaño y Content-Type almacenado, pero **no inspecciona magic bytes ni recalcula el hash**.
+- El MIME y SHA-256 enviados al iniciar la carga son declaraciones del cliente. HEAD confirma tamaño y Content-Type almacenado, pero **no inspecciona magic bytes ni recalcula el hash**. Los campos verificados permanecen sin confirmar hasta que un worker valide el contenido.
 - El estado posterior a la transferencia queda pendiente de validación/procesamiento. No se marca como `ready`, no genera miniaturas ni publica en timeline.
 - Aún faltan worker de procesamiento, decodificación segura, eliminación de EXIF/GPS, variantes, antivirus/aislamiento, reanudación multipart, limpieza de cargas abandonadas, cuotas y pruebas end-to-end con proveedor real.
 - El servicio no se activa hasta configurar un bucket privado y credenciales de mínimo privilegio.
 - Las URL firmadas se entregan solo a usuarios autenticados; la entrega/descarga de medios todavía requiere un endpoint de autorización propio.
 
+
+La migración `0004_media_declared_metadata.sql` separa explícitamente `mime_type_declared`/`checksum_sha256_declared` de `mime_type_detected`/`checksum_sha256`; al iniciar la carga, el MIME detectado queda como `application/octet-stream` y el hash verificado como marcador no válido para publicación hasta el procesamiento.
