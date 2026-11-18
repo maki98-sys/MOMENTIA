@@ -13,7 +13,7 @@
 
 **Cuenta (parcialmente implementada):** GET /me/profile y PUT /me/profile requieren bearer token válido y operan exclusivamente sobre el usuario autenticado. PUT acepta `displayName` (1–80 caracteres), `bio` (hasta 500 caracteres o null) y `visibility` (`private`, `followers` o `public`; predeterminado `private`). El GET devuelve `profile: null` si el usuario todavía no ha creado su perfil. Registro/login/refresh/logout y sesiones siguen pendientes.
 
-**Espacios:** POST /spaces; GET /spaces; GET/PATCH /spaces/{spaceId}; GET /spaces/{spaceId}/members; POST /spaces/{spaceId}/invitations; POST /invitations/accept.
+**Espacios (implementación inicial):** POST /spaces crea EVENT, CIRCLE o COUPLE; GET /spaces lista espacios activos del usuario; GET /spaces/{spaceId} consulta detalles solo si es miembro activo; POST /spaces/{spaceId}/invitations crea invitaciones (solo owner/admin, token aleatorio mostrado una vez y almacenado como SHA-256); POST /invitations/accept consume invitación válida bajo bloqueo transaccional. COUPLE requiere un segundo usuario activo y crea exactamente dos membresías en la misma transacción. Los endpoints de actualización, miembros y gestión de roles siguen pendientes.
 
 **Eventos/media:** POST /spaces/{spaceId}/albums; GET /spaces/{spaceId}/timeline; POST /spaces/{spaceId}/media; GET /media/{mediaId}; POST /media/{mediaId}/download-grant.
 
@@ -23,7 +23,7 @@
 
 **Sync/uploads:** POST /sync/operations; GET /sync/changes?cursor=...; POST /uploads; POST /uploads/{uploadId}/complete|abort.
 
-Los endpoints marcados como implementados existen en código; el resto sigue siendo contrato de diseño y no debe considerarse disponible. Cada nuevo endpoint debe añadir DTO/validación, permisos, pruebas y documentación antes de marcarse como implementado.
+Los endpoints marcados como implementados existen en código; el resto sigue siendo contrato de diseño y no debe considerarse disponible. La aceptación de invitaciones comprueba expiración, revocación, límite de usos, estado del espacio y membresías expulsadas; los tokens en claro nunca se guardan. Cada nuevo endpoint debe añadir DTO/validación, permisos, pruebas y documentación antes de marcarse como implementado.
 
 ## Autorización por petición
 Comprobar identidad, sesión, estado de cuenta, pertenencia activa, rol, permiso, audiencia, bloqueos, moderación y estado del recurso. Proteger contra BOLA/IDOR. Nunca confiar en controles de interfaz.
