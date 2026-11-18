@@ -258,7 +258,7 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 ### Evidencia CI
 - API quality run #238 (commit `b0f5f61`): lint, TypeScript, pruebas unitarias de media/timeline/social y build aprobados.
 - database-check run #114 (commit `b0f5f61`): seis migraciones, idempotencia, ledger, constraints, seeds, EXPLAIN, smoke test de 10.000 entradas, backup/restore, SQLite y concurrencia COUPLE aprobados.
-- api-check run #250 (commit `b0f5f61`): migraciones aplicadas; instalación, typecheck, pruebas unitarias, build y Docker en ejecución al actualizar este estado.
+- api-check run #252 (commit `519e6cd`): nueva verificación completa de API y Docker en ejecución al actualizar este estado.
 
 ## 10. Registro adicional — rama feature/profile-api-v1
 
@@ -270,6 +270,6 @@ La Fase 1 sigue en revisión final. El bootstrap del backend ya se ejecutó en p
 
 | 2026-11-18 | Timeline por espacio con paginación cursor estable, filtros de audiencia/bloqueos y sincronización de entradas desde álbumes de eventos | PR #1; rama `feature/profile-api-v1` | API quality run #203 y database-check run #97 aprobados; api-check run #222 con Docker en curso | Implementado y validado por los tres controles CI |
 
-| 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #250 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
+| 2026-11-18 | API de relaciones sociales: follow request, aceptación/rechazo, unfollow, bloqueo y desbloqueo con locks transaccionales | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #252 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
 
-| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #250 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
+| 2026-11-18 | Listados paginados de following, followers y solicitudes entrantes con cursor y filtro de bloqueos | PR #1; rama `feature/profile-api-v1` | API quality run #238 y database-check run #114 aprobados; api-check run #252 en ejecución | Implementado; API quality y database-check aprobados, api-check en ejecución |
