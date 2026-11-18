@@ -10,6 +10,7 @@ import { InvitationsModule } from './invitations/invitations.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { SocialModule } from './social/social.module';
 import { TimelineModule } from './timeline/timeline.module';
+import { AlbumsModule } from './albums/albums.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TimelineModule } from './timeline/timeline.module';
     MembershipsModule,
     SocialModule,
     TimelineModule,
+    AlbumsModule,
   ],
 })
 export class AppModule {}
