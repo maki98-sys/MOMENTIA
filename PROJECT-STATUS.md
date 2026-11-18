@@ -3,7 +3,7 @@
 **Versión:** 1.1  
 **Repositorio:** `maki98-sys/MOMENTIA`  
 **Rama de trabajo:** `docs/arquitectura-y-alcance-v1`  
-**Estado:** base de datos en revisión final; bootstrap del backend implementado y aceptado por CI; módulos de producto aún no iniciados.
+**Estado:** base de datos en revisión final; backend con varios dominios API parciales; módulo de notificaciones añadido en la rama de trabajo y CI pendiente; frontend móvil/PWA aún no iniciado.
 
 > Este archivo es la fuente única del avance. Los porcentajes se actualizan solo cuando existe código, pruebas y evidencia verificable. Documentar una función no significa que esté programada.
 
@@ -136,20 +136,20 @@ Los pesos de esta tabla se usan para distribuir el avance dentro de cada fase; n
 
 | Módulo | Estado de implementación | Avance |
 |---|---|---:|
-| Cuenta, identidad y perfiles | No iniciado | 0% |
-| Espacios, roles e invitaciones QR/enlace | No iniciado | 0% |
-| Eventos y álbumes colaborativos | No iniciado | 0% |
-| Parejas y diario privado | No iniciado | 0% |
-| Círculos privados | No iniciado | 0% |
-| Red social, feed e interacciones | No iniciado | 0% |
-| Cámara, galería, EXIF y multimedia | No iniciado | 0% |
-| Timeline y recuerdos | No iniciado | 0% |
-| Offline y sincronización | No iniciado | 0% |
-| Social Audio | No iniciado | 0% |
-| Notificaciones | No iniciado | 0% |
+| Cuenta, identidad y perfiles | API parcial: OIDC, perfil y cuenta | En verificación |
+| Espacios, roles e invitaciones QR/enlace | API parcial: espacios, membresías e invitaciones | En verificación |
+| Eventos y álbumes colaborativos | API parcial: álbumes y elementos; falta experiencia móvil | En verificación |
+| Parejas y diario privado | API parcial: diario cifrado; falta flujo de consentimiento y cliente | En verificación |
+| Círculos privados | Base de datos y espacios; falta API específica y cliente | Pendiente |
+| Red social, feed e interacciones | API parcial: publicaciones, comentarios, reacciones y feed | En verificación |
+| Cámara, galería, EXIF y multimedia | API parcial: carga y procesamiento; falta captura móvil | En verificación |
+| Timeline y recuerdos | API parcial: consultas y escritura de timeline | En verificación |
+| Offline y sincronización | Esquema SQLite y outbox; falta motor móvil | Pendiente |
+| Social Audio | Esquema de sesiones/cola/participantes; falta backend de sesión y fuente licenciada | Pendiente |
+| Notificaciones | API de bandeja, lectura individual/masiva y paginación en CI | En verificación |
 | PWA de invitados | No iniciado | 0% |
-| Moderación y administración | No iniciado | 0% |
-| Monetización y cuotas | No iniciado | 0% |
+| Moderación y administración | Esquema de datos; falta API y flujos | Pendiente |
+| Monetización y cuotas | Esquema de datos; faltan billing core y proveedores | Pendiente |
 
 ## 5. Estructura de carpetas objetivo
 
@@ -256,3 +256,31 @@ La aceptación del bootstrap quedó verificada en GitHub Actions run #7 (commit 
 - Added configuration tests and bearer-guard unit tests; AuthModule is registered but guard is not global and no private product routes are exposed.
 - Added implementation boundary and integration sequence in `services/api/src/auth/README.md`.
 - CI run #44210416238 was queued at the time of this update; do not count this work as accepted until CI is green. Account mapping, MOMENTIA sessions, refresh rotation, revocation and resource authorization remain unimplemented.
+
+
+## 10. Actualización de implementación — 2026-11-18
+
+Esta sección corrige el inventario inicial de módulos del apartado 4, que quedó desactualizado cuando avanzó la implementación backend.
+
+### Estado comprobado en la rama de trabajo
+- Repositorio: `maki98-sys/MOMENTIA`.
+- Rama: `docs/arquitectura-y-alcance-v1`.
+- La rama `main` no contiene todavía este desarrollo; no fusionar automáticamente.
+- La estructura contiene `services/api`, `database` y `docs`; no existe aún `apps/mobile`, `apps/guest-web` ni `packages`.
+- El backend incluye módulos NestJS para health, auth, profile, spaces, invitations, memberships, social, timeline, albums, media y couple-journal.
+- La base de datos contiene seis migraciones PostgreSQL y un esquema SQLite local de 10 tablas.
+- La API usa guard OIDC y resolución de identidad; la decisión final del proveedor de identidad sigue pendiente.
+- El módulo couple-journal almacena ciphertext y nonce, no texto plano; la gestión de claves y cifrado del lado cliente siguen pendientes.
+- El módulo de notificaciones se acaba de añadir: bandeja por usuario, filtro de no leídas, marcar una/ todas como leídas y cursor estable por fecha + UUID. Sus pruebas y CI están en ejecución; no se contabiliza como aceptado hasta que el workflow termine en verde.
+- Los últimos workflows de API y base de datos anteriores a esta entrega terminaron correctamente (API run #314 y database run #127).
+
+### Siguiente orden de trabajo
+1. Cerrar CI del módulo de notificaciones y corregir cualquier fallo.
+2. Actualizar y auditar contratos/autorización de los dominios existentes.
+3. Implementar backend de eventos/círculos y Social Audio con pruebas de permisos.
+4. Definir e implementar sincronización y notificaciones push.
+5. Crear la aplicación React Native/Expo Android+iOS y conectar contratos reales.
+6. Implementar SQLite cifrado, outbox, reintentos y sincronización incremental en el cliente.
+7. Construir PWA de invitados y completar pruebas end-to-end.
+
+No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y aceptar las pruebas de esta entrega.
