@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { MediaService } from './media.service';
 import { DatabaseService } from '../database/database.service';
@@ -14,6 +14,7 @@ describe('MediaService', () => {
     presignPut: jest.fn().mockResolvedValue('https://storage.example/signed'),
     headObject: jest.fn(),
     getObjectBytes: jest.fn(),
+    presignGet: jest.fn().mockResolvedValue('https://storage.example/private-read'),
   } as unknown as S3CompatibleStorageService;
   const service = new MediaService(database, storage);
   const input = {
@@ -138,6 +139,28 @@ describe('MediaService', () => {
       expect.stringContaining("status = 'quarantined'"),
       ['asset-2', 'user-1'],
     );
+  });
+
+  it('issues a short-lived URL only for an authorized ready variant', async () => {
+    (database.query as jest.Mock).mockResolvedValueOnce({
+      rowCount: 1, rows: [{ storage_key: 'processed/asset-1/thumbnail.webp' }],
+    });
+    const result = await service.getVariantUrl('user-1', 'asset-1', 'thumbnail');
+    expect(result).toMatchObject({
+      mediaAssetId: 'asset-1', variant: 'thumbnail',
+      url: 'https://storage.example/private-read', expiresInSeconds: 60,
+    });
+    expect(database.query).toHaveBeenCalledWith(expect.stringContaining('media_access_grants'), [
+      'asset-1', 'user-1', 'thumbnail',
+    ]);
+    expect(storage.presignGet).toHaveBeenCalledWith('processed/asset-1/thumbnail.webp', 60);
+  });
+
+  it('does not issue a signed URL when the viewer has no media access', async () => {
+    (database.query as jest.Mock).mockResolvedValueOnce({ rowCount: 0, rows: [] });
+    await expect(service.getVariantUrl('user-2', 'asset-1', 'original'))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.presignGet).not.toHaveBeenCalled();
   });
 
 });
