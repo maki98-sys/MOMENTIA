@@ -11,6 +11,7 @@ Todas requieren token Bearer OIDC válido.
 - `GET /api/v1/spaces`: espacios activos del usuario.
 - `POST /api/v1/spaces`: crear círculo (`CIRCLE`) o evento (`EVENT`) con nombre, visibilidad y metadatos iniciales.
 - `PATCH /api/v1/spaces/:spaceId/event`: actualiza nombre, fechas, zona horaria, modo de moderación y política de descargas; requiere rol owner/admin y registra auditoría.
+- `PATCH /api/v1/spaces/:spaceId/lifecycle`: el propietario puede archivar un espacio activo, reabrir uno archivado o cerrarlo definitivamente; las transiciones se validan y auditan.
 - `GET /api/v1/spaces/:spaceId`: detalle solo para miembros activos.
 - `GET /api/v1/spaces/:spaceId/members`: lista de miembros; requiere pertenencia activa.
 - `POST /api/v1/spaces/:spaceId/join-requests`: solicita ingreso a un círculo público/no listado configurado con aprobación.
@@ -50,7 +51,7 @@ Todas requieren token Bearer OIDC válido.
 
 ## Pendiente antes de producción
 
-- Recuperación del círculo si el propietario pierde acceso (proceso de soporte y verificación aún pendiente).
+- Recuperación del círculo si el propietario pierde acceso (proceso de soporte y verificación aún pendiente). Los espacios cerrados no se pueden reabrir mediante el endpoint de ciclo de vida.
 - Notificación al destinatario de invitaciones de pareja y entrega segura del enlace/token todavía requieren integración de notificaciones y cliente.
 - Solicitudes de ingreso y aprobación para círculos públicos/no listados con `join_policy = approval` (seleccionable al crear el círculo) ya implementadas en backend; falta notificación al solicitante y pruebas E2E.
 - Bloqueo, reportes, moderación y registro de auditoría de acciones.
