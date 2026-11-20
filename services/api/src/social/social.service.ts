@@ -39,7 +39,7 @@ export class SocialService {
          FOR SHARE OF u, p`,
         [actorId,targetId],
       );
-      if (!target.rowCount) throw new NotFoundException('User not found.');
+      if (!target.rowCount || target.rows[0].visibility === 'private') throw new NotFoundException('User not found.');
       const state = target.rows[0].visibility === 'public' ? 'accepted' : 'pending';
       const result = await client.query(
         `INSERT INTO user_relationships(requester_id,target_id,state)
