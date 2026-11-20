@@ -103,6 +103,9 @@ export class SpacesService {
       }
     }
     if(body.timezone===null) throw new BadRequestException('timezone cannot be null.');
+    if(body.startsAt!==undefined && body.endsAt!==undefined && body.startsAt!==null && body.endsAt!==null && Date.parse(String(body.endsAt))<Date.parse(String(body.startsAt))) {
+      throw new BadRequestException('endsAt cannot be earlier than startsAt.');
+    }
     if(body.moderationMode!==undefined && !['host','approval','community'].includes(String(body.moderationMode))) {
       throw new BadRequestException('moderationMode is invalid.');
     }
