@@ -95,7 +95,7 @@ describe('SpacesService', () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'space-1', type: 'CIRCLE' }] });
     await expect(service.listMine('user-1')).resolves.toEqual([{ id: 'space-1', type: 'CIRCLE' }]);
     expect(query.mock.calls[0][0]).toContain("sm.state = 'active'");
-    expect(query.mock.calls[0][0]).toContain("s.status = 'active'");
+    expect(query.mock.calls[0][0]).toContain("s.status IN ('active','archived')");
   });
 
   it('does not reveal spaces the user cannot access', async () => {
