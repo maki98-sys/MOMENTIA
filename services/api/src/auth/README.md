@@ -14,8 +14,8 @@ The API now has a provider-neutral OIDC JWT access-token verification foundation
 
 - Provider tenant/application registration and credentials.
 - Provider-specific mobile SDK / Authorization Code + PKCE callback.
-- Mapping external issuer + subject to `auth_identities` and canonical `users`.
-- Transactional account provisioning and safe account linking.
+- Provider tenant/application registration and credentials.
+- Provider-specific mobile SDK / Authorization Code + PKCE callback.
 - MOMENTIA access/refresh session issuance, hashed refresh-token persistence, rotation, reuse detection and revocation.
 - Device registration, logout, account-wide logout and session inventory.
 - Authorization policies for users, spaces, albums, posts, audio rooms and media.
