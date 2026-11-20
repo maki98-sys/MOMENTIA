@@ -13,6 +13,7 @@ import { TimelineModule } from './timeline/timeline.module';
 import { AlbumsModule } from './albums/albums.module';
 import { MediaModule } from './media/media.module';
 import { CoupleJournalModule } from './couple-journal/couple-journal.module';
+import { CoupleInvitationsModule } from './couple-invitations/couple-invitations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AudioModule } from './audio/audio.module';
 
@@ -36,6 +37,7 @@ import { AudioModule } from './audio/audio.module';
     AlbumsModule,
     MediaModule,
     CoupleJournalModule,
+    CoupleInvitationsModule,
     NotificationsModule,
     AudioModule,
   ],
