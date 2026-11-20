@@ -7,6 +7,8 @@ export class TimelineService {
 
   async list(userId:string,spaceId:string,cursor?:string,limit=30) {
     const n=Math.min(Math.max(Number(limit)||30,1),100);
+    if(cursor && Number.isNaN(Date.parse(cursor))) throw new BadRequestException('cursor must be a valid ISO date-time.');
+    // Timestamp-only cursors are retained for backward compatibility; id tie-breaking is used by the new cursor endpoint below.
     const r=await this.db.query(
       `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at,
               p.author_id,p.body,p.audience,
