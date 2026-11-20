@@ -47,7 +47,7 @@ export class CoupleInvitationsService {
          RETURNING id,invitee_user_id,expires_at,created_at`,
         [inviterId,inviteeId,hash]);
       await client.query(
-        `INSERT INTO audit_logs(actor_id,subject_user_id,action,target_type,target_id,metadata)
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$2,'couple.invitation.created','couple_invitation',$3,jsonb_build_object('expiresAt',$4))`,
         [inviterId,inviteeId,created.rows[0].id,created.rows[0].expires_at]);
       return created.rows[0];
@@ -74,7 +74,7 @@ export class CoupleInvitationsService {
          RETURNING id,invitee_user_id,revoked_at`,[userId,invitationId]);
       if(!result.rowCount) throw new NotFoundException('Pending couple invitation not found.');
       await client.query(
-        `INSERT INTO audit_logs(actor_id,subject_user_id,action,target_type,target_id)
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id)
          VALUES($1,$2,'couple.invitation.revoked','couple_invitation',$3)`,
         [userId,result.rows[0].invitee_user_id,invitationId]);
       return result.rows[0];
@@ -115,7 +115,7 @@ export class CoupleInvitationsService {
       await client.query(
         `UPDATE couple_space_invitations SET accepted_at=now() WHERE id=$1`,[invite.id]);
       await client.query(
-        `INSERT INTO audit_logs(actor_id,subject_user_id,action,target_type,target_id,metadata)
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$2,'couple.space.created','space',$3,jsonb_build_object('invitationId',$4))`,
         [userId,invite.inviter_user_id,spaceId,invite.id]);
       return {spaceId,type:'COUPLE',visibility:'private',members:[invite.inviter_user_id,userId]};
