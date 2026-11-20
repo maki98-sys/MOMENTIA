@@ -33,6 +33,20 @@ describe('MembershipsService', () => {
     expect(query.mock.calls[0][0]).toContain("owner.role = 'owner'");
   });
 
+  it('prevents admins from changing another admin role', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await expect(service.changeRole('admin-1', 's1', 'admin-2', 'member')).rejects.toBeInstanceOf(NotFoundException);
+    expect(query.mock.calls[0][0]).toContain("target.role <> 'admin' OR EXISTS");
+    expect(query.mock.calls[0][0]).toContain("owner.role = 'owner'");
+  });
+
+  it('prevents moderators from removing another moderator', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await expect(service.remove('mod-1', 's1', 'mod-2')).rejects.toBeInstanceOf(NotFoundException);
+    expect(query.mock.calls[0][0]).toContain("target.role <> 'moderator' OR EXISTS");
+    expect(query.mock.calls[0][0]).toContain("admin_or_owner.role IN ('owner','admin')");
+  });
+
   it('prevents removing oneself through the moderation endpoint', async () => {
     await expect(service.remove('u1', 's1', 'u1')).rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
