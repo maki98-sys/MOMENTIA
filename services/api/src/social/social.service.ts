@@ -22,6 +22,101 @@ export class SocialService {
     return { body: text as string | null, mediaAssetId: mediaAssetId as string | null, audience: String(audience), spaceId: spaceId as string | null };
   }
 
+  private assertDifferentUsers(actorId: string, targetId: string) {
+    if (!targetId || actorId === targetId) throw new BadRequestException('You cannot perform this action on your own account.');
+  }
+
+  async follow(actorId: string, targetId: string) {
+    this.assertDifferentUsers(actorId, targetId);
+    return this.db.transaction(async client => {
+      const target = await client.query(
+        `SELECT u.id, p.visibility FROM users u
+         JOIN user_profiles p ON p.user_id=u.id
+         WHERE u.id=$2 AND u.status='active'
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b
+             WHERE (b.blocker_id=$1 AND b.blocked_id=u.id)
+                OR (b.blocker_id=u.id AND b.blocked_id=$1))
+         FOR SHARE OF u, p`,
+        [actorId,targetId],
+      );
+      if (!target.rowCount) throw new NotFoundException('User not found.');
+      const state = target.rows[0].visibility === 'public' ? 'accepted' : 'pending';
+      const result = await client.query(
+        `INSERT INTO user_relationships(requester_id,target_id,state)
+         VALUES($1,$2,$3)
+         ON CONFLICT(requester_id,target_id) DO UPDATE
+           SET state=CASE WHEN user_relationships.state='accepted'
+                          THEN 'accepted' ELSE EXCLUDED.state END,
+               updated_at=now()
+         RETURNING id,requester_id,target_id,state,created_at,updated_at`,
+        [actorId,targetId,state],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async unfollow(actorId: string, targetId: string) {
+    this.assertDifferentUsers(actorId,targetId);
+    await this.db.query(`DELETE FROM user_relationships WHERE requester_id=$1 AND target_id=$2`,[actorId,targetId]);
+    return { following:false };
+  }
+
+  async listFollowRequests(userId: string) {
+    const result=await this.db.query(
+      `SELECT r.id,r.requester_id,r.created_at,p.display_name,p.avatar_media_id
+       FROM user_relationships r
+       JOIN users u ON u.id=r.requester_id AND u.status='active'
+       LEFT JOIN user_profiles p ON p.user_id=r.requester_id
+       WHERE r.target_id=$1 AND r.state='pending'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b
+           WHERE (b.blocker_id=$1 AND b.blocked_id=r.requester_id)
+              OR (b.blocker_id=r.requester_id AND b.blocked_id=$1))
+       ORDER BY r.created_at ASC LIMIT 100`,
+      [userId],
+    );
+    return result.rows;
+  }
+
+  async respondToFollowRequest(actorId: string, requesterId: string, decision: 'accepted'|'rejected') {
+    this.assertDifferentUsers(actorId,requesterId);
+    const result=await this.db.query(
+      `UPDATE user_relationships r SET state=$3,updated_at=now()
+       WHERE r.requester_id=$2 AND r.target_id=$1 AND r.state='pending'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b
+           WHERE (b.blocker_id=$1 AND b.blocked_id=$2)
+              OR (b.blocker_id=$2 AND b.blocked_id=$1))
+       RETURNING id,requester_id,target_id,state,updated_at`,
+      [actorId,requesterId,decision],
+    );
+    if(!result.rowCount) throw new NotFoundException('Pending follow request not found.');
+    return result.rows[0];
+  }
+
+  async block(actorId: string, targetId: string) {
+    this.assertDifferentUsers(actorId,targetId);
+    return this.db.transaction(async client => {
+      const target=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[targetId]);
+      if(!target.rowCount) throw new NotFoundException('User not found.');
+      await client.query(
+        `INSERT INTO user_blocks(blocker_id,blocked_id) VALUES($1,$2)
+         ON CONFLICT(blocker_id,blocked_id) DO NOTHING`,
+        [actorId,targetId],
+      );
+      await client.query(
+        `DELETE FROM user_relationships
+         WHERE (requester_id=$1 AND target_id=$2) OR (requester_id=$2 AND target_id=$1)`,
+        [actorId,targetId],
+      );
+      return { blocked:true };
+    });
+  }
+
+  async unblock(actorId: string, targetId: string) {
+    this.assertDifferentUsers(actorId,targetId);
+    await this.db.query(`DELETE FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2`,[actorId,targetId]);
+    return { blocked:false };
+  }
+
   async create(userId: string, input: unknown) {
     const v = this.validatePost(input);
     return this.db.transaction(async client => {
@@ -95,8 +190,6 @@ export class SocialService {
   }
 
   async removeReaction(userId: string, postId: string) {
-    // A known post UUID must not become a mutation capability: authorize visibility
-    // before changing a reaction, even when the caller is removing their own row.
     await this.assertCanView(userId,postId);
     await this.db.query(`DELETE FROM content_reactions WHERE target_type='post' AND target_id=$1 AND user_id=$2`,[postId,userId]);
     return { removed:true };
