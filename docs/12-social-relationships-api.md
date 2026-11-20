@@ -9,7 +9,8 @@ Base URL: API MOMENTIA. Todos los endpoints requieren bearer token OIDC válido.
 - No permite seguir la propia cuenta.
 - La cuenta objetivo debe estar activa y tener perfil.
 - Un perfil con visibilidad `public` genera relación `accepted`.
-- Un perfil `followers` o `private` genera solicitud `pending`.
+- Un perfil `followers` genera solicitud `pending`.
+- Un perfil `private` no aparece en el descubrimiento social y la operación responde como no encontrado.
 - No se permite crear la relación si existe bloqueo en cualquiera de las dos direcciones.
 - Repetir la operación es idempotente a nivel de relación: no duplica filas y conserva una relación ya aceptada.
 
