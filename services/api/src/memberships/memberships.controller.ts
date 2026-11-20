@@ -25,6 +25,13 @@ export class MembershipsController {
     return this.memberships.remove(req.userId!, spaceId, targetId);
   }
 
+  @Post('transfer-ownership')
+  transferOwnership(@Req() req: Request & AuthenticatedRequest, @Param('spaceId') spaceId: string,
+    @Body() body: { targetUserId?: unknown }) {
+    const targetId = typeof body?.targetUserId === 'string' ? body.targetUserId : '';
+    return this.memberships.transferOwnership(req.userId!, spaceId, targetId);
+  }
+
   @Post('leave')
   leave(@Req() req: Request & AuthenticatedRequest, @Param('spaceId') spaceId: string) {
     return this.memberships.leave(req.userId!, spaceId);
