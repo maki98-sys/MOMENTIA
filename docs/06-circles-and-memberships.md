@@ -18,7 +18,7 @@ Todas requieren token Bearer OIDC válido.
 - `POST /api/v1/spaces/:spaceId/invitations`: genera invitación de un solo uso para miembro o invitado.
 - `GET /api/v1/spaces/:spaceId/invitations`: lista invitaciones para propietario/administrador.
 - `POST /api/v1/invitations/accept`: acepta invitación válida.
-- `GET /api/v1/spaces/:spaceId/albums` y rutas de elementos: álbumes colaborativos.
+- `GET /api/v1/spaces/:spaceId/albums`: lista álbumes visibles para el miembro.\n- `GET /api/v1/spaces/:spaceId/albums/:albumId/items`: lista fotos listas para mostrarse, con cursor estable (`cursor` + `cursorId`) y límite de página.\n- `POST /api/v1/spaces/:spaceId/albums/:albumId/items`: agrega una foto propia y lista para mostrarse.\n- `DELETE /api/v1/spaces/:spaceId/albums/:albumId/items/:itemId`: retira el elemento; creador o moderador autorizado.\n- `GET/POST /api/v1/spaces/:spaceId/timeline`: cronología con paginación estable por fecha e ID.
 - `GET/POST /api/v1/spaces/:spaceId/timeline`: recuerdos de la cronología.
 
 ## Reglas de seguridad
