@@ -96,6 +96,13 @@ export class CoupleInvitationsService {
       if(invite.accepted_at||invite.revoked_at||new Date(String(invite.expires_at)).getTime()<=Date.now()) {
         throw new NotFoundException('Couple invitation is invalid or unavailable.');
       }
+      // Serialize accepts for either account in a deterministic order. Without these
+      // row locks, two different pending invitations could concurrently create
+      // two active couple spaces for the same user pair.
+      const lockedUsers=await client.query(
+        `SELECT id FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+        [[invite.inviter_user_id,userId]]);
+      if(lockedUsers.rowCount!==2) throw new NotFoundException('An active account could not be found.');
       const occupied=await client.query(
         `SELECT s.id FROM spaces s JOIN space_memberships sm ON sm.space_id=s.id
          WHERE s.type='COUPLE' AND s.status='active' AND sm.user_id=ANY($1::uuid[]) AND sm.state='active'
