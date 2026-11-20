@@ -10,12 +10,26 @@
 - Only verified email may provision an account. Matching email alone never links identities; existing accounts require a future authenticated linking flow.
 - Suspended or otherwise inactive accounts are denied.
 
+## Device and session management endpoints
+
+All routes below require a valid OIDC bearer access token and derive the account ID from the verified identity, never from request input.
+
+- `POST /auth/devices`: registers an iOS, Android or web device. Optional push token field is named `pushTokenEncrypted` and must already be encrypted by the client; it is never returned by list/register responses.
+- `GET /auth/devices`: lists active devices belonging to the authenticated account.
+- `POST /auth/devices/:deviceId/heartbeat`: updates last-seen only for an active device owned by the caller.
+- `DELETE /auth/devices/:deviceId`: revokes the owned device and all active MOMENTIA sessions linked to it in one transaction.
+- `GET /auth/sessions`: lists up to 100 session metadata rows; refresh-token hashes are never returned.
+- `DELETE /auth/sessions/:sessionId`: revokes one active session owned by the caller.
+- `DELETE /auth/sessions`: revokes all active sessions belonging to the caller.
+
+These endpoints provide device inventory and server-side revocation for MOMENTIA session records. They do not revoke the identity provider's own access tokens; a provider logout/revocation integration remains necessary.
+
 ## Not implemented yet
 
 - Provider tenant/application registration and credentials.
 - Provider-specific Android/iOS Authorization Code + PKCE client integration and callback validation.
 - MOMENTIA access/refresh session issuance, hashed refresh-token persistence, rotation, reuse detection and revocation.
-- Device registration, device/session inventory, logout and account-wide logout.
+- MOMENTIA refresh-token issuance/rotation/reuse detection and provider token revocation. Device inventory and revocation of existing MOMENTIA session records are implemented; complete user-facing logout still depends on token/session issuance.
 - Account recovery and authenticated identity-linking flow.
 - End-to-end tests against a real provider and production tenant.
 - Complete resource authorization matrix for every user, space, album, post, audio room and media operation.
