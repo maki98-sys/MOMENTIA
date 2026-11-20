@@ -13,6 +13,11 @@ Todas requieren token Bearer OIDC válido.
 - `PATCH /api/v1/spaces/:spaceId/event`: actualiza nombre, fechas, zona horaria, modo de moderación y política de descargas; requiere rol owner/admin y registra auditoría.
 - `GET /api/v1/spaces/:spaceId`: detalle solo para miembros activos.
 - `GET /api/v1/spaces/:spaceId/members`: lista de miembros; requiere pertenencia activa.
+- `POST /api/v1/spaces/:spaceId/join-requests`: solicita ingreso a un círculo público/no listado configurado con aprobación.
+- `GET /api/v1/spaces/:spaceId/join-requests`: propietario/administrador consulta solicitudes pendientes.
+- `POST /api/v1/spaces/:spaceId/join-requests/:requestId/approve`: aprueba y activa la membresía.
+- `POST /api/v1/spaces/:spaceId/join-requests/:requestId/reject`: rechaza una solicitud.
+- `DELETE /api/v1/spaces/:spaceId/join-requests/:requestId`: el solicitante cancela su solicitud pendiente.
 - `PATCH /api/v1/spaces/:spaceId/members/:userId/role`: cambia rol según jerarquía.
 - `DELETE /api/v1/spaces/:spaceId/members/:userId`: retira a otro miembro con permiso.
 - `POST /api/v1/spaces/:spaceId/members/transfer-ownership`: transfiere la propiedad a otro miembro activo, actualiza `spaces.owner_id` y ambos roles en una transacción, y registra el evento de auditoría. Solo el propietario actual puede hacerlo.
@@ -47,7 +52,7 @@ Todas requieren token Bearer OIDC válido.
 
 - Recuperación del círculo si el propietario pierde acceso (proceso de soporte y verificación aún pendiente).
 - Notificación al destinatario de invitaciones de pareja y entrega segura del enlace/token todavía requieren integración de notificaciones y cliente.
-- Solicitud de ingreso y aprobación para círculos con `join_policy = approval`.
+- Solicitudes de ingreso y aprobación para círculos públicos/no listados con `join_policy = approval` ya implementadas en backend; falta notificación al solicitante y pruebas E2E.
 - Bloqueo, reportes, moderación y registro de auditoría de acciones.
 - Notificaciones push y sincronización offline de cambios de membresía.
 - Cliente móvil, pantalla de administración, QR y pruebas E2E.
