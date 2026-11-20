@@ -17,6 +17,12 @@ describe('SpacesService', () => {
     })).toMatchObject({ type: 'EVENT', name: 'Birthday', visibility: 'private' });
   });
 
+  it('allows approval join policy only for circles', () => {
+    expect(service.validateCreateInput({type:'CIRCLE',name:'Community',visibility:'public',joinPolicy:'approval'})).toMatchObject({joinPolicy:'approval'});
+    expect(() => service.validateCreateInput({type:'EVENT',name:'Event',joinPolicy:'approval'})).toThrow(BadRequestException);
+    expect(() => service.validateCreateInput({type:'CIRCLE',name:'Community',joinPolicy:'automatic'})).toThrow(BadRequestException);
+  });
+
   it('requires a second user for a couple space', () => {
     expect(() => service.validateCreateInput({ type: 'COUPLE', name: 'Us' }))
       .toThrow(BadRequestException);
