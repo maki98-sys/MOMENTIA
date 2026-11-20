@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import type { AuthenticatedRequest } from '../auth/auth.types';
@@ -17,6 +17,11 @@ export class SpacesController {
   @Post()
   create(@Req() request: Request & AuthenticatedRequest, @Body() body: unknown) {
     return this.spaces.create(request.userId!, this.spaces.validateCreateInput(body));
+  }
+
+  @Patch(':spaceId/event')
+  updateEvent(@Req() request: Request & AuthenticatedRequest,@Param('spaceId') spaceId: string,@Body() body: unknown) {
+    return this.spaces.updateEvent(request.userId!,spaceId,body);
   }
 
   @Get(':spaceId')
