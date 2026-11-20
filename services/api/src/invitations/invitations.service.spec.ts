@@ -21,16 +21,21 @@ describe('InvitationsService', () => {
   });
 
   it('creates a hashed, single-use invitation only for active space admins or owners', async () => {
-    query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'invite-1', role: 'member' }] });
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'invite-1',role:'member',space_id:'space-1',expires_at:'2026-12-01'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) => work({query:clientQuery}));
     const result = await service.create('user-1', 'space-1', { role: 'member', expiresInDays: 7 });
     expect(result.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(query.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
-    expect(query.mock.calls[0][0]).toContain('token_hash');
-    expect(query.mock.calls[0][1][2]).not.toBe(result.token);
+    expect(clientQuery.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
+    expect(clientQuery.mock.calls[0][0]).toContain('token_hash');
+    expect(clientQuery.mock.calls[0][1][2]).not.toBe(result.token);
+    expect(clientQuery.mock.calls[1][0]).toContain('space_audit_events');
   });
 
   it('does not reveal inaccessible spaces when creating invitations', async () => {
-    query.mockResolvedValueOnce({ rowCount: 0, rows: [] });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]});
+    transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) => work({query:clientQuery}));
     await expect(service.create('user-1', 'secret', { role: 'member', expiresInDays: 7 }))
       .rejects.toBeInstanceOf(NotFoundException);
   });
