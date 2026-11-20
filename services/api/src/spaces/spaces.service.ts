@@ -12,6 +12,7 @@ export interface CreateSpaceInput {
   startsAt?: string | null;
   endsAt?: string | null;
   description?: string | null;
+  joinPolicy?: 'invite' | 'approval';
   partnerUserId?: string;
 }
 
@@ -75,8 +76,8 @@ export class SpacesService {
       } else if (input.type === 'CIRCLE') {
         await client.query(
           `INSERT INTO circle_details (space_id, description, join_policy)
-           VALUES ($1, $2, 'invite')`,
-          [spaceId, input.description ?? null],
+           VALUES ($1, $2, $3)`,
+          [spaceId, input.description ?? null, input.joinPolicy ?? 'invite'],
         );
       }
       return { ...space, memberCount: input.type === 'COUPLE' ? 2 : 1 };
@@ -174,7 +175,7 @@ export class SpacesService {
       throw new BadRequestException('A space object is required.');
     }
     const body = value as Record<string, unknown>;
-    const allowed = ['type','name','visibility','timezone','startsAt','endsAt','description','partnerUserId'];
+    const allowed = ['type','name','visibility','timezone','startsAt','endsAt','description','joinPolicy','partnerUserId'];
     if (Object.keys(body).some((key) => !allowed.includes(key))) {
       throw new BadRequestException('The space contains unsupported fields.');
     }
@@ -198,6 +199,9 @@ export class SpacesService {
     const startsAt = optionalString('startsAt', 40);
     const endsAt = optionalString('endsAt', 40);
     const description = optionalString('description', 500);
+    const joinPolicy = body.joinPolicy ?? 'invite';
+    if (joinPolicy !== 'invite' && joinPolicy !== 'approval') throw new BadRequestException('joinPolicy must be invite or approval.');
+    if (body.type !== 'CIRCLE' && body.joinPolicy !== undefined) throw new BadRequestException('joinPolicy is only valid for circles.');
     const partnerUserId = optionalString('partnerUserId', 36);
     if (timezone === null || partnerUserId === null) {
       throw new BadRequestException('timezone and partnerUserId cannot be null.');
@@ -226,6 +230,7 @@ export class SpacesService {
       ...(startsAt !== undefined ? { startsAt } : {}),
       ...(endsAt !== undefined ? { endsAt } : {}),
       ...(description !== undefined ? { description } : {}),
+      ...(body.type === 'CIRCLE' ? { joinPolicy } : {}),
       ...(partnerUserId !== undefined ? { partnerUserId } : {}),
     };
   }
