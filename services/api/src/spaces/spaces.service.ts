@@ -83,6 +83,65 @@ export class SpacesService {
     });
   }
 
+  async updateEvent(userId: string, spaceId: string, input: unknown) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new BadRequestException('Event update data is required.');
+    }
+    const body=input as Record<string,unknown>;
+    const allowed=['name','startsAt','endsAt','timezone','moderationMode','downloadPolicy'];
+    if(Object.keys(body).length===0 || Object.keys(body).some(key=>!allowed.includes(key))) {
+      throw new BadRequestException('Event update contains no supported fields or unsupported fields.');
+    }
+    if(body.name!==undefined && (typeof body.name!=='string'||!body.name.trim()||body.name.trim().length>120)) {
+      throw new BadRequestException('Event name must contain 1 to 120 characters.');
+    }
+    for(const key of ['startsAt','endsAt','timezone'] as const) {
+      const value=body[key];
+      if(value!==undefined && value!==null && (typeof value!=='string' ||
+        (key==='timezone' ? value.length>80 : Number.isNaN(Date.parse(value))))) {
+        throw new BadRequestException(`${key} is invalid.`);
+      }
+    }
+    if(body.timezone===null) throw new BadRequestException('timezone cannot be null.');
+    if(body.moderationMode!==undefined && !['host','approval','community'].includes(String(body.moderationMode))) {
+      throw new BadRequestException('moderationMode is invalid.');
+    }
+    if(body.downloadPolicy!==undefined && !['host_only','members','disabled'].includes(String(body.downloadPolicy))) {
+      throw new BadRequestException('downloadPolicy is invalid.');
+    }
+    return this.database.transaction(async client=>{
+      const access=await client.query(
+        `SELECT s.id,s.name,ed.starts_at,ed.ends_at,ed.timezone,ed.moderation_mode,ed.download_policy
+         FROM spaces s JOIN event_details ed ON ed.space_id=s.id
+         JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
+         WHERE s.id=$2 AND s.type='EVENT' AND s.status='active'
+           AND sm.role IN ('owner','admin')
+         FOR UPDATE OF s,ed`,
+        [userId,spaceId]);
+      if(!access.rowCount) throw new NotFoundException('Event not found.');
+      const current=access.rows[0] as Record<string,unknown>;
+      const start=body.startsAt===undefined?current.starts_at:body.startsAt;
+      const end=body.endsAt===undefined?current.ends_at:body.endsAt;
+      if(start!==null && end!==null && Date.parse(String(end))<Date.parse(String(start))) {
+        throw new BadRequestException('endsAt cannot be earlier than startsAt.');
+      }
+      const updated=await client.query(
+        `UPDATE event_details SET starts_at=$2,ends_at=$3,timezone=$4,
+           moderation_mode=$5,download_policy=$6
+         WHERE space_id=$1
+         RETURNING starts_at,ends_at,timezone,moderation_mode,download_policy`,
+        [spaceId,start,end,body.timezone??current.timezone,
+         body.moderationMode??current.moderation_mode,body.downloadPolicy??current.download_policy]);
+      const name=body.name===undefined?current.name:String(body.name).trim();
+      if(name!==current.name) await client.query(`UPDATE spaces SET name=$2 WHERE id=$1`,[spaceId,name]);
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,'event.updated','space',$1,$3::jsonb)`,
+        [spaceId,userId,JSON.stringify({fields:Object.keys(body)})]);
+      return {spaceId,name,...updated.rows[0]};
+    });
+  }
+
   async getMine(userId: string, spaceId: string) {
     const result = await this.database.query(
       `SELECT s.id, s.type, s.name, s.visibility, s.status, s.owner_id,
