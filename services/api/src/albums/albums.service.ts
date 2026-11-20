@@ -51,6 +51,41 @@ export class AlbumsService {
     return r.rows;
   }
 
+  async listItems(userId:string,spaceId:string,albumId:string,cursor?:string,cursorId?:string,limit=30) {
+    const pageSize=Math.min(Math.max(Number(limit)||30,1),100);
+    if ((cursor && Number.isNaN(Date.parse(cursor))) || (!!cursor !== !!cursorId)) {
+      throw new BadRequestException('Both a valid cursor timestamp and cursorId are required.');
+    }
+    if (cursorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cursorId)) {
+      throw new BadRequestException('cursorId must be a UUID.');
+    }
+    const access=await this.db.query(
+      `SELECT a.id,a.visibility,sm.role FROM space_albums a
+       JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+       WHERE a.id=$2 AND a.space_id=$3`,
+      [userId,albumId,spaceId]);
+    if(!access.rowCount) throw new NotFoundException('Album not found.');
+    if(access.rows[0].visibility==='admins'&&!['owner','admin','moderator'].includes(String(access.rows[0].role))) {
+      throw new NotFoundException('Album not found.');
+    }
+    const result=await this.db.query(
+      `SELECT i.id,i.album_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.created_at,
+              m.mime_type_detected,m.width,m.height,m.size_bytes
+       FROM space_album_items i
+       JOIN media_assets m ON m.id=i.media_asset_id AND m.status='ready'
+       WHERE i.album_id=$1 AND i.status='active'
+         AND ($2::timestamptz IS NULL OR (i.created_at,i.id)<($2::timestamptz,$3::uuid))
+       ORDER BY i.created_at DESC,i.id DESC LIMIT $4`,
+      [albumId,cursor??null,cursorId??null,pageSize+1]);
+    const hasMore=result.rows.length>pageSize;
+    const items=result.rows.slice(0,pageSize);
+    const last=items[items.length-1] as Record<string,unknown>|undefined;
+    return {
+      items,
+      nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
+    };
+  }
+
   async addItem(userId:string,spaceId:string,albumId:string,input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Album item data is required.');
     const v=input as Record<string,unknown>;
