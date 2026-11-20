@@ -30,6 +30,11 @@ export class CoupleInvitationsService {
         `SELECT id FROM users WHERE id=ANY($1::uuid[]) AND status='active' FOR SHARE`,
         [[inviterId,inviteeId]]);
       if(users.rowCount!==2) throw new NotFoundException('An active account could not be found.');
+      await client.query(
+        `UPDATE couple_space_invitations SET revoked_at=now()
+         WHERE inviter_user_id=$1 AND invitee_user_id=$2
+           AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at<=now()`,
+        [inviterId,inviteeId]);
       const existing=await client.query(
         `SELECT id FROM couple_space_invitations
          WHERE inviter_user_id=$1 AND invitee_user_id=$2
