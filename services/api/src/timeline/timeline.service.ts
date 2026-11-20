@@ -5,10 +5,14 @@ import { DatabaseService } from '../database/database.service';
 export class TimelineService {
   constructor(private readonly db: DatabaseService) {}
 
-  async list(userId:string,spaceId:string,cursor?:string,limit=30) {
+  async list(userId:string,spaceId:string,cursor?:string,limit=30,cursorId?:string) {
     const n=Math.min(Math.max(Number(limit)||30,1),100);
-    if(cursor && Number.isNaN(Date.parse(cursor))) throw new BadRequestException('cursor must be a valid ISO date-time.');
-    // Timestamp-only cursors are retained for backward compatibility; id tie-breaking is used by the new cursor endpoint below.
+    if ((cursor && Number.isNaN(Date.parse(cursor))) || (!!cursor !== !!cursorId)) {
+      throw new BadRequestException('Both a valid cursor timestamp and cursorId are required.');
+    }
+    if (cursorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cursorId)) {
+      throw new BadRequestException('cursorId must be a UUID.');
+    }
     const r=await this.db.query(
       `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at,
               p.author_id,p.body,p.audience,
@@ -20,9 +24,9 @@ export class TimelineService {
        LEFT JOIN user_profiles up ON up.user_id=p.author_id
        LEFT JOIN media_assets m ON m.id=t.media_asset_id AND m.status='ready'
        LEFT JOIN user_profiles pu ON pu.user_id=m.owner_id
-       WHERE t.space_id=$2 AND ($3::timestamptz IS NULL OR t.occurred_at<$3)
-       ORDER BY t.occurred_at DESC,t.id DESC LIMIT $4`,
-      [userId,spaceId,cursor??null,n]);
+       WHERE t.space_id=$2 AND ($3::timestamptz IS NULL OR (t.occurred_at,t.id)<($3::timestamptz,$4::uuid))
+       ORDER BY t.occurred_at DESC,t.id DESC LIMIT $5`,
+      [userId,spaceId,cursor??null,cursorId??null,n]);
     if(!r.rowCount) {
       const member=await this.db.query(`SELECT 1 FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
       if(!member.rowCount) throw new NotFoundException('Space not found.');
