@@ -52,7 +52,7 @@ Todas requieren token Bearer OIDC válido.
 
 - Recuperación del círculo si el propietario pierde acceso (proceso de soporte y verificación aún pendiente).
 - Notificación al destinatario de invitaciones de pareja y entrega segura del enlace/token todavía requieren integración de notificaciones y cliente.
-- Solicitudes de ingreso y aprobación para círculos públicos/no listados con `join_policy = approval` ya implementadas en backend; falta notificación al solicitante y pruebas E2E.
+- Solicitudes de ingreso y aprobación para círculos públicos/no listados con `join_policy = approval` (seleccionable al crear el círculo) ya implementadas en backend; falta notificación al solicitante y pruebas E2E.
 - Bloqueo, reportes, moderación y registro de auditoría de acciones.
 - Notificaciones push y sincronización offline de cambios de membresía.
 - Cliente móvil, pantalla de administración, QR y pruebas E2E.
