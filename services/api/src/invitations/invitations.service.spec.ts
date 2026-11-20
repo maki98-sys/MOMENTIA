@@ -50,15 +50,17 @@ describe('InvitationsService', () => {
       }] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
     transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) =>
       work({ query: clientQuery }));
     await expect(service.accept('user-2', 'a'.repeat(43))).resolves.toEqual({
       spaceId: 'space-1', role: 'guest', membership: 'active',
     });
-    expect(clientQuery).toHaveBeenCalledTimes(4);
+    expect(clientQuery).toHaveBeenCalledTimes(5);
     expect(clientQuery.mock.calls[2][0]).toContain('INSERT INTO space_memberships');
     expect(clientQuery.mock.calls[3][0]).toContain('uses = uses + 1');
+    expect(clientQuery.mock.calls[4][0]).toContain('space_audit_events');
   });
 
   it('does not accept an invitation for a couple space through the generic flow', async () => {
