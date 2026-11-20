@@ -36,6 +36,11 @@ export class MembershipsService {
            WHERE actor.space_id = target.space_id AND actor.user_id = $1
              AND actor.state = 'active' AND actor.role IN ('owner','admin')
          )
+         AND (target.role <> 'admin' OR EXISTS (
+           SELECT 1 FROM space_memberships owner
+           WHERE owner.space_id = target.space_id AND owner.user_id = $1
+             AND owner.state = 'active' AND owner.role = 'owner'
+         ))
          AND ($4 <> 'admin' OR EXISTS (
            SELECT 1 FROM space_memberships owner
            WHERE owner.space_id = target.space_id AND owner.user_id = $1
@@ -63,6 +68,11 @@ export class MembershipsService {
            SELECT 1 FROM space_memberships owner
            WHERE owner.space_id = target.space_id AND owner.user_id = $1
              AND owner.state = 'active' AND owner.role = 'owner'
+         ))
+         AND (target.role <> 'moderator' OR EXISTS (
+           SELECT 1 FROM space_memberships admin_or_owner
+           WHERE admin_or_owner.space_id = target.space_id AND admin_or_owner.user_id = $1
+             AND admin_or_owner.state = 'active' AND admin_or_owner.role IN ('owner','admin')
          ))
        RETURNING user_id, state, left_at`,
       [actorId, spaceId, targetId],
