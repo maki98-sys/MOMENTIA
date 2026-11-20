@@ -33,25 +33,26 @@ export class InvitationsService {
   async create(userId: string, spaceId: string, input: CreateInvitationInput) {
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    const result = await this.database.query(
-      `INSERT INTO space_invitations
-         (space_id, created_by, token_hash, role, expires_at, max_uses, approval_required)
-       SELECT s.id, $1, $3, $4, now() + ($5::int * interval '1 day'), 1, false
-       FROM spaces s
-       JOIN space_memberships sm ON sm.space_id = s.id
-         AND sm.user_id = $1 AND sm.state = 'active'
-         AND sm.role IN ('owner','admin')
-       WHERE s.id = $2 AND s.status = 'active' AND s.type IN ('EVENT','CIRCLE')
-       RETURNING id, space_id, role, expires_at, max_uses, created_at`,
-      [userId, spaceId, tokenHash, input.role, input.expiresInDays],
-    );
-    if (!result.rowCount) {
-      // Avoid disclosing whether the space exists or whether the caller is a member.
-      throw new NotFoundException('Space was not found or invitation permission is missing.');
-    }
-    return { ...result.rows[0], token };
+    const result = await this.database.transaction(async client => {
+      const created = await client.query(
+        `INSERT INTO space_invitations
+           (space_id, created_by, token_hash, role, expires_at, max_uses, approval_required)
+         SELECT s.id, $1, $3, $4, now() + ($5::int * interval '1 day'), 1, false
+         FROM spaces s
+         JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1
+           AND sm.state='active' AND sm.role IN ('owner','admin')
+         WHERE s.id=$2 AND s.status='active' AND s.type IN ('EVENT','CIRCLE')
+         RETURNING id,space_id,role,expires_at,max_uses,created_at`,
+        [userId,spaceId,tokenHash,input.role,input.expiresInDays]);
+      if(!created.rowCount) throw new NotFoundException('Space was not found or invitation permission is missing.');
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,'invitation.created','invitation',$3,jsonb_build_object('role',$4,'expiresAt',$5))`,
+        [spaceId,userId,created.rows[0].id,input.role,created.rows[0].expires_at]);
+      return created.rows[0];
+    });
+    return { ...result, token };
   }
-
   async list(userId: string, spaceId: string) {
     const result = await this.database.query(
       `SELECT i.id, i.space_id, i.role, i.expires_at, i.max_uses, i.uses,
@@ -68,22 +69,21 @@ export class InvitationsService {
   }
 
   async revoke(userId: string, spaceId: string, invitationId: string) {
-    const result = await this.database.query(
-      `UPDATE space_invitations i SET revoked_at = now()
-       WHERE i.id = $3 AND i.space_id = $2 AND i.revoked_at IS NULL
-         AND i.expires_at > now()
-         AND EXISTS (
-           SELECT 1 FROM space_memberships sm
-           WHERE sm.space_id = i.space_id AND sm.user_id = $1
-             AND sm.state = 'active' AND sm.role IN ('owner','admin')
-         )
-       RETURNING i.id, i.space_id, i.revoked_at`,
-      [userId, spaceId, invitationId],
-    );
-    if (!result.rowCount) throw new NotFoundException('Invitation was not found or cannot be revoked.');
-    return result.rows[0];
+    return this.database.transaction(async client => {
+      const result = await client.query(
+        `UPDATE space_invitations i SET revoked_at=now()
+         WHERE i.id=$3 AND i.space_id=$2 AND i.revoked_at IS NULL AND i.expires_at>now()
+           AND EXISTS (SELECT 1 FROM space_memberships sm WHERE sm.space_id=i.space_id
+             AND sm.user_id=$1 AND sm.state='active' AND sm.role IN ('owner','admin'))
+         RETURNING i.id,i.space_id,i.revoked_at`,
+        [userId,spaceId,invitationId]);
+      if(!result.rowCount) throw new NotFoundException('Invitation was not found or cannot be revoked.');
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
+         VALUES($1,$2,'invitation.revoked','invitation',$3)`,[spaceId,userId,invitationId]);
+      return result.rows[0];
+    });
   }
-
   async accept(userId: string, token: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
       throw new BadRequestException('The invitation token is invalid.');
