@@ -54,6 +54,38 @@ export class ProfileService {
     };
   }
 
+  async getPublicProfile(viewerId: string, targetId: string) {
+    const result = await this.database.query(
+      `SELECT u.id, p.display_name, p.bio, p.visibility, p.avatar_media_id,
+              CASE WHEN ur.state = 'accepted' THEN true ELSE false END AS viewer_follows
+       FROM users u
+       JOIN user_profiles p ON p.user_id = u.id
+       LEFT JOIN user_relationships ur
+         ON ur.requester_id = $1 AND ur.target_id = u.id AND ur.state = 'accepted'
+       WHERE u.id = $2 AND u.status = 'active'
+         AND NOT EXISTS (
+           SELECT 1 FROM user_blocks b
+           WHERE (b.blocker_id = $1 AND b.blocked_id = u.id)
+              OR (b.blocker_id = u.id AND b.blocked_id = $1)
+         )
+       LIMIT 1`,
+      [viewerId, targetId],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    if (!row) throw new NotFoundException('Profile not found.');
+    const visibility = String(row.visibility);
+    const isOwner = viewerId === targetId;
+    const canView = isOwner || visibility === 'public'
+      || (visibility === 'followers' && row.viewer_follows === true);
+    if (!canView) throw new NotFoundException('Profile not found.');
+    return {
+      id: String(row.id),
+      displayName: String(row.display_name),
+      bio: row.bio == null ? null : String(row.bio),
+      avatarMediaId: row.avatar_media_id == null ? null : String(row.avatar_media_id),
+    };
+  }
+
   async updateMyProfile(userId: string, input: UpdateProfileInput): Promise<MyAccount['profile']> {
     const result = await this.database.query(
       `INSERT INTO user_profiles (user_id, display_name, bio, visibility)
