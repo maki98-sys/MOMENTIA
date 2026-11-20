@@ -9,7 +9,7 @@ Los círculos se representan como espacios de tipo `CIRCLE`. La creación de un 
 Todas requieren token Bearer OIDC válido.
 
 - `GET /api/v1/spaces`: espacios activos del usuario.
-- `POST /api/v1/spaces`: crear círculo con `type: "CIRCLE"`, nombre, visibilidad y descripción opcional.
+- `POST /api/v1/spaces`: crear círculo (`CIRCLE`) o evento (`EVENT`) con nombre, visibilidad y metadatos iniciales.\n- `PATCH /api/v1/spaces/:spaceId/event`: actualiza nombre, fechas, zona horaria, modo de moderación y política de descargas; requiere rol owner/admin y registra auditoría.
 - `GET /api/v1/spaces/:spaceId`: detalle solo para miembros activos.
 - `GET /api/v1/spaces/:spaceId/members`: lista de miembros; requiere pertenencia activa.
 - `PATCH /api/v1/spaces/:spaceId/members/:userId/role`: cambia rol según jerarquía.
