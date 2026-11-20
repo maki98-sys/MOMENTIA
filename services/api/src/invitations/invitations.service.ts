@@ -139,6 +139,11 @@ export class InvitationsService {
         `UPDATE space_invitations SET uses = uses + 1 WHERE id = $1`,
         [invite.id],
       );
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
+         VALUES($1,$2,'invitation.accepted','membership',$3)`,
+        [invite.space_id,userId,invite.id],
+      );
       return { spaceId: invite.space_id, role: invite.role, membership: 'active' };
     });
   }
