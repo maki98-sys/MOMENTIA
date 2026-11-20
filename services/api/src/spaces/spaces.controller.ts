@@ -24,6 +24,12 @@ export class SpacesController {
     return this.spaces.updateEvent(request.userId!,spaceId,body);
   }
 
+  @Patch(':spaceId/lifecycle')
+  changeLifecycle(@Req() request: Request & AuthenticatedRequest,@Param('spaceId') spaceId: string,@Body() body: unknown) {
+    const action=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).action:undefined;
+    return this.spaces.changeLifecycle(request.userId!,spaceId,action);
+  }
+
   @Get(':spaceId')
   getMine(
     @Req() request: Request & AuthenticatedRequest,
