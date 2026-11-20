@@ -47,4 +47,39 @@ describe('SocialService',()=>{
   await expect(service.comments('u1','visible-post')).resolves.toEqual([]);
   expect(query.mock.calls[1][0]).toContain('LEFT JOIN user_profiles');
  });
+
+ it('creates an accepted relationship for a public profile',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'public'}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{requester_id:'u1',target_id:'u2',state:'accepted'}]});
+  transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.follow('u1','u2')).resolves.toMatchObject({state:'accepted'});
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+  expect(clientQuery.mock.calls[1][0]).toContain('ON CONFLICT(requester_id,target_id)');
+ });
+ it('creates a pending request for a non-public profile',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{requester_id:'u1',target_id:'u2',state:'pending'}]});
+  transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.follow('u1','u2')).resolves.toMatchObject({state:'pending'});
+ });
+ it('does not allow following oneself',async()=>{
+  await expect(service.follow('u1','u1')).rejects.toBeInstanceOf(BadRequestException);
+  expect(transaction).not.toHaveBeenCalled();
+ });
+ it('removes both directions of a relationship when blocking',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2'}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[]})
+   .mockResolvedValueOnce({rowCount:2,rows:[]});
+  transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.block('u1','u2')).resolves.toEqual({blocked:true});
+  expect(clientQuery).toHaveBeenCalledTimes(3);
+  expect(clientQuery.mock.calls[2][0]).toContain('DELETE FROM user_relationships');
+ });
+ it('rejects accepting a request that is not pending for the current user',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.respondToFollowRequest('u1','u2','accepted')).rejects.toBeInstanceOf(NotFoundException);
+ });
 });
