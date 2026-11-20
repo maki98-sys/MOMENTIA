@@ -89,4 +89,4 @@ describe('SocialService',()=>{
   await expect(service.follow('u1','u2')).rejects.toBeInstanceOf(NotFoundException);
   expect(clientQuery).toHaveBeenCalledTimes(1);
  });
-});\n
+});
