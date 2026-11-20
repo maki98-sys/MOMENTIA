@@ -38,6 +38,34 @@ describe('ProfileService', () => {
     })).toEqual({ displayName: 'Ana', bio: 'Hola', visibility: 'private' });
   });
 
+  it('returns only public profile fields for a public account', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      id: 'user-2', display_name: 'Bea', bio: 'Hola', visibility: 'public',
+      avatar_media_id: null, viewer_follows: false,
+    }] });
+    await expect(service.getPublicProfile('viewer-1', 'user-2')).resolves.toEqual({
+      id: 'user-2', displayName: 'Bea', bio: 'Hola', avatarMediaId: null,
+    });
+    expect(query.mock.calls[0][0]).toContain('user_blocks');
+    expect(query.mock.calls[0][0]).not.toContain('email_normalized');
+  });
+
+  it('hides private profiles from non-followers', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      id: 'user-2', display_name: 'Bea', bio: null, visibility: 'private',
+      avatar_media_id: null, viewer_follows: false,
+    }] });
+    await expect(service.getPublicProfile('viewer-1', 'user-2')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('allows followers to view followers-only profiles', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      id: 'user-2', display_name: 'Bea', bio: null, visibility: 'followers',
+      avatar_media_id: null, viewer_follows: true,
+    }] });
+    await expect(service.getPublicProfile('viewer-1', 'user-2')).resolves.toMatchObject({ id: 'user-2' });
+  });
+
   it('upserts a profile only for an active account', async () => {
     query.mockResolvedValueOnce({ rows: [{
       display_name: 'Ana', bio: null, visibility: 'private',
