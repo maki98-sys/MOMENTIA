@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
@@ -44,6 +44,9 @@ export class SocialService {
 
   async feed(userId: string, cursor?: string, limit = 20) {
     const safeLimit = Math.min(Math.max(Number(limit)||20,1),50);
+    if (cursor !== undefined && (Number.isNaN(Date.parse(cursor)) || !Number.isFinite(Date.parse(cursor)))) {
+      throw new BadRequestException('Feed cursor must be a valid ISO date-time.');
+    }
     const result = await this.db.query(
       `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.published_at,
               up.display_name,up.avatar_media_id,
@@ -58,7 +61,8 @@ export class SocialService {
            OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships ur
                WHERE ur.requester_id=$1 AND ur.target_id=p.author_id AND ur.state='accepted'))
            OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
-               WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
+               WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
+           OR p.audience='private' AND p.author_id=$1)
        ORDER BY p.published_at DESC,p.id DESC LIMIT $3`,
       [userId,cursor ?? null,safeLimit]);
     return result.rows;
@@ -67,7 +71,7 @@ export class SocialService {
   async comments(userId: string, postId: string) {
     await this.assertCanView(userId,postId);
     const r=await this.db.query(`SELECT c.id,c.post_id,c.author_id,c.body,c.created_at,up.display_name
-      FROM post_comments c JOIN user_profiles up ON up.user_id=c.author_id
+      FROM post_comments c LEFT JOIN user_profiles up ON up.user_id=c.author_id
       WHERE c.post_id=$1 AND c.status='visible' ORDER BY c.created_at ASC LIMIT 200`,[postId]);
     return r.rows;
   }
@@ -91,6 +95,9 @@ export class SocialService {
   }
 
   async removeReaction(userId: string, postId: string) {
+    // A known post UUID must not become a mutation capability: authorize visibility
+    // before changing a reaction, even when the caller is removing their own row.
+    await this.assertCanView(userId,postId);
     await this.db.query(`DELETE FROM content_reactions WHERE target_type='post' AND target_id=$1 AND user_id=$2`,[postId,userId]);
     return { removed:true };
   }
