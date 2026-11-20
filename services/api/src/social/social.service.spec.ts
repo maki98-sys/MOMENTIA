@@ -59,7 +59,7 @@ describe('SocialService',()=>{
  });
  it('creates a pending request for a non-public profile',async()=>{
   const clientQuery=jest.fn()
-   .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'followers'}]})
    .mockResolvedValueOnce({rowCount:1,rows:[{requester_id:'u1',target_id:'u2',state:'pending'}]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.follow('u1','u2')).resolves.toMatchObject({state:'pending'});
@@ -82,4 +82,11 @@ describe('SocialService',()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
   await expect(service.respondToFollowRequest('u1','u2','accepted')).rejects.toBeInstanceOf(NotFoundException);
  });
-});
+
+ it('does not create a request for a fully private profile',async()=>{
+  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]});
+  transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.follow('u1','u2')).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery).toHaveBeenCalledTimes(1);
+ });
+});\n
