@@ -28,7 +28,7 @@ export class SpacesService {
                WHERE active.space_id = s.id AND active.state = 'active') AS member_count
        FROM space_memberships sm
        JOIN spaces s ON s.id = sm.space_id
-       WHERE sm.user_id = $1 AND sm.state = 'active' AND s.status = 'active'
+       WHERE sm.user_id = $1 AND sm.state = 'active' AND s.status IN ('active','archived')
        ORDER BY s.updated_at DESC, s.created_at DESC
        LIMIT 100`,
       [userId],
@@ -187,7 +187,7 @@ export class SpacesService {
        LEFT JOIN event_details ed ON ed.space_id = s.id
        LEFT JOIN couple_details cd ON cd.space_id = s.id
        LEFT JOIN circle_details cir ON cir.space_id = s.id
-       WHERE s.id = $2 AND s.status = 'active'
+       WHERE s.id = $2 AND s.status IN ('active','archived')
        LIMIT 1`,
       [userId, spaceId],
     );
