@@ -81,6 +81,53 @@ export class MembershipsService {
     return result.rows[0];
   }
 
+  async transferOwnership(actorId: string, spaceId: string, targetId: string) {
+    if (actorId === targetId) {
+      throw new BadRequestException('Ownership must be transferred to another active member.');
+    }
+    return this.database.transaction(async (client) => {
+      const locked = await client.query(
+        `SELECT id FROM spaces
+         WHERE id = $1 AND owner_id = $2 AND status = 'active'
+         FOR UPDATE`,
+        [spaceId, actorId],
+      );
+      if (!locked.rowCount) {
+        throw new NotFoundException('Space not found or ownership permission denied.');
+      }
+      const target = await client.query(
+        `SELECT user_id FROM space_memberships
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role <> 'owner'
+         FOR UPDATE`,
+        [spaceId, targetId],
+      );
+      if (!target.rowCount) {
+        throw new BadRequestException('The new owner must already be an active member of this space.');
+      }
+      await client.query(
+        `UPDATE space_memberships SET role = 'admin'
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role = 'owner'`,
+        [spaceId, actorId],
+      );
+      await client.query(
+        `UPDATE space_memberships SET role = 'owner'
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active'`,
+        [spaceId, targetId],
+      );
+      await client.query(
+        `UPDATE spaces SET owner_id = $2 WHERE id = $1`,
+        [spaceId, targetId],
+      );
+      await client.query(
+        `INSERT INTO space_audit_events
+           (space_id, actor_id, action, resource_type, resource_id, metadata)
+         VALUES ($1, $2, 'ownership.transferred', 'space', $1, jsonb_build_object('newOwnerId', $3))`,
+        [spaceId, actorId, targetId],
+      );
+      return { spaceId, previousOwnerId: actorId, ownerId: targetId };
+    });
+  }
+
   async leave(userId: string, spaceId: string) {
     const result = await this.database.query(
       `UPDATE space_memberships SET state = 'left', left_at = now()
