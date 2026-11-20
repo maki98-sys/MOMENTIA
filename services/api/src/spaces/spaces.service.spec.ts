@@ -65,6 +65,32 @@ describe('SpacesService', () => {
     expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
   });
 
+  it('archives an active space only for its owner and audits the transition', async () => {
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'space-1',type:'CIRCLE',status:'active'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'space-1',type:'CIRCLE',status:'archived'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
+    await expect(service.changeLifecycle('owner-1','space-1','archive')).resolves.toMatchObject({status:'archived'});
+    expect(clientQuery).toHaveBeenCalledTimes(3);
+    expect(clientQuery.mock.calls[0][0]).toContain("sm.role='owner'");
+    expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
+  });
+
+  it('does not allow admins or non-owners to change lifecycle', async () => {
+    const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]});
+    transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
+    await expect(service.changeLifecycle('admin-1','space-1','archive')).rejects.toBeInstanceOf(NotFoundException);
+    expect(clientQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid lifecycle transitions', async () => {
+    const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{id:'space-1',type:'EVENT',status:'closed'}]});
+    transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
+    await expect(service.changeLifecycle('owner-1','space-1','reopen')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.changeLifecycle('owner-1','space-1','destroy')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('lists only active memberships in active spaces', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'space-1', type: 'CIRCLE' }] });
     await expect(service.listMine('user-1')).resolves.toEqual([{ id: 'space-1', type: 'CIRCLE' }]);
