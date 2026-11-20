@@ -4,9 +4,10 @@ import { MembershipsService } from './memberships.service';
 
 describe('MembershipsService', () => {
   const query = jest.fn();
-  const service = new MembershipsService({ query } as unknown as DatabaseService);
+  const transaction = jest.fn();
+  const service = new MembershipsService({ query, transaction } as unknown as DatabaseService);
 
-  beforeEach(() => query.mockReset());
+  beforeEach(() => { query.mockReset(); transaction.mockReset(); });
 
   it('requires active membership before listing members', async () => {
     query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -50,6 +51,36 @@ describe('MembershipsService', () => {
   it('prevents removing oneself through the moderation endpoint', async () => {
     await expect(service.remove('u1', 's1', 'u1')).rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('transfers ownership atomically to another active member and records an audit event', async () => {
+    const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'u2' }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) =>
+      work({ query: clientQuery }));
+    await expect(service.transferOwnership('u1', 's1', 'u2')).resolves.toEqual({
+      spaceId: 's1', previousOwnerId: 'u1', ownerId: 'u2',
+    });
+    expect(clientQuery).toHaveBeenCalledTimes(6);
+    expect(clientQuery.mock.calls[2][0]).toContain("role = 'admin'");
+    expect(clientQuery.mock.calls[3][0]).toContain("role = 'owner'");
+    expect(clientQuery.mock.calls[4][0]).toContain('UPDATE spaces SET owner_id');
+    expect(clientQuery.mock.calls[5][0]).toContain('space_audit_events');
+  });
+
+  it('rejects ownership transfer to a non-member without changing ownership', async () => {
+    const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) =>
+      work({ query: clientQuery }));
+    await expect(service.transferOwnership('u1', 's1', 'u3')).rejects.toBeInstanceOf(BadRequestException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
   });
 
   it('prevents owner self-removal through leave', async () => {
