@@ -39,6 +39,26 @@ describe('SpacesService', () => {
     })).toThrow(BadRequestException);
   });
 
+  it('rejects invalid event update fields before accessing the database', async () => {
+    await expect(service.updateEvent('user-1','event-1',{})).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateEvent('user-1','event-1',{downloadPolicy:'anyone'})).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateEvent('user-1','event-1',{startsAt:'2026-12-03T10:00:00Z',endsAt:'2026-12-02T10:00:00Z'})).rejects.toBeInstanceOf(BadRequestException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('updates event settings only for owner/admin in one transaction', async () => {
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[{id:'event-1',name:'Launch',starts_at:null,ends_at:null,timezone:'UTC',moderation_mode:'host',download_policy:'members'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{starts_at:'2026-12-01T10:00:00Z',ends_at:null,timezone:'UTC',moderation_mode:'approval',download_policy:'members'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
+    await expect(service.updateEvent('user-1','event-1',{startsAt:'2026-12-01T10:00:00Z',moderationMode:'approval'}))
+      .resolves.toMatchObject({spaceId:'event-1',moderation_mode:'approval'});
+    expect(clientQuery).toHaveBeenCalledTimes(3);
+    expect(clientQuery.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
+    expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
+  });
+
   it('lists only active memberships in active spaces', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'space-1', type: 'CIRCLE' }] });
     await expect(service.listMine('user-1')).resolves.toEqual([{ id: 'space-1', type: 'CIRCLE' }]);
