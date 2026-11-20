@@ -9,8 +9,8 @@ import { TimelineService } from './timeline.service';
 export class TimelineController {
   constructor(private readonly timeline:TimelineService) {}
   @Get()
-  list(@Req() req:Request & AuthenticatedRequest,@Param('spaceId') spaceId:string,@Query('cursor') cursor?:string,@Query('limit') limit?:string) {
-    return this.timeline.list(req.userId!,spaceId,cursor,Number(limit)||30);
+  list(@Req() req:Request & AuthenticatedRequest,@Param('spaceId') spaceId:string,@Query('cursor') cursor?:string,@Query('limit') limit?:string,@Query('cursorId') cursorId?:string) {
+    return this.timeline.list(req.userId!,spaceId,cursor,Number(limit)||30,cursorId);
   }
   @Post()
   add(@Req() req:Request & AuthenticatedRequest,@Param('spaceId') spaceId:string,@Body() body:unknown) {
