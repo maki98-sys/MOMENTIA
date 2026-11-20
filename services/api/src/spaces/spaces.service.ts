@@ -146,6 +146,34 @@ export class SpacesService {
     });
   }
 
+  async changeLifecycle(userId:string,spaceId:string,action:unknown) {
+    if(action!=='archive'&&action!=='reopen'&&action!=='close') {
+      throw new BadRequestException('action must be archive, reopen or close.');
+    }
+    return this.database.transaction(async client=>{
+      const current=await client.query(
+        `SELECT s.id,s.type,s.status FROM spaces s
+         JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1
+           AND sm.state='active' AND sm.role='owner'
+         WHERE s.id=$2 FOR UPDATE OF s`,[userId,spaceId]);
+      if(!current.rowCount) throw new NotFoundException('Space not found or owner permission required.');
+      const row=current.rows[0] as Record<string,unknown>;
+      const status=String(row.status);
+      if(action==='archive'&&status!=='active') throw new BadRequestException('Only an active space can be archived.');
+      if(action==='reopen'&&status!=='archived') throw new BadRequestException('Only an archived space can be reopened.');
+      if(action==='close'&&status!=='active'&&status!=='archived') throw new BadRequestException('This space cannot be closed.');
+      const next=action==='archive'?'archived':action==='reopen'?'active':'closed';
+      const updated=await client.query(
+        `UPDATE spaces SET status=$2,closed_at=CASE WHEN $2='closed' THEN now() ELSE NULL END
+         WHERE id=$1 RETURNING id,type,status,closed_at,updated_at`,[spaceId,next]);
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4,'newStatus',$5))`,
+        [spaceId,userId,`space.${action}`,status,next]);
+      return updated.rows[0];
+    });
+  }
+
   async getMine(userId: string, spaceId: string) {
     const result = await this.database.query(
       `SELECT s.id, s.type, s.name, s.visibility, s.status, s.owner_id,
