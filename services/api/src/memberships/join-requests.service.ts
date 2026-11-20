@@ -42,8 +42,8 @@ export class JoinRequestsService {
       [spaceId,actorId]);
     if(!access.rowCount) throw new NotFoundException('Circle not found or permission denied.');
     const result=await this.db.query(
-      `SELECT r.id,r.requester_id,u.display_name,u.avatar_url,r.status,r.created_at
-       FROM space_join_requests r JOIN users u ON u.id=r.requester_id
+      `SELECT r.id,r.requester_id,up.display_name,up.avatar_media_id,r.status,r.created_at
+       FROM space_join_requests r JOIN user_profiles up ON up.user_id=r.requester_id
        WHERE r.space_id=$1 AND r.status='pending'
        ORDER BY r.created_at ASC LIMIT 100`,[spaceId]);
     return result.rows;
