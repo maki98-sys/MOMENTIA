@@ -13,11 +13,11 @@ import { dirname, join, resolve } from 'path';
  * upload, authorization, quota, or processing orchestration.
  */
 export abstract class MediaStorage {
-  abstract put(storageKey: string, bytes: Buffer): Promise<void>;
-  abstract remove(storageKey: string): Promise<void>;
-  abstract locate(storageKey: string, expectedSize?: number): Promise<string>;
-  abstract read(storageKey: string): Promise<Buffer>;
-  abstract openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }>;
+  abstract put(storageKey: string, bytes: Buffer, provider?: string): Promise<void>;
+  abstract remove(storageKey: string, provider?: string): Promise<void>;
+  abstract locate(storageKey: string, expectedSize?: number, provider?: string): Promise<string>;
+  abstract read(storageKey: string, provider?: string): Promise<Buffer>;
+  abstract openReadStream(storageKey: string, expectedSize?: number, provider?: string): Promise<{ stream: Readable; sizeBytes: number }>;
 }
 
 @Injectable()
@@ -33,7 +33,7 @@ export class LocalMediaStorage extends MediaStorage {
     return target;
   }
 
-  async put(storageKey: string, bytes: Buffer): Promise<void> {
+  async put(storageKey: string, bytes: Buffer, _provider?: string): Promise<void> {
     const destination = this.pathFor(storageKey);
     const temporary = destination + '.' + randomUUID() + '.tmp';
     try {
@@ -46,17 +46,17 @@ export class LocalMediaStorage extends MediaStorage {
     }
   }
 
-  async remove(storageKey: string): Promise<void> {
+  async remove(storageKey: string, _provider?: string): Promise<void> {
     await rm(this.pathFor(storageKey), { force: true });
   }
 
-  async read(storageKey: string): Promise<Buffer> {
+  async read(storageKey: string, _provider?: string): Promise<Buffer> {
     const target = await this.locate(storageKey);
     try { return await readFile(target); }
     catch { throw new ServiceUnavailableException('Media content is unavailable.'); }
   }
 
-  async openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }> {
+  async openReadStream(storageKey: string, expectedSize?: number, _provider?: string): Promise<{ stream: Readable; sizeBytes: number }> {
     const target = await this.locate(storageKey, expectedSize);
     const info = await stat(target);
     return { stream: createReadStream(target), sizeBytes: info.size };
@@ -92,17 +92,17 @@ export class S3MediaStorage extends MediaStorage {
     return storageKey;
   }
 
-  async put(storageKey: string, bytes: Buffer): Promise<void> {
+  async put(storageKey: string, bytes: Buffer, _provider?: string): Promise<void> {
     try { await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey), Body: bytes })); }
     catch { throw new ServiceUnavailableException('Remote media storage is unavailable.'); }
   }
 
-  async remove(storageKey: string): Promise<void> {
+  async remove(storageKey: string, _provider?: string): Promise<void> {
     try { await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) })); }
     catch { throw new ServiceUnavailableException('Remote media deletion failed.'); }
   }
 
-  async read(storageKey: string): Promise<Buffer> {
+  async read(storageKey: string, _provider?: string): Promise<Buffer> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) }));
       if (!response.Body) throw new Error('Object body missing');
@@ -110,7 +110,7 @@ export class S3MediaStorage extends MediaStorage {
     } catch { throw new ServiceUnavailableException('Remote media content is unavailable.'); }
   }
 
-  async openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }> {
+  async openReadStream(storageKey: string, expectedSize?: number, _provider?: string): Promise<{ stream: Readable; sizeBytes: number }> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) }));
       if (!response.Body || response.ContentLength === undefined ||
@@ -121,7 +121,24 @@ export class S3MediaStorage extends MediaStorage {
     } catch { throw new ServiceUnavailableException('Remote media content is unavailable.'); }
   }
 
-  async locate(_storageKey: string, _expectedSize?: number): Promise<string> {
+  async locate(_storageKey: string, _expectedSize?: number, _provider?: string): Promise<string> {
     throw new ServiceUnavailableException('Remote objects do not have local filesystem paths.');
   }
+}
+
+
+@Injectable()
+export class RoutedMediaStorage extends MediaStorage {
+  constructor(private readonly local: LocalMediaStorage, private readonly remote: S3MediaStorage) { super(); }
+  private select(provider?: string): MediaStorage {
+    const selected = provider ?? process.env.MEDIA_STORAGE_PROVIDER ?? 'local';
+    if (selected === 'local') return this.local;
+    if (selected === 's3') return this.remote;
+    throw new ServiceUnavailableException('Unknown media storage provider.');
+  }
+  put(key: string, bytes: Buffer, provider?: string) { return this.select(provider).put(key,bytes); }
+  remove(key: string, provider?: string) { return this.select(provider).remove(key); }
+  locate(key: string, size?: number, provider?: string) { return this.select(provider).locate(key,size); }
+  read(key: string, provider?: string) { return this.select(provider).read(key); }
+  openReadStream(key: string, size?: number, provider?: string) { return this.select(provider).openReadStream(key,size); }
 }
