@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
@@ -35,4 +35,8 @@ export class MediaController {
  list(@Req() req:Request&AuthenticatedRequest,@Query('limit') limit?:string){return this.media.listMine(req.userId!,Number(limit)||30);}
  @Get('uploads/:uploadId')
  get(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string){return this.media.getUpload(req.userId!,id);}
+ @Get('assets/:assetId')
+ getAsset(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string){return this.media.getAsset(req.userId!,id);}
+ @Delete('assets/:assetId')
+ deleteAsset(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string){return this.media.deleteAsset(req.userId!,id);}
 }
