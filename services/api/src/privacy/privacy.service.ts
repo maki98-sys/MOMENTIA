@@ -205,7 +205,10 @@ export class PrivacyService {
         const updated = await client.query(
           `UPDATE account_deletion_requests
            SET processing_started_at=NULL,processing_worker_id=NULL,
-               last_error_code=$3
+               last_error_code=$3,
+               scheduled_for=CASE WHEN processing_attempts<8
+                 THEN now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(processing_attempts,7))::integer))
+                 ELSE scheduled_for END
            WHERE id=$1 AND processing_worker_id=$2
            RETURNING id,status,processing_attempts,last_error_code`,
           [requestId,workerId,String(value.errorCode ?? 'ACCOUNT_PURGE_FAILED').slice(0,120)]);
