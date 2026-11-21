@@ -509,8 +509,10 @@ export class SyncService {
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-    const value = input && typeof input === 'object' && !Array.isArray(input)
-      ? input as Record<string, unknown> : {};
+    if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
+      throw new BadRequestException('Snapshot input must be an object.');
+    }
+    const value = (input ?? {}) as Record<string, unknown>;
     if (Object.keys(value).some(key => !['sections','limit','offsets'].includes(key))) {
       throw new BadRequestException('Unsupported snapshot fields.');
     }
@@ -519,7 +521,11 @@ export class SyncService {
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
     if (!requested) throw new BadRequestException('Invalid snapshot sections.');
-    const limit = Math.min(Math.max(Number(value.limit) || 500, 1), 1000);
+    const requestedLimit = value.limit === undefined ? 500 : value.limit;
+    if (!Number.isSafeInteger(requestedLimit) || Number(requestedLimit) < 1 || Number(requestedLimit) > 1000) {
+      throw new BadRequestException('Snapshot limit must be an integer between 1 and 1000.');
+    }
+    const limit = Number(requestedLimit);
     const rawOffsets = value.offsets === undefined ? {} : value.offsets;
     if (!rawOffsets || typeof rawOffsets !== 'object' || Array.isArray(rawOffsets)) {
       throw new BadRequestException('Snapshot offsets must be an object keyed by section.');
