@@ -57,7 +57,8 @@ export class BillingWebhookService {
     if(!plan.rowCount) throw new BadRequestException('Unknown subscription plan.');
     const user=await client.query(`SELECT id FROM users WHERE id=$1 FOR UPDATE`,[d.userId]);
     if(!user.rowCount) throw new BadRequestException('Unknown subscription user.');
-    const existing=await client.query(`SELECT id FROM user_subscriptions WHERE provider=$1 AND provider_subscription_id=$2 FOR UPDATE`,[provider,d.subscriptionId]);
+    const existing=await client.query(`SELECT id,user_id FROM user_subscriptions WHERE provider=$1 AND provider_subscription_id=$2 FOR UPDATE`,[provider,d.subscriptionId]);
+    if(existing.rowCount && existing.rows[0].user_id!==d.userId) throw new BadRequestException('Provider subscription is already linked to a different user.');
     const params=[d.userId,plan.rows[0].id,status,provider,d.customerId??null,d.subscriptionId,d.periodStart??null,d.periodEnd??null,cancel];
     if(['trialing','active','past_due'].includes(status)) await client.query(
       `UPDATE user_subscriptions SET status='cancelled',cancel_at_period_end=false,updated_at=now()
