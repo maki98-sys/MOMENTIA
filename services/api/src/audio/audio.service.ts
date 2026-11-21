@@ -227,18 +227,23 @@ export class AudioService {
     const position = input?.positionMs === undefined ? 0 : Number(input.positionMs);
     if (!Number.isSafeInteger(position) || position < 0 || position > 86400000) throw new BadRequestException('Invalid playback position.');
     if (input?.expectedVersion !== undefined && (!Number.isSafeInteger(Number(input.expectedVersion)) || Number(input.expectedVersion) < 1)) throw new BadRequestException('Invalid expected version.');
-    const itemId = input?.currentItemId ?? null;
+    let itemId = input?.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
     return this.db.transaction(async client => {
       const s = await client.query(`SELECT id,host_user_id,server_version FROM audio_sessions WHERE id=$1 FOR UPDATE`, [sessionId]);
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
       if (s.rows[0].host_user_id !== userId) throw new ForbiddenException('Only the host can control playback.');
       if (input.expectedVersion !== undefined && Number(input.expectedVersion) !== Number(s.rows[0].server_version)) throw new ConflictException('Playback state changed; refresh and retry.');
+      if (action === 'next' && itemId === null) {
+        const next = await client.query(`SELECT id FROM audio_queue_items
+          WHERE session_id=$1 AND state='queued' ORDER BY position ASC,id ASC LIMIT 1 FOR UPDATE`, [sessionId]);
+        itemId = next.rowCount ? next.rows[0].id : null;
+      }
       if (itemId !== null) {
         const item = await client.query(`SELECT id FROM audio_queue_items WHERE id=$1 AND session_id=$2 AND state IN ('queued','current')`, [itemId,sessionId]);
         if (!item.rowCount) throw new NotFoundException('Queue item not found.');
       }
-      const state = action === 'end' ? 'ended' : action === 'play' ? 'playing' : action === 'pause' ? 'paused' : undefined;
+      const state = action === 'end' ? 'ended' : action === 'play' ? 'playing' : action === 'pause' ? 'paused' : action === 'next' && itemId === null ? 'ended' : undefined;
       const playback = action === 'end' ? 'ended' : action === 'play' ? 'playing' : action === 'pause' ? 'paused' : undefined;
       const r = await client.query(`UPDATE audio_sessions SET
         state=COALESCE($2,state),playback_state=COALESCE($3,playback_state),
