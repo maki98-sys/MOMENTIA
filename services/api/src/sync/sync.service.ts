@@ -566,7 +566,9 @@ export class SyncService {
 
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      // READ COMMITTED is intentional: each section query must see permission changes
+      // committed before that query, rather than reusing a transaction-wide old snapshot.
+      await client.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId]);
       await client.query(`DELETE FROM sync_snapshot_sessions WHERE expires_at <= now() OR created_at < now()-interval '24 hours'`);
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
