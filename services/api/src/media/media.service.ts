@@ -153,7 +153,7 @@ export class MediaService {
       if(!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
       return {uploadId,partNumber,received:true,duplicate:inserted};
     } catch(error) {
-      if(!transactionCommitted || !keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
+      if(!transactionCommitted || !keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
       throw error;
     }
   }
@@ -276,7 +276,7 @@ export class MediaService {
     }
     return this.db.transaction(async client=>{
       const result=await client.query(
-        `SELECT u.id,u.state,u.media_asset_id,a.status asset_status
+        `SELECT u.id,u.state,u.media_asset_id,a.status asset_status,a.storage_provider
          FROM media_uploads u
          JOIN media_assets a ON a.id=u.media_asset_id
          WHERE u.id=$1 AND u.uploader_id=$2
@@ -290,8 +290,8 @@ export class MediaService {
         throw new ConflictException('Only an upload that has not been received can be cancelled.');
       }
       await client.query(
-        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-         SELECT $1,p.storage_key FROM media_upload_parts p WHERE p.upload_id=$2
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+         SELECT $1,p.storage_key,p.storage_provider FROM media_upload_parts p WHERE p.upload_id=$2
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
         [upload.media_asset_id,uploadId],
       );
