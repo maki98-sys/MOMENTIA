@@ -260,6 +260,12 @@ export class PrivacyService {
                WHERE space_id=$1 AND user_id=$2 AND state='active'`,
               [space.id,request.user_id],
             );
+          } else {
+            await client.query(
+              `UPDATE space_memberships SET role='member'
+               WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+              [space.id,request.user_id],
+            );
           }
         } else {
           await client.query(
