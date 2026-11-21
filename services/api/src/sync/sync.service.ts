@@ -513,14 +513,33 @@ export class SyncService {
       throw new BadRequestException('Snapshot input must be an object.');
     }
     const value = (input ?? {}) as Record<string, unknown>;
-    if (Object.keys(value).some(key => !['sections','limit','offsets'].includes(key))) {
+    if (Object.keys(value).some(key => !['sections','limit','offsets','snapshotId'].includes(key))) {
       throw new BadRequestException('Unsupported snapshot fields.');
     }
+    const snapshotId = value.snapshotId;
+    if (snapshotId !== undefined && (typeof snapshotId !== 'string' || !UUID.test(snapshotId))) throw new BadRequestException('snapshotId must be a UUID.');
     const allowed = ['profile','relationships','spaces','posts','comments','reactions','timeline','albums','notifications','notificationPreferences','devices','rsvps','coupleJournal','coupleKeyEnvelopes','media'];
-    const requested = value.sections === undefined ? allowed
+    let requested = value.sections === undefined ? allowed
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
     if (!requested) throw new BadRequestException('Invalid snapshot sections.');
+    let frozenData: Record<string, unknown[]> | null = null;
+    let frozenCursor: string | null = null;
+    if (snapshotId) {
+      const saved = await this.db.query(
+        `SELECT sections,data,cursor::text,expires_at FROM sync_snapshot_sessions
+         WHERE id=$1 AND user_id=$2 AND expires_at>now()`,
+        [snapshotId,userId],
+      );
+      if (!saved.rowCount) throw new BadRequestException('Snapshot session not found or expired.');
+      const savedSections = saved.rows[0].sections as string[];
+      if (value.sections !== undefined && JSON.stringify(requested) !== JSON.stringify(savedSections)) {
+        throw new BadRequestException('Snapshot sections cannot change during pagination.');
+      }
+      requested = savedSections;
+      frozenData = saved.rows[0].data as Record<string, unknown[]>;
+      frozenCursor = String(saved.rows[0].cursor);
+    }
     const requestedLimit = value.limit === undefined ? 500 : value.limit;
     if (!Number.isSafeInteger(requestedLimit) || Number(requestedLimit) < 1 || Number(requestedLimit) > 1000) {
       throw new BadRequestException('Snapshot limit must be an integer between 1 and 1000.');
@@ -541,12 +560,8 @@ export class SyncService {
       throw new BadRequestException('Snapshot offsets must belong to requested sections.');
     }
     const nextOffsets: Record<string, number> = {};
-    const data: Record<string, unknown[]> = {};
-    const has = (section: string) => requested.includes(section);
-    const page = (section: string, rows: unknown[]) => {
-      if (rows.length === limit) nextOffsets[section] = (offsets[section] ?? 0) + rows.length;
-      return rows;
-    };
+    const data: Record<string, unknown[]> = frozenData ?? {};
+    const has = (section: string) => !frozenData && requested.includes(section);
 
     if (has('spaces')) {
       const r = await client.query(
@@ -564,7 +579,7 @@ export class SyncService {
          LEFT JOIN circle_details c ON c.space_id=s.id
          LEFT JOIN couple_details p ON p.space_id=s.id
          WHERE m.user_id=$1 AND m.state='active'
-         ORDER BY s.created_at DESC,s.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['spaces'] ?? 0]);
+         ORDER BY s.created_at DESC,s.id`, [userId]);
       data.spaces = page('spaces', r.rows);
     }
     if (has('posts')) {
@@ -579,7 +594,7 @@ export class SyncService {
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
-         ORDER BY p.created_at DESC,p.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['posts'] ?? 0]);
+         ORDER BY p.created_at DESC,p.id`, [userId]);
       data.posts = page('posts', r.rows);
     }
     if (has('comments')) {
@@ -594,7 +609,7 @@ export class SyncService {
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
-         ORDER BY c.created_at DESC,c.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['comments'] ?? 0]);
+         ORDER BY c.created_at DESC,c.id`, [userId]);
       data.comments = page('comments', r.rows);
     }
     if (has('timeline')) {
@@ -605,7 +620,7 @@ export class SyncService {
          WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
            AND (t.post_id IS NULL OR EXISTS(SELECT 1 FROM posts p WHERE p.id=t.post_id AND p.status='published'))
            AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
-         ORDER BY t.occurred_at DESC,t.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['timeline'] ?? 0]);
+         ORDER BY t.occurred_at DESC,t.id`, [userId]);
       data.timeline = page('timeline', r.rows);
     }
     if (has('albums')) {
@@ -617,13 +632,13 @@ export class SyncService {
            AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready')
          WHERE m.user_id=$1 AND m.state='active'
            AND (a.visibility='members' OR m.role IN ('owner','admin','moderator'))
-         ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['albums'] ?? 0]);
+         ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id`, [userId]);
       data.albums = page('albums', r.rows);
     }
     if (has('notifications')) {
       const r = await client.query(
         `SELECT id,category,payload,read_at,created_at FROM notifications
-         WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`, [userId,limit,offsets['notifications'] ?? 0]);
+         WHERE user_id=$1 ORDER BY created_at DESC,id`, [userId]);
       data.notifications = page('notifications', r.rows);
     }
     if (has('rsvps')) {
@@ -631,7 +646,7 @@ export class SyncService {
         `SELECT r.id,r.space_id,r.response,r.guest_count,r.note,r.responded_at
          FROM event_rsvps r JOIN space_memberships m ON m.space_id=r.space_id AND m.user_id=r.user_id
          WHERE r.user_id=$1 AND m.state='active'
-         ORDER BY r.responded_at DESC,r.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['rsvps'] ?? 0]);
+         ORDER BY r.responded_at DESC,r.id`, [userId]);
       data.rsvps = page('rsvps', r.rows);
     }
     if (has('coupleJournal')) {
@@ -642,7 +657,7 @@ export class SyncService {
          JOIN space_memberships m ON m.space_id=j.space_id AND m.user_id=$1
          JOIN spaces s ON s.id=j.space_id AND s.type='COUPLE' AND s.status='active'
          WHERE m.state='active' AND j.deleted_at IS NULL
-         ORDER BY j.created_at DESC,j.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['coupleJournal'] ?? 0]);
+         ORDER BY j.created_at DESC,j.id`, [userId]);
       data.coupleJournal = page('coupleJournal', r.rows);
     }
     if (has('media')) {
@@ -650,7 +665,7 @@ export class SyncService {
         `SELECT a.id,a.mime_type_detected,a.size_bytes,a.width,a.height,a.checksum_sha256,
                 a.status,a.created_at,a.processing_completed_at
          FROM media_assets a WHERE a.owner_id=$1 AND a.status <> 'deleted'
-         ORDER BY a.created_at DESC,a.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['media'] ?? 0]);
+         ORDER BY a.created_at DESC,a.id`, [userId]);
       data.media = page('media', r.rows);
     }
     if (has('profile')) {
@@ -665,7 +680,7 @@ export class SyncService {
       const r = await client.query(
         `SELECT id,requester_id,target_id,state,created_at,updated_at
          FROM user_relationships WHERE requester_id=$1 OR target_id=$1
-         ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`, [userId,limit,offsets['relationships'] ?? 0]);
+         ORDER BY created_at DESC,id`, [userId]);
       data.relationships = page('relationships', r.rows);
     }
     if (has('reactions')) {
@@ -695,19 +710,19 @@ export class SyncService {
                AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                  (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
                  (b.blocker_id=p.author_id AND b.blocked_id=$1)))
-         ) ORDER BY r.created_at DESC,r.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['reactions'] ?? 0]);
+         ) ORDER BY r.created_at DESC,r.id`, [userId]);
       data.reactions = page('reactions', r.rows);
     }
     if (has('notificationPreferences')) {
       const r = await client.query(
         `SELECT category,in_app_enabled,push_enabled,updated_at
-         FROM notification_preferences WHERE user_id=$1 ORDER BY category LIMIT $2 OFFSET $3`, [userId,limit,offsets['notificationPreferences'] ?? 0]);
+         FROM notification_preferences WHERE user_id=$1 ORDER BY category`, [userId]);
       data.notificationPreferences = page('notificationPreferences', r.rows);
     }
     if (has('devices')) {
       const r = await client.query(
         `SELECT id,platform,last_seen_at,revoked_at,created_at
-         FROM devices WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`, [userId,limit,offsets['devices'] ?? 0]);
+         FROM devices WHERE user_id=$1 ORDER BY created_at DESC,id`, [userId]);
       data.devices = page('devices', r.rows);
     }
     if (has('coupleKeyEnvelopes')) {
@@ -719,18 +734,45 @@ export class SyncService {
          JOIN space_memberships m ON m.space_id=e.space_id AND m.user_id=e.user_id
          JOIN spaces s ON s.id=e.space_id AND s.type='COUPLE' AND s.status='active'
          WHERE e.user_id=$1 AND m.state='active'
-         ORDER BY e.space_id,e.key_version DESC LIMIT $2 OFFSET $3`, [userId,limit,offsets['coupleKeyEnvelopes'] ?? 0]);
+         ORDER BY e.space_id,e.key_version DESC`, [userId]);
       data.coupleKeyEnvelopes = page('coupleKeyEnvelopes', r.rows);
     }
-    const cursor = await client.query(
-      `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
-    const watermark = await client.query(`SELECT transaction_timestamp() AS snapshot_at`);
+    let cursorValue = frozenCursor;
+    let snapshotAt: unknown = null;
+    let activeSnapshotId = snapshotId ?? null;
+    if (!frozenData) {
+      const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
+      if (totalRows > 25000) throw new BadRequestException('Snapshot exceeds the maximum materialized record count; request fewer sections.');
+      const cursor = await client.query(
+        `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
+      cursorValue = String(cursor.rows[0].cursor);
+      const watermark = await client.query(`SELECT transaction_timestamp() AS snapshot_at`);
+      snapshotAt = watermark.rows[0].snapshot_at;
+      const saved = await client.query(
+        `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
+         VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
+         RETURNING id`,
+        [userId,requested,JSON.stringify(data),cursorValue],
+      );
+      activeSnapshotId = String(saved.rows[0].id);
+    } else {
+      const saved = await this.db.query(
+        `SELECT created_at AS snapshot_at FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2`,
+        [snapshotId,userId],
+      );
+      snapshotAt = saved.rows[0]?.snapshot_at ?? null;
+    }
+    for (const section of requested) {
+      const rows = data[section] ?? [];
+      const offset = offsets[section] ?? 0;
+      data[section] = rows.slice(offset,offset+limit);
+      if (offset+limit < rows.length) nextOffsets[section] = offset+limit;
+    }
     return {
-      data, limit, sections: requested, nextOffsets, hasMore: Object.keys(nextOffsets).length > 0,
-      cursor: cursor.rows[0].cursor,
-      snapshotAt: watermark.rows[0].snapshot_at,
-      consistency: 'repeatable_read',
-      generatedAt: new Date().toISOString(),
+      snapshotId: activeSnapshotId, data, limit, sections: requested, nextOffsets,
+      hasMore: Object.keys(nextOffsets).length > 0,
+      cursor: cursorValue, snapshotAt, expiresInSeconds: 1800,
+      consistency: 'materialized_snapshot', generatedAt: new Date().toISOString(),
     };
     });
   }
