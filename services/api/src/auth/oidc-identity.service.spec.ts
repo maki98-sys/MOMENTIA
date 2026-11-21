@@ -73,13 +73,14 @@ describe('OidcIdentityService', () => {
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // identity not found
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // email available
       .mockResolvedValueOnce({ rows: [{ id: 'new-user' }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // user profile
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // external identity
 
     await expect(h.service.resolveOrProvision(principal)).resolves.toEqual({
       userId: 'new-user',
       created: true,
     });
     expect(h.query.mock.calls[3][0]).toContain('INSERT INTO users');
-    expect(h.query.mock.calls[4][0]).toContain('INSERT INTO auth_identities');
+    expect(h.query.mock.calls[5][0]).toContain('INSERT INTO auth_identities');
   });
 });
