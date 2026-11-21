@@ -21,8 +21,10 @@ export class MediaProcessingController {
     this.authorize(token);
     if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker claim body is required.');
     const value=body as Record<string,unknown>;
-    if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
-    return this.processing.claim(value.workerId,Number(value.limit)||10);
+    if(Object.keys(value).some(key=>!['workerId','limit'].includes(key)) || typeof value.workerId!=='string' || !/^[a-zA-Z0-9._:-]{3,100}$/.test(value.workerId)) throw new UnauthorizedException('Invalid worker claim fields.');
+    const limit=value.limit===undefined?10:Number(value.limit);
+    if(!Number.isInteger(limit)||limit<1||limit>50) throw new UnauthorizedException('limit must be between 1 and 50.');
+    return this.processing.claim(value.workerId,limit);
   }
 
   @Post('jobs/:jobId/complete')
@@ -34,7 +36,7 @@ export class MediaProcessingController {
     this.authorize(token);
     if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker result is required.');
     const value=body as Record<string,unknown>;
-    if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
+    if(typeof value.workerId!=='string' || !/^[a-zA-Z0-9._:-]{3,100}$/.test(value.workerId)) throw new UnauthorizedException('workerId is required.');
     const {workerId,...result}=value;
     return this.processing.complete(workerId,jobId,result);
   }
@@ -44,12 +46,11 @@ export class MediaProcessingController {
     this.authorize(token);
     if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker claim body is required.');
     const value=body as Record<string,unknown>;
-    if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
-    return this.processing.claimDeletions(
-      value.workerId,
-      Number(value.limit)||50,
-      typeof value.ownerUserId==='string'?value.ownerUserId:undefined,
-    );
+    if(Object.keys(value).some(key=>!['workerId','limit','ownerUserId'].includes(key)) || typeof value.workerId!=='string' || !/^[a-zA-Z0-9._:-]{3,100}$/.test(value.workerId)) throw new UnauthorizedException('Invalid worker claim fields.');
+    const limit=value.limit===undefined?50:Number(value.limit);
+    if(!Number.isInteger(limit)||limit<1||limit>100) throw new UnauthorizedException('limit must be between 1 and 100.');
+    if(value.ownerUserId!==undefined && typeof value.ownerUserId!=='string') throw new UnauthorizedException('Invalid ownerUserId.');
+    return this.processing.claimDeletions(value.workerId,limit,value.ownerUserId as string|undefined);
   }
 
   @Post('deletions/:deletionId/complete')
@@ -70,14 +71,22 @@ export class MediaProcessingController {
   @Post('uploads/cleanup-expired')
   cleanupExpiredUploads(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
     this.authorize(token);
-    const value=body&&typeof body==='object'&&!Array.isArray(body)?body as Record<string,unknown>:{};
-    return this.processing.cleanupExpiredUploads(Number(value.limit)||100);
+    if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Invalid cleanup payload.');
+    const value=body as Record<string,unknown>;
+    if(Object.keys(value).some(key=>key!=='limit')) throw new UnauthorizedException('Unsupported cleanup fields.');
+    const limit=value.limit===undefined?100:Number(value.limit);
+    if(!Number.isInteger(limit)||limit<1||limit>500) throw new UnauthorizedException('limit must be between 1 and 500.');
+    return this.processing.cleanupExpiredUploads(limit);
   }
 
   @Post('leases/recover')
   recover(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
     this.authorize(token);
-    const value=body&&typeof body==='object'&&!Array.isArray(body)?body as Record<string,unknown>:{};
-    return this.processing.releaseStaleLocks(Number(value.staleSeconds)||300);
+    if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Invalid lease recovery payload.');
+    const value=body as Record<string,unknown>;
+    if(Object.keys(value).some(key=>key!=='staleSeconds')) throw new UnauthorizedException('Unsupported lease recovery fields.');
+    const staleSeconds=value.staleSeconds===undefined?300:Number(value.staleSeconds);
+    if(!Number.isInteger(staleSeconds)||staleSeconds<60||staleSeconds>3600) throw new UnauthorizedException('staleSeconds must be between 60 and 3600.');
+    return this.processing.releaseStaleLocks(staleSeconds);
   }
 }
