@@ -89,20 +89,48 @@ export class AudioService {
     if (!Number.isSafeInteger(seconds) || seconds < 15 || seconds > 3600) {
       throw new BadRequestException('Invalid stale participant timeout.');
     }
-    const result = await this.db.query<{ id: string }>(`WITH stale AS (
-        UPDATE audio_participants p SET left_at=now()
-        FROM audio_sessions s
-        WHERE p.session_id=s.id AND p.left_at IS NULL
-          AND p.last_heartbeat_at < now() - ($1 * interval '1 second')
-          AND s.state IN ('created','playing','paused')
-        RETURNING p.session_id
-      ), affected AS (
-        SELECT DISTINCT session_id FROM stale
-      )
-      UPDATE audio_sessions a SET server_version=server_version+1,updated_at=now()
-      FROM affected WHERE a.id=affected.session_id
-      RETURNING a.id`, [seconds]);
-    return result.rows.map(row => row.id);
+    return this.db.transaction(async client => {
+      const result = await client.query<{ id: string }>(`WITH stale AS (
+          UPDATE audio_participants p SET left_at=now()
+          FROM audio_sessions s
+          WHERE p.session_id=s.id AND p.left_at IS NULL
+            AND p.last_heartbeat_at < now() - ($1 * interval '1 second')
+            AND s.state IN ('created','playing','paused')
+          RETURNING p.session_id,p.user_id,p.role
+        ), affected AS (
+          SELECT DISTINCT session_id FROM stale
+        ), host_lost AS (
+          SELECT DISTINCT session_id FROM stale WHERE role='host'
+        ), no_listeners AS (
+          SELECT a.id AS session_id
+          FROM audio_sessions a JOIN affected x ON x.session_id=a.id
+          WHERE NOT EXISTS (
+            SELECT 1 FROM audio_participants p
+            WHERE p.session_id=a.id AND p.left_at IS NULL
+          )
+        ), ended AS (
+          UPDATE audio_sessions a
+          SET state='ended',playback_state='ended',updated_at=now(),
+              server_version=server_version+1
+          WHERE a.id IN (SELECT session_id FROM host_lost UNION SELECT session_id FROM no_listeners)
+            AND a.state IN ('created','playing','paused')
+          RETURNING a.id
+        ), updated AS (
+          UPDATE audio_sessions a
+          SET server_version=server_version+1,updated_at=now()
+          FROM affected x
+          WHERE a.id=x.session_id
+            AND a.state IN ('created','playing','paused')
+            AND a.id NOT IN (SELECT id FROM ended)
+          RETURNING a.id
+        )
+        SELECT id FROM ended
+        UNION SELECT id FROM updated`, [seconds]);
+      await client.query(`UPDATE audio_queue_items SET state='played'
+        WHERE session_id IN (SELECT id FROM audio_sessions WHERE state='ended')
+          AND state IN ('queued','current')`);
+      return result.rows.map(row => row.id);
+    });
   }
 
   async heartbeat(userId: string, sessionId: string) {
