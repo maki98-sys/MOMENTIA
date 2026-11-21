@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { encryptPushToken } from '../notifications/push-token-crypto';
 
 const PLATFORMS = ['ios', 'android', 'web'] as const;
 type DevicePlatform = typeof PLATFORMS[number];
@@ -13,21 +14,26 @@ export class DeviceSessionService {
       throw new BadRequestException('Device data is required.');
     }
     const value = input as Record<string, unknown>;
-    if (Object.keys(value).some(key => !['platform', 'pushTokenEncrypted'].includes(key))) {
+    if (Object.keys(value).some(key => !['platform', 'pushToken'].includes(key))) {
       throw new BadRequestException('Unsupported device fields.');
     }
     if (!PLATFORMS.includes(value.platform as DevicePlatform)) {
       throw new BadRequestException('Platform must be ios, android or web.');
     }
-    const pushToken = value.pushTokenEncrypted ?? null;
-    if (pushToken !== null && (typeof pushToken !== 'string' || pushToken.length > 4096)) {
-      throw new BadRequestException('Invalid encrypted push token.');
+    const pushToken = value.pushToken ?? null;
+    if (pushToken !== null && (typeof pushToken !== 'string' || pushToken.length > 4096 || !pushToken.trim())) {
+      throw new BadRequestException('Invalid push token.');
+    }
+    let encryptedPushToken: string | null = null;
+    if (pushToken !== null) {
+      try { encryptedPushToken = encryptPushToken(pushToken); }
+      catch { throw new BadRequestException('Push token encryption is not configured.'); }
     }
     const result = await this.db.query(
       `INSERT INTO devices(user_id, platform, push_token_encrypted, last_seen_at)
        VALUES($1,$2,$3,now())
        RETURNING id, platform, last_seen_at, created_at`,
-      [userId, value.platform, pushToken],
+      [userId, value.platform, encryptedPushToken],
     );
     return result.rows[0];
   }
