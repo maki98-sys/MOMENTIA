@@ -204,6 +204,72 @@ export class PrivacyService {
           [requestId,workerId,String(value.errorCode ?? 'ACCOUNT_PURGE_FAILED').slice(0,120)]);
         return { ...updated.rows[0], retryable: Number(request.processing_attempts) < 8 };
       }
+      // Revoke invitations and remove account-scoped delivery/preferences before anonymizing.
+      await client.query(
+        `UPDATE space_invitations SET revoked_at=COALESCE(revoked_at,now())
+         WHERE created_by=$1 AND revoked_at IS NULL`, [request.user_id]);
+      await client.query(
+        `UPDATE couple_space_invitations SET revoked_at=COALESCE(revoked_at,now())
+         WHERE (inviter_user_id=$1 OR invitee_user_id=$1)
+           AND accepted_at IS NULL AND revoked_at IS NULL`, [request.user_id]);
+      await client.query(`DELETE FROM event_rsvps WHERE user_id=$1`, [request.user_id]);
+      await client.query(`DELETE FROM couple_space_key_envelopes WHERE user_id=$1`, [request.user_id]);
+      await client.query(`DELETE FROM notification_preferences WHERE user_id=$1`, [request.user_id]);
+      await client.query(`DELETE FROM notifications WHERE user_id=$1`, [request.user_id]);
+      await client.query(`DELETE FROM idempotency_records WHERE actor_id=$1`, [request.user_id]);
+
+      // Transfer owned spaces to an active member where possible. Couple spaces retain
+      // both active memberships to preserve the two-party invariant and encrypted history.
+      const ownedSpaces = await client.query(
+        `SELECT id,type,status FROM spaces WHERE owner_id=$1 ORDER BY created_at FOR UPDATE`,
+        [request.user_id],
+      );
+      for (const space of ownedSpaces.rows) {
+        const successor = await client.query(
+          `SELECT sm.user_id
+           FROM space_memberships sm
+           JOIN users u ON u.id=sm.user_id AND u.status='active'
+           WHERE sm.space_id=$1 AND sm.user_id<>$2 AND sm.state='active'
+           ORDER BY CASE sm.role WHEN 'admin' THEN 0 WHEN 'moderator' THEN 1 WHEN 'member' THEN 2 ELSE 3 END,
+                    sm.joined_at NULLS LAST,sm.created_at,sm.user_id
+           LIMIT 1 FOR UPDATE OF sm`,
+          [space.id,request.user_id],
+        );
+        if (successor.rowCount) {
+          await client.query(
+            `UPDATE spaces SET owner_id=$2,updated_at=now() WHERE id=$1`,
+            [space.id,successor.rows[0].user_id],
+          );
+          await client.query(
+            `UPDATE space_memberships SET role='owner' WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+            [space.id,successor.rows[0].user_id],
+          );
+          if (space.type !== 'COUPLE') {
+            await client.query(
+              `UPDATE space_memberships SET state='left',left_at=now(),joined_at=COALESCE(joined_at,created_at),role='member'
+               WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+              [space.id,request.user_id],
+            );
+          }
+        } else {
+          await client.query(
+            `UPDATE spaces SET status='archived',updated_at=now() WHERE id=$1 AND status='active'`,
+            [space.id],
+          );
+        }
+      }
+      // Leave non-owned spaces. A couple space is intentionally retained for its
+      // remaining partner; its deleted member remains as a non-authenticating tombstone.
+      await client.query(
+        `UPDATE space_memberships sm SET state='left',left_at=now()
+         WHERE sm.user_id=$1 AND sm.state='active'
+           AND NOT EXISTS (SELECT 1 FROM spaces s WHERE s.id=sm.space_id AND s.type='COUPLE')
+           AND NOT EXISTS (SELECT 1 FROM spaces s WHERE s.id=sm.space_id AND s.owner_id=$1)`,
+        [request.user_id],
+      );
+      await client.query(
+        `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
+         WHERE user_id=$1 AND revoked_at IS NULL`, [request.user_id]);
       await client.query(
         `UPDATE users SET status='deleted',deleted_at=now(),deletion_requested_at=NULL,
            email_normalized='deleted+'||id::text||'@deleted.invalid',phone_e164=NULL,updated_at=now()
