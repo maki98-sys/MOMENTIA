@@ -79,11 +79,12 @@ export class MediaService {
       }
       const assetId=randomUUID();
       const storageKey='pending/'+userId+'/'+assetId;
+      const storageProvider=process.env.MEDIA_STORAGE_PROVIDER??'local';
       const asset=await client.query(
-        `INSERT INTO media_assets(id,owner_id,storage_key_original,original_filename,mime_type_detected,size_bytes,checksum_sha256,status)
-         VALUES($1,$2,$3,$4,'application/octet-stream',$5,$6,'pending')
+        `INSERT INTO media_assets(id,owner_id,storage_key_original,storage_provider,original_filename,mime_type_detected,size_bytes,checksum_sha256,status)
+         VALUES($1,$2,$3,$7,$4,'application/octet-stream',$5,$6,'pending')
          RETURNING id,status,size_bytes,created_at`,
-        [assetId,userId,storageKey,v.fileName,v.sizeBytes,String(v.checksumSha256).toLowerCase()]);
+        [assetId,userId,storageKey,v.fileName,v.sizeBytes,String(v.checksumSha256).toLowerCase(),storageProvider]);
       await client.query(
         `INSERT INTO media_metadata(media_asset_id,captured_at,captured_timezone,gps_consent_at)
          VALUES($1,$2,$3,CASE WHEN $4::boolean THEN now() ELSE NULL END)`,
@@ -103,7 +104,7 @@ export class MediaService {
     const checksum=createHash('sha256').update(bytes).digest('hex');
     if(!/^[a-f0-9]{64}$/i.test(checksumHeader)||checksum!==checksumHeader.toLowerCase()) throw new BadRequestException('Part checksum mismatch.');
     const upload=await this.db.query(
-      `SELECT u.id,u.state,u.uploader_id,a.size_bytes FROM media_uploads u
+      `SELECT u.id,u.state,u.uploader_id,a.size_bytes,a.storage_provider FROM media_uploads u
        JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
     if(!upload.rowCount) throw new NotFoundException('Upload not found.');
     if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
@@ -114,7 +115,8 @@ export class MediaService {
       if(Number(existing.rows[0].byte_size)!==bytes.length||String(existing.rows[0].checksum_sha256)!==checksum) throw new ConflictException('Part number already contains different data.');
       return {uploadId,partNumber,received:true,duplicate:true};
     }
-    await this.storage.put(key,bytes);
+    const storageProvider=String(upload.rows[0].storage_provider);
+    await this.storage.put(key,bytes,storageProvider);
     let keepStoredPart=false;
     let transactionCommitted=false;
     try {
@@ -128,10 +130,10 @@ export class MediaService {
           throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
         }
         const saved=await client.query(
-          `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key)
-           VALUES($1,$2,$3,$4,$5)
+          `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key,storage_provider)
+           VALUES($1,$2,$3,$4,$5,$6)
            ON CONFLICT(upload_id,part_number) DO NOTHING
-           RETURNING part_number`,[uploadId,partNumber,bytes.length,checksum,key]);
+           RETURNING part_number`,[uploadId,partNumber,bytes.length,checksum,key,storageProvider]);
         if(!saved.rowCount) {
           const winner=await client.query(
             `SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
@@ -148,7 +150,7 @@ export class MediaService {
         return !saved.rowCount;
       });
       transactionCommitted=true;
-      if(!keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
+      if(!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
       return {uploadId,partNumber,received:true,duplicate:inserted};
     } catch(error) {
       if(!transactionCommitted || !keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
@@ -196,7 +198,7 @@ export class MediaService {
       const buffers:Buffer[]=[];
       let total=0;
       for(const part of parts) {
-        const bytes=await this.storage.read(String(part.storage_key));
+        const bytes=await this.storage.read(String(part.storage_key),String(part.storage_provider));
         if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
           throw new ConflictException('A stored upload part failed integrity verification.');
         }
@@ -225,7 +227,7 @@ export class MediaService {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_UPLOAD_BYTES) throw new BadRequestException('Invalid upload body size.');
     const found=await this.db.query(
-      `SELECT u.id,u.state,u.bytes_received,u.uploader_id,a.id media_asset_id,a.size_bytes,a.checksum_sha256,a.storage_key_original,u.declared_mime_type
+      `SELECT u.id,u.state,u.bytes_received,u.uploader_id,a.id media_asset_id,a.size_bytes,a.checksum_sha256,a.storage_key_original,a.storage_provider,u.declared_mime_type
        FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2`,
       [uploadId,userId]);
     if (!found.rowCount) throw new NotFoundException('Upload not found.');
@@ -239,7 +241,7 @@ export class MediaService {
     if (!detectedMime || detectedMime !== row.declared_mime_type) {
       throw new BadRequestException('File content does not match the declared media type.');
     }
-    await this.storage.put(String(row.storage_key_original), bytes);
+    await this.storage.put(String(row.storage_key_original), bytes, String(row.storage_provider));
     try {
       await this.db.transaction(async client=>{
         const updated=await client.query(
@@ -262,7 +264,7 @@ export class MediaService {
           [row.media_asset_id]);
       });
     } catch (error) {
-      await this.storage.remove(String(row.storage_key_original)).catch(()=>undefined);
+      await this.storage.remove(String(row.storage_key_original),String(row.storage_provider)).catch(()=>undefined);
       throw error;
     }
     return this.getUpload(userId,uploadId);
@@ -338,7 +340,7 @@ export class MediaService {
 
   private async findViewableAsset(userId:string,assetId:string) {
     const result=await this.db.query(
-      `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.mime_type_detected,
+      `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.storage_provider,a.mime_type_detected,
               a.original_filename,a.size_bytes,a.width,a.height,a.created_at,
               a.processing_completed_at,a.moderation_scan_status
        FROM media_assets a
@@ -392,22 +394,24 @@ export class MediaService {
     let mimeType=String(asset.mime_type_detected);
     let filename=String(asset.original_filename??'media');
     let sizeBytes=Number(asset.size_bytes);
+    let storageProvider=String(asset.storage_provider);
     if(variantType&&variantType!=='original') {
       const variant=await this.db.query(
-        `SELECT storage_key,mime_type,size_bytes FROM media_variants
+        `SELECT storage_key,mime_type,size_bytes,storage_provider FROM media_variants
          WHERE media_asset_id=$1 AND variant_type=$2`,[assetId,variantType]);
       if(!variant.rowCount) throw new NotFoundException('Media variant not found.');
       storageKey=String(variant.rows[0].storage_key);
       mimeType=String(variant.rows[0].mime_type);
       sizeBytes=Number(variant.rows[0].size_bytes);
+      storageProvider=String(variant.rows[0].storage_provider);
       filename=variantType+'.'+(mimeType==='image/webp'?'webp':'jpg');
     }
-    return {storageKey,mimeType,filename,sizeBytes};
+    return {storageKey,mimeType,filename,sizeBytes,storageProvider};
   }
 
   async openAssetContent(userId:string,assetId:string,variantType?:string) {
     const asset=await this.getAssetContent(userId,assetId,variantType);
-    const stored=await this.storage.openReadStream(asset.storageKey,asset.sizeBytes);
+    const stored=await this.storage.openReadStream(asset.storageKey,asset.sizeBytes,asset.storageProvider);
     return {stream:stored.stream,mimeType:asset.mimeType,filename:asset.filename,sizeBytes:stored.sizeBytes};
   }
 
@@ -424,12 +428,12 @@ export class MediaService {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
     return this.db.transaction(async client=>{
       const asset=await client.query(
-        `SELECT id,status,size_bytes,storage_key_original FROM media_assets
+        `SELECT id,status,size_bytes,storage_key_original,storage_provider FROM media_assets
          WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[assetId,userId]);
       if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
       if(asset.rows[0].status==='deleted') return {deleted:true,alreadyDeleted:true};
       const variants=await client.query(
-        `SELECT storage_key,size_bytes FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
+        `SELECT storage_key,size_bytes,storage_provider FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
       const deletionValues=[`($1,$2)`,...variants.rows.map((_,i)=>`($1,${i+3})`)].join(',');
       await client.query(
         `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
