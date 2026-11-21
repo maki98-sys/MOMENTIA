@@ -1,14 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, rename, rm, stat, writeFile } from 'fs/promises';
-import { dirname, join, resolve } from 'path';
+import { MediaStorage } from './media-storage.service';
 import { DatabaseService } from '../database/database.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 @Injectable()
 export class MediaService {
-  constructor(private readonly db:DatabaseService) {}
+  constructor(private readonly db:DatabaseService, private readonly storage:MediaStorage) {}
 
 
   private detectMime(bytes: Buffer): string | null {
@@ -115,20 +114,7 @@ export class MediaService {
     if (!detectedMime || detectedMime !== row.declared_mime_type) {
       throw new BadRequestException('File content does not match the declared media type.');
     }
-    const base=resolve(process.env.MEDIA_STORAGE_DIR || '/var/lib/momentia/media');
-    const relative=String(row.storage_key_original);
-    if (!relative.startsWith('pending/') || relative.includes('..')) throw new ServiceUnavailableException('Invalid storage key.');
-    const destination=resolve(join(base,relative));
-    if (!destination.startsWith(base + '/')) throw new ServiceUnavailableException('Invalid storage destination.');
-    const temporary=destination+'.'+randomUUID()+'.tmp';
-    try {
-      await mkdir(dirname(destination),{recursive:true});
-      await writeFile(temporary,bytes,{flag:'wx',mode:0o600});
-      await rename(temporary,destination);
-    } catch (error) {
-      await rm(temporary,{force:true}).catch(()=>undefined);
-      throw new ServiceUnavailableException('Media storage is unavailable.');
-    }
+    await this.storage.put(String(row.storage_key_original), bytes);
     try {
       await this.db.transaction(async client=>{
         const updated=await client.query(
@@ -150,7 +136,7 @@ export class MediaService {
           [row.media_asset_id]);
       });
     } catch (error) {
-      await rm(destination,{force:true}).catch(()=>undefined);
+      await this.storage.remove(String(row.storage_key_original)).catch(()=>undefined);
       throw error;
     }
     return this.getUpload(userId,uploadId);
@@ -276,11 +262,7 @@ export class MediaService {
       sizeBytes=Number(variant.rows[0].size_bytes);
       filename=variantType+'.'+(mimeType==='image/webp'?'webp':'jpg');
     }
-    const base=resolve(process.env.MEDIA_STORAGE_DIR||'/var/lib/momentia/media');
-    const target=resolve(join(base,storageKey));
-    if(!target.startsWith(base+'/')) throw new ServiceUnavailableException('Invalid media storage path.');
-    const info=await stat(target).catch(()=>null);
-    if(!info||!info.isFile()||info.size!==sizeBytes) throw new ServiceUnavailableException('Media content is unavailable.');
+    const target=await this.storage.locate(storageKey,sizeBytes);
     return {path:target,mimeType,filename,sizeBytes};
   }
 
