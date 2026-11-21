@@ -5,6 +5,7 @@ import { DatabaseService } from '../database/database.service';
 export interface CreateInvitationInput {
   role: 'member' | 'guest';
   expiresInDays: number;
+  maxUses: number;
 }
 
 @Injectable()
@@ -16,7 +17,7 @@ export class InvitationsService {
       throw new BadRequestException('An invitation object is required.');
     }
     const body = value as Record<string, unknown>;
-    if (Object.keys(body).some((key) => !['role', 'expiresInDays'].includes(key))) {
+    if (Object.keys(body).some((key) => !['role', 'expiresInDays', 'maxUses'].includes(key))) {
       throw new BadRequestException('The invitation contains unsupported fields.');
     }
     const role = body.role ?? 'member';
@@ -27,7 +28,11 @@ export class InvitationsService {
     if (!Number.isInteger(expiresInDays) || Number(expiresInDays) < 1 || Number(expiresInDays) > 30) {
       throw new BadRequestException('expiresInDays must be an integer between 1 and 30.');
     }
-    return { role, expiresInDays: Number(expiresInDays) };
+    const maxUses = body.maxUses ?? 1;
+    if (!Number.isInteger(maxUses) || Number(maxUses) < 1 || Number(maxUses) > 5000) {
+      throw new BadRequestException('maxUses must be an integer between 1 and 5000.');
+    }
+    return { role, expiresInDays: Number(expiresInDays), maxUses: Number(maxUses) };
   }
 
   async create(userId: string, spaceId: string, input: CreateInvitationInput) {
@@ -37,13 +42,13 @@ export class InvitationsService {
       const created = await client.query(
         `INSERT INTO space_invitations
            (space_id, created_by, token_hash, role, expires_at, max_uses, approval_required)
-         SELECT s.id, $1, $3, $4, now() + ($5::int * interval '1 day'), 1, false
+         SELECT s.id, $1, $3, $4, now() + ($5::int * interval '1 day'), $6, false
          FROM spaces s
          JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1
            AND sm.state='active' AND sm.role IN ('owner','admin')
          WHERE s.id=$2 AND s.status='active' AND s.type IN ('EVENT','CIRCLE')
-         RETURNING id,space_id,role,expires_at,max_uses,created_at`,
-        [userId,spaceId,tokenHash,input.role,input.expiresInDays]);
+         RETURNING id,space_id,role,expires_at,max_uses,uses,created_at`,
+        [userId,spaceId,tokenHash,input.role,input.expiresInDays,input.maxUses]);
       if(!created.rowCount) throw new NotFoundException('Space was not found or invitation permission is missing.');
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
