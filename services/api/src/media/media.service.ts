@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, rename, rm, writeFile } from 'fs/promises';
+import { mkdir, rename, rm, stat, writeFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { DatabaseService } from '../database/database.service';
 
@@ -170,6 +170,37 @@ export class MediaService {
        WHERE u.uploader_id=$1 ORDER BY u.created_at DESC LIMIT $2`,[userId,n]);
     return r.rows;
   }
+
+  async getAssetContent(userId:string,assetId:string,variantType?:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
+    if(variantType!==undefined&&!['original','thumbnail','preview','display','video_poster'].includes(variantType)) throw new BadRequestException('Unsupported media variant.');
+    const asset=await this.db.query(
+      `SELECT id,status,owner_id,storage_key_original,mime_type_detected,original_filename,size_bytes
+       FROM media_assets WHERE id=$1 AND owner_id=$2`,[assetId,userId]);
+    if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
+    if(asset.rows[0].status!=='ready') throw new ConflictException('Media is not ready for delivery.');
+    let storageKey=String(asset.rows[0].storage_key_original);
+    let mimeType=String(asset.rows[0].mime_type_detected);
+    let filename=String(asset.rows[0].original_filename??'media');
+    let sizeBytes=Number(asset.rows[0].size_bytes);
+    if(variantType&&variantType!=='original') {
+      const variant=await this.db.query(
+        `SELECT storage_key,mime_type,size_bytes FROM media_variants
+         WHERE media_asset_id=$1 AND variant_type=$2`,[assetId,variantType]);
+      if(!variant.rowCount) throw new NotFoundException('Media variant not found.');
+      storageKey=String(variant.rows[0].storage_key);
+      mimeType=String(variant.rows[0].mime_type);
+      sizeBytes=Number(variant.rows[0].size_bytes);
+      filename=variantType+'.'+(mimeType==='image/webp'?'webp':'jpg');
+    }
+    const base=resolve(process.env.MEDIA_STORAGE_DIR||'/var/lib/momentia/media');
+    const target=resolve(join(base,storageKey));
+    if(!target.startsWith(base+'/')) throw new ServiceUnavailableException('Invalid media storage path.');
+    const info=await stat(target).catch(()=>null);
+    if(!info||!info.isFile()||info.size!==sizeBytes) throw new ServiceUnavailableException('Media content is unavailable.');
+    return {path:target,mimeType,filename,sizeBytes};
+  }
+
   async getAsset(userId:string,assetId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
     const asset=await this.db.query(
