@@ -192,6 +192,25 @@ export class SpacesService {
       const updated=await client.query(
         `UPDATE spaces SET status=$2,closed_at=CASE WHEN $2='closed' THEN now() ELSE NULL END
          WHERE id=$1 RETURNING id,type,status,closed_at,updated_at`,[spaceId,next]);
+      if (next !== 'active') {
+        await client.query(
+          `UPDATE audio_participants p SET left_at=COALESCE(p.left_at,now())
+           FROM audio_sessions a
+           WHERE p.session_id=a.id AND a.space_id=$1
+             AND p.left_at IS NULL AND a.state IN ('created','playing','paused')`,
+          [spaceId],
+        );
+        const ended=await client.query(
+          `UPDATE audio_sessions SET state='ended',playback_state='ended',position_ms=0,
+             server_version=server_version+1,updated_at=now()
+           WHERE space_id=$1 AND state IN ('created','playing','paused')
+           RETURNING id`,[spaceId]);
+        if (ended.rowCount) await client.query(
+          `UPDATE audio_queue_items SET state='played'
+           WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+          [ended.rows.map((row:any)=>row.id)],
+        );
+      }
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
          VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4,'newStatus',$5))`,
@@ -221,6 +240,24 @@ export class SpacesService {
         [grace],
       );
       for (const event of candidates.rows) {
+        await client.query(
+          `UPDATE audio_participants p SET left_at=COALESCE(p.left_at,now())
+           FROM audio_sessions a
+           WHERE p.session_id=a.id AND a.space_id=$1 AND p.left_at IS NULL
+             AND a.state IN ('created','playing','paused')`,
+          [event.id],
+        );
+        const ended=await client.query(
+          `UPDATE audio_sessions SET state='ended',playback_state='ended',position_ms=0,
+             server_version=server_version+1,updated_at=now()
+           WHERE space_id=$1 AND state IN ('created','playing','paused') RETURNING id`,
+          [event.id],
+        );
+        if (ended.rowCount) await client.query(
+          `UPDATE audio_queue_items SET state='played'
+           WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+          [ended.rows.map((row:any)=>row.id)],
+        );
         await client.query(
           `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
            VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3))`,
