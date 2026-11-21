@@ -29,7 +29,14 @@ export class BillingWebhookWorkerController {
   @Get('dead-letter')
   deadLetter(@Headers('x-worker-token') token?:string,@Query('limit') limit?:string) {
     this.authorize(token);
-    return this.webhooks.listDeadLetter(Number(limit)||50);
+    if (limit !== undefined && !/^\\d{1,3}$/.test(limit)) {
+      throw new UnauthorizedException('limit must be a positive integer.');
+    }
+    const parsedLimit = limit === undefined ? 50 : Number(limit);
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      throw new UnauthorizedException('limit must be between 1 and 100.');
+    }
+    return this.webhooks.listDeadLetter(parsedLimit);
   }
 
   @Post(':eventId/retry')
