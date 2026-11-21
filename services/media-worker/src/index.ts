@@ -105,43 +105,57 @@ async function runFfmpeg(args: string[]): Promise<void> {
 
 async function makeImageVariants(job: Job): Promise<Variant[]> {
   const source=await storage.materialize(job.storage_key_original);
-  const meta=await sharp(source,{failOn:'error'}).metadata();
-  if(!meta.width||!meta.height) throw new Error('Image dimensions could not be read');
-  const definitions=[{type:'thumbnail' as const,width:320},{type:'preview' as const,width:1280},{type:'display' as const,width:2048}];
-  const variants:Variant[]=[];
-  for(const definition of definitions) {
-    const storageKey=`variants/${job.media_asset_id}/${definition.type}.webp`;
-    const target=safePath(storageKey);
-    await storage.ensureParent(storageKey);
-    const output=await sharp(source,{failOn:'error'})
-      .rotate()
-      .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
-      .webp({quality:82,effort:4})
-      .toFile(target);
-    await storage.commit(storageKey,target);
-    variants.push({
-      variantType:definition.type,storageKey,mimeType:'image/webp',
-      sizeBytes:output.size,width:output.width,height:output.height,
-      checksumSha256:await sha256(target),
-    });
+  try {
+    const meta=await sharp(source,{failOn:'error'}).metadata();
+    if(!meta.width||!meta.height) throw new Error('Image dimensions could not be read');
+    const definitions=[{type:'thumbnail' as const,width:320},{type:'preview' as const,width:1280},{type:'display' as const,width:2048}];
+    const variants:Variant[]=[];
+    for(const definition of definitions) {
+      const storageKey=`variants/${job.media_asset_id}/${definition.type}.webp`;
+      const target=safePath(storageKey);
+      await storage.ensureParent(storageKey);
+      try {
+        const output=await sharp(source,{failOn:'error'})
+          .rotate()
+          .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
+          .webp({quality:82,effort:4})
+          .toFile(target);
+        const checksumSha256=await sha256(target);
+        await storage.commit(storageKey,target);
+        variants.push({
+          variantType:definition.type,storageKey,mimeType:'image/webp',
+          sizeBytes:output.size,width:output.width,height:output.height,checksumSha256,
+        });
+      } finally {
+        await storage.release(storageKey).catch(()=>undefined);
+      }
+    }
+    return variants;
+  } finally {
+    await storage.release(job.storage_key_original).catch(()=>undefined);
   }
-  return variants;
 }
 
 async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const source=await storage.materialize(job.storage_key_original);
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
   const target=safePath(storageKey);
-  await storage.ensureParent(storageKey);
-  await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
-  await storage.commit(storageKey,target);
-  const meta=await sharp(target).metadata();
-  const info=await stat(target);
-  if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
-  return [{
-    variantType:'video_poster',storageKey,mimeType:'image/jpeg',
-    sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256:await sha256(target),
-  }];
+  try {
+    await storage.ensureParent(storageKey);
+    await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
+    const meta=await sharp(target).metadata();
+    const info=await stat(target);
+    if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
+    const checksumSha256=await sha256(target);
+    await storage.commit(storageKey,target);
+    return [{
+      variantType:'video_poster',storageKey,mimeType:'image/jpeg',
+      sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256,
+    }];
+  } finally {
+    await storage.release(storageKey).catch(()=>undefined);
+    await storage.release(job.storage_key_original).catch(()=>undefined);
+  }
 }
 
 async function processJob(job: Job): Promise<Record<string,unknown>> {
