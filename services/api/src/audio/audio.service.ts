@@ -59,8 +59,18 @@ export class AudioService {
 
   private async withQueue(session: Record<string, any>): Promise<Record<string, any>> {
     const [queue, participants] = await Promise.all([
-      this.db.query(`SELECT id,added_by,provider_track_reference,position,state,created_at FROM audio_queue_items
-        WHERE session_id=$1 AND state IN ('queued','current') ORDER BY position ASC`, [session.id]),
+      this.db.query(`SELECT q.id,q.added_by,q.provider_track_reference,q.position,q.state,q.created_at,
+          COALESCE(v.upvotes,0)::int AS upvotes,
+          COALESCE(v.downvotes,0)::int AS downvotes,
+          (COALESCE(v.upvotes,0)-COALESCE(v.downvotes,0))::int AS vote_score
+        FROM audio_queue_items q
+        LEFT JOIN LATERAL (
+          SELECT count(*) FILTER (WHERE vote=1) AS upvotes,
+                 count(*) FILTER (WHERE vote=-1) AS downvotes
+          FROM audio_votes WHERE queue_item_id=q.id
+        ) v ON true
+        WHERE q.session_id=$1 AND q.state IN ('queued','current')
+        ORDER BY q.position ASC`, [session.id]),
       this.db.query(`SELECT p.user_id,p.role,p.joined_at,p.last_heartbeat_at,up.display_name FROM audio_participants p
         LEFT JOIN user_profiles up ON up.user_id=p.user_id WHERE p.session_id=$1 AND p.left_at IS NULL
         ORDER BY p.joined_at ASC`, [session.id]),
