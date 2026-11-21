@@ -268,6 +268,24 @@ export class NotificationsService {
     let failed = 0;
     for (const item of deliveries) {
       try {
+        const preference = await this.db.query(
+          `SELECT np.push_enabled
+           FROM notification_preferences np
+           JOIN notifications n ON n.user_id=np.user_id AND n.category=np.category
+           WHERE n.id=$1 AND np.user_id=$2
+           LIMIT 1`,
+          [item.notification_id,item.user_id],
+        );
+        if (preference.rowCount && preference.rows[0].push_enabled === false) {
+          await this.db.query(
+            `UPDATE notification_outbox
+             SET status='cancelled',last_error_code='PUSH_OPTED_OUT',
+                 processing_started_at=NULL
+             WHERE id=$1 AND status='processing'`,
+            [item.id],
+          );
+          continue;
+        }
         if (item.platform !== 'ios' && item.platform !== 'android') {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
