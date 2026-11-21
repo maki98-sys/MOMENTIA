@@ -27,7 +27,7 @@ export class MediaProcessingService {
       const ids = jobs.rows.map(job => job.id);
       const details = await client.query(
         `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,
-                a.storage_key_original,a.mime_type_detected,a.size_bytes,a.checksum_sha256
+                a.storage_key_original,a.storage_provider,a.mime_type_detected,a.size_bytes,a.checksum_sha256
          FROM media_processing_jobs j
          JOIN media_assets a ON a.id=j.media_asset_id
          WHERE j.id=ANY($1::uuid[]) ORDER BY j.created_at,j.id`,[ids],
@@ -141,7 +141,7 @@ export class MediaProcessingService {
     return this.db.transaction(async client => {
       const expired = await client.query(
         `WITH candidates AS (
-           SELECT u.id,u.media_asset_id,a.storage_key_original
+           SELECT u.id,u.media_asset_id,a.storage_key_original,a.storage_provider
            FROM media_uploads u
            JOIN media_assets a ON a.id=u.media_asset_id
            WHERE u.state IN ('created','uploading','assembling') AND u.expires_at<=now()
@@ -160,8 +160,8 @@ export class MediaProcessingService {
            FROM cancelled c WHERE a.id=c.media_asset_id
            RETURNING a.id,a.storage_key_original
          )
-         INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-         SELECT d.id,d.storage_key_original FROM deleted d
+         INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+         SELECT d.id,d.storage_key_original,d.storage_provider FROM deleted d
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING
          RETURNING id,media_asset_id,storage_key`,
         [batch],
@@ -170,14 +170,14 @@ export class MediaProcessingService {
       let removedParts=0;
       if(uploadIds.length) {
         const parts=await client.query(
-          `SELECT p.upload_id,p.storage_key,u.media_asset_id
+          `SELECT p.upload_id,p.storage_key,p.storage_provider,u.media_asset_id
            FROM media_upload_parts p JOIN media_uploads u ON u.id=p.upload_id
            WHERE p.upload_id=ANY($1::uuid[])`,[uploadIds]);
         if(parts.rowCount) {
           await client.query(
-            `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-             SELECT x.media_asset_id,x.storage_key FROM jsonb_to_recordset($1::jsonb)
-             AS x(media_asset_id uuid,storage_key text)
+            `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+             SELECT x.media_asset_id,x.storage_key,x.storage_provider FROM jsonb_to_recordset($1::jsonb)
+             AS x(media_asset_id uuid,storage_key text,storage_provider text)
              ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
             [JSON.stringify(parts.rows)]);
           await client.query(`DELETE FROM media_upload_parts WHERE upload_id=ANY($1::uuid[])`,[uploadIds]);
@@ -222,7 +222,7 @@ export class MediaProcessingService {
        )
        UPDATE media_storage_deletions d SET status='processing',attempts=d.attempts+1,locked_at=now(),locked_by=$2
        FROM picked p WHERE d.id=p.id
-       RETURNING d.id,d.media_asset_id,d.storage_key,d.attempts`,[batch,workerId,ownerUserId??null]);
+       RETURNING d.id,d.media_asset_id,d.storage_key,d.storage_provider,d.attempts`,[batch,workerId,ownerUserId??null]);
     return result.rows;
   }
 
