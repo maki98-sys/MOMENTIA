@@ -218,10 +218,22 @@ async function runScheduledTask(name:string,intervalMs:number,path:string,body:u
   }
 }
 
+async function runMediaLeaseRecovery():Promise<void> {
+  const name='media-lease-recovery';
+  const now=Date.now();
+  if(now-(maintenanceLastRun[name]??0)<60000) return;
+  try {
+    await api('/internal/media-processing/leases/recover','POST',{staleSeconds:300},WORKER_TOKEN);
+    maintenanceLastRun[name]=now;
+  } catch(error) {
+    process.stderr.write(`scheduled task ${name} failed: ${String(error)}\\n`);
+  }
+}
+
 async function runMaintenance():Promise<void> {
   if(!MAINTENANCE_TOKEN) return;
   await runScheduledTask('push-dispatch',5000,'/internal/notifications/push/dispatch');
-  await runScheduledTask('media-lease-recovery',60000,'/internal/media-processing/leases/recover',{staleSeconds:300});
+  await runMediaLeaseRecovery();
   await runScheduledTask('push-recovery',60000,'/internal/notifications/push/recover-stale');
   await runScheduledTask('event-reminders',60000,'/internal/events/queue-reminders');
   await runScheduledTask('event-archive',900000,'/internal/events/archive-ended');
