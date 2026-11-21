@@ -131,6 +131,17 @@ export class SyncService {
          (b.blocker_id=p.author_id AND b.blocked_id=$2))`,
       [post.id,userId]);
     if (!access.rowCount) throw new Error('TARGET_NOT_ACCESSIBLE');
+    if (post.comment_id) {
+      const commentAccess = await client.query(
+        `SELECT 1 FROM post_comments c
+         WHERE c.id=$1
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+             (b.blocker_id=$2 AND b.blocked_id=c.author_id) OR
+             (b.blocker_id=c.author_id AND b.blocked_id=$2))`,
+        [post.comment_id,userId],
+      );
+      if (!commentAccess.rowCount) throw new Error('TARGET_NOT_ACCESSIBLE');
+    }
     if (post.audience === 'space') {
       const role = await client.query(
         `SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,
