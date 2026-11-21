@@ -23,6 +23,7 @@ describe('environmentSchema', () => {
   it('requires OIDC settings to be supplied as a complete set', () => {
     expect(environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
     }).error).toBeDefined();
   });
@@ -30,6 +31,7 @@ describe('environmentSchema', () => {
   it('rejects an HTTP JWKS endpoint', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
       OIDC_AUDIENCE: 'momentia-api',
       OIDC_JWKS_URI: 'http://id.example.test/.well-known/jwks.json',
@@ -40,6 +42,7 @@ describe('environmentSchema', () => {
   it('accepts a complete OIDC configuration', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
       OIDC_AUDIENCE: 'momentia-api',
       OIDC_JWKS_URI: 'https://id.example.test/.well-known/jwks.json',
