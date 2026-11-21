@@ -177,11 +177,12 @@ export class SyncService {
     }
     if (spaceId) {
       const member = await client.query(
-        `SELECT 1 FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id
+        `SELECT sm.role FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id
          WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active' AND s.status='active' FOR SHARE OF sm,s`,
         [spaceId,userId],
       );
       if (!member.rowCount) throw new Error('SPACE_ACCESS_DENIED');
+      if (member.rows[0].role === 'guest') throw new Error('INTERACTION_NOT_ALLOWED');
     }
     const inserted = await client.query(
       `INSERT INTO posts(author_id,body,media_asset_id,audience,space_id,status,published_at)
@@ -206,11 +207,12 @@ export class SyncService {
     const occurredAt = payload.occurredAt ?? new Date().toISOString();
     if (typeof occurredAt !== 'string' || Number.isNaN(Date.parse(occurredAt))) throw new Error('INVALID_OCCURRED_AT');
     const membership = await client.query(
-      `SELECT 1 FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id
+      `SELECT sm.role FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id
        WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active' AND s.status='active' FOR SHARE OF sm,s`,
       [spaceId,userId],
     );
     if (!membership.rowCount) throw new Error('SPACE_ACCESS_DENIED');
+    if (membership.rows[0].role === 'guest') throw new Error('INTERACTION_NOT_ALLOWED');
     if (postId) {
       if (typeof postId !== 'string' || !UUID.test(postId)) throw new Error('INVALID_POST_ID');
       const post = await client.query(`SELECT id FROM posts WHERE id=$1 AND space_id=$2 AND status='published'`, [postId,spaceId]);
