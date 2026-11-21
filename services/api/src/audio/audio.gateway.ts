@@ -4,6 +4,8 @@ import {
 } from '@nestjs/websockets';
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import type { Server, Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
 import { OidcTokenVerifier } from '../auth/oidc-token-verifier.service';
 import { OidcIdentityService } from '../auth/oidc-identity.service';
 import { AudioService } from './audio.service';
@@ -24,6 +26,8 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(AudioGateway.name);
   private cleanupTimer?: ReturnType<typeof setInterval>;
+  private redisPublisher?: ReturnType<typeof createClient>;
+  private redisSubscriber?: ReturnType<typeof createClient>;
 
   constructor(
     private readonly verifier: OidcTokenVerifier,
@@ -31,7 +35,26 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     private readonly audio: AudioService,
   ) {}
 
-  afterInit() {
+  async afterInit() {
+    const redisUrl=process.env.AUDIO_REDIS_URL;
+    if(redisUrl) {
+      const publisher=createClient({url:redisUrl});
+      const subscriber=publisher.duplicate();
+      publisher.on('error',error=>this.logger.error('Social Audio Redis publisher error.',error));
+      subscriber.on('error',error=>this.logger.error('Social Audio Redis subscriber error.',error));
+      try {
+        await Promise.all([publisher.connect(),subscriber.connect()]);
+        this.server.adapter(createAdapter(publisher,subscriber));
+        this.redisPublisher=publisher;
+        this.redisSubscriber=subscriber;
+        this.logger.log('Social Audio Redis adapter connected; cross-instance broadcasts enabled.');
+      } catch(error) {
+        this.logger.error('Social Audio Redis adapter could not connect; realtime is running in single-instance mode.',error instanceof Error?error.stack:undefined);
+        await Promise.allSettled([publisher.quit(),subscriber.quit()]);
+      }
+    } else {
+      this.logger.warn('AUDIO_REDIS_URL is not configured; realtime broadcasts are limited to this API instance.');
+    }
     this.logger.log('Social Audio realtime gateway initialized.');
   }
 
@@ -44,8 +67,12 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     this.cleanupTimer.unref?.();
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy() {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+    await Promise.allSettled([
+      ...(this.redisPublisher?[this.redisPublisher.quit()]:[]),
+      ...(this.redisSubscriber?[this.redisSubscriber.quit()]:[]),
+    ]);
   }
 
   private async expireStaleParticipants(timeoutSeconds: number) {
