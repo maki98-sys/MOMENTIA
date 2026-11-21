@@ -136,6 +136,24 @@ BEGIN
       AND (p.audience='public' OR (p.audience='followers' AND EXISTS(
         SELECT 1 FROM user_relationships r WHERE r.requester_id=blocked
           AND r.target_id=blocker AND r.state='accepted')));
+    INSERT INTO sync_change_log(user_id,entity_type,entity_id,change_type,payload)
+    SELECT blocker,'comment',c.id,'upsert',
+      jsonb_build_object('id',c.id,'post_id',c.post_id,'author_id',c.author_id,
+        'body',c.body,'status',c.status,'created_at',c.created_at)
+    FROM post_comments c JOIN posts p ON p.id=c.post_id
+    WHERE p.author_id=blocked AND c.status='visible' AND p.status='published'
+      AND (p.audience='public' OR (p.audience='followers' AND EXISTS(
+        SELECT 1 FROM user_relationships r WHERE r.requester_id=blocker
+          AND r.target_id=blocked AND r.state='accepted')))
+    UNION ALL
+    SELECT blocked,'comment',c.id,'upsert',
+      jsonb_build_object('id',c.id,'post_id',c.post_id,'author_id',c.author_id,
+        'body',c.body,'status',c.status,'created_at',c.created_at)
+    FROM post_comments c JOIN posts p ON p.id=c.post_id
+    WHERE p.author_id=blocker AND c.status='visible' AND p.status='published'
+      AND (p.audience='public' OR (p.audience='followers' AND EXISTS(
+        SELECT 1 FROM user_relationships r WHERE r.requester_id=blocked
+          AND r.target_id=blocker AND r.state='accepted')));
   END IF;
 
   IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
