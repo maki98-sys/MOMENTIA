@@ -9,7 +9,7 @@ import { MediaStorage } from './media-storage.service';
 
 describe('MediaService',()=>{
  const query=jest.fn(),transaction=jest.fn();
- const service=new MediaService({query,transaction} as unknown as DatabaseService);
+ const service=new MediaService({query,transaction} as unknown as DatabaseService, {} as MediaStorage);
  beforeEach(()=>{query.mockReset();transaction.mockReset();});
  it('requires idempotency key',async()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:100,checksumSha256:'a'.repeat(64)},'')).rejects.toBeInstanceOf(BadRequestException);
