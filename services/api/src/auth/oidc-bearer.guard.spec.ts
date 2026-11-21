@@ -8,16 +8,18 @@ import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { OidcBearerGuard } from './oidc-bearer.guard';
 import { OidcTokenVerifier } from './oidc-token-verifier.service';
 import { OidcIdentityService } from './oidc-identity.service';
+import { SessionTokenService } from './session-token.service';
 
 describe('OidcBearerGuard', () => {
   const verifier = { verifyAccessToken: jest.fn() } as unknown as OidcTokenVerifier;
   const identities = { resolveOrProvision: jest.fn() } as unknown as OidcIdentityService;
+  const sessions = { verifyAccessToken: jest.fn() } as unknown as SessionTokenService;
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('rejects requests without a bearer token', async () => {
-    const guard = new OidcBearerGuard(verifier, identities);
+    const guard = new OidcBearerGuard(verifier, identities, sessions);
     const request = { headers: {} };
     const context = { switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
