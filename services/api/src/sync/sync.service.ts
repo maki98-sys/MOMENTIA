@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 
 type SyncOperation = { operationId: string; type: string; payload: Record<string, unknown> };
@@ -28,22 +29,23 @@ export class SyncService {
     const operations = this.parseOperations(input);
     const results = [];
     for (const operation of operations) {
+      const requestHash = createHash('sha256').update(JSON.stringify({ type: operation.type, payload: operation.payload })).digest('hex');
       try {
         const result = await this.db.transaction(async client => {
           const receipt = await client.query(
-            `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type)
-             VALUES($1,$2,$3) ON CONFLICT(user_id,operation_id) DO NOTHING
+            `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type,request_hash)
+             VALUES($1,$2,$3,$4) ON CONFLICT(user_id,operation_id) DO NOTHING
              RETURNING id`,
-            [userId, operation.operationId, operation.type],
+            [userId, operation.operationId, operation.type, requestHash],
           );
           if (!receipt.rowCount) {
             const previous = await client.query(
-              `SELECT operation_type,state,result,error_code FROM sync_operation_receipts
+              `SELECT operation_type,state,result,error_code,request_hash FROM sync_operation_receipts
                WHERE user_id=$1 AND operation_id=$2`,
               [userId, operation.operationId],
             );
             const row = previous.rows[0];
-            if (row.operation_type !== operation.type) return { operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' };
+            if (row.operation_type !== operation.type || (row.request_hash && row.request_hash !== requestHash)) return { operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' };
             if (row.state === 'succeeded') return { operationId: operation.operationId, state: 'succeeded', result: row.result, replayed: true };
             if (row.state === 'rejected') return { operationId: operation.operationId, state: 'rejected', errorCode: row.error_code, replayed: true };
             return { operationId: operation.operationId, state: 'processing' };
