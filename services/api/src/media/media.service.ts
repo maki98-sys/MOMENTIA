@@ -151,6 +151,39 @@ export class MediaService {
     return this.getUpload(userId,uploadId);
   }
 
+  async cancelUpload(userId:string,uploadId:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
+      throw new BadRequestException('Invalid upload id.');
+    }
+    return this.db.transaction(async client=>{
+      const result=await client.query(
+        `SELECT u.id,u.state,u.media_asset_id,a.status asset_status
+         FROM media_uploads u
+         JOIN media_assets a ON a.id=u.media_asset_id
+         WHERE u.id=$1 AND u.uploader_id=$2
+         FOR UPDATE OF u,a`,
+        [uploadId,userId],
+      );
+      if(!result.rowCount) throw new NotFoundException('Upload not found.');
+      const upload=result.rows[0];
+      if(upload.state==='cancelled') return {cancelled:true,alreadyCancelled:true};
+      if(!['created','uploading'].includes(String(upload.state))) {
+        throw new ConflictException('Only an upload that has not been received can be cancelled.');
+      }
+      await client.query(
+        `UPDATE media_uploads SET state='cancelled',updated_at=now()
+         WHERE id=$1 AND uploader_id=$2`,
+        [uploadId,userId],
+      );
+      await client.query(
+        `UPDATE media_assets SET status='deleted',deleted_at=now()
+         WHERE id=$1 AND owner_id=$2 AND status='pending'`,
+        [upload.media_asset_id,userId],
+      );
+      return {cancelled:true,alreadyCancelled:false};
+    });
+  }
+
   async getUpload(userId:string,uploadId:string) {
     const r=await this.db.query(
       `SELECT u.id,u.state,u.bytes_received,u.last_error_code,u.created_at,u.updated_at,
