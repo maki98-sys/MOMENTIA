@@ -33,13 +33,20 @@ export class DeviceSessionService {
       try { encryptedPushToken = encryptPushToken(pushToken); }
       catch { throw new BadRequestException('Push token encryption is not configured.'); }
     }
-    const result = await this.db.query(
-      `INSERT INTO devices(user_id, platform, push_token_encrypted, last_seen_at)
-       VALUES($1,$2,$3,now())
-       RETURNING id, platform, last_seen_at, created_at`,
-      [userId, value.platform, encryptedPushToken],
-    );
-    return result.rows[0];
+    return this.db.transaction(async client => {
+      const result = await client.query(
+        `INSERT INTO devices(user_id, platform, push_token_encrypted, last_seen_at)
+         VALUES($1,$2,$3,now())
+         RETURNING id, platform, last_seen_at, created_at`,
+        [userId, value.platform, encryptedPushToken],
+      );
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'auth.device.registered','device',$2,jsonb_build_object('platform',$3))`,
+        [userId,result.rows[0].id,value.platform],
+      );
+      return result.rows[0];
+    });
   }
 
   async listDevices(userId: string) {
@@ -74,12 +81,18 @@ export class DeviceSessionService {
         [deviceId,userId],
       );
       if (!result.rowCount) throw new NotFoundException('Active device not found.');
-      await client.query(
+      const sessions = await client.query(
         `UPDATE auth_sessions SET revoked_at=now()
-         WHERE device_id=$1 AND user_id=$2 AND revoked_at IS NULL`,
+         WHERE device_id=$1 AND user_id=$2 AND revoked_at IS NULL
+         RETURNING id`,
         [deviceId,userId],
       );
-      return { revoked: true };
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'auth.device.revoked','device',$2,jsonb_build_object('revokedSessions',$3))`,
+        [userId,deviceId,sessions.rowCount ?? 0],
+      );
+      return { revoked: true, revokedSessions: sessions.rowCount ?? 0 };
     });
   }
 
@@ -101,23 +114,39 @@ export class DeviceSessionService {
 
   async revokeSession(userId: string, sessionId: string) {
     assertUuid(sessionId, 'sessionId');
-    const result = await this.db.query(
-      `UPDATE auth_sessions SET revoked_at=now()
-       WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
-       RETURNING id`,
-      [sessionId,userId],
-    );
-    if (!result.rowCount) throw new NotFoundException('Active session not found.');
-    return { revoked: true };
+    return this.db.transaction(async client => {
+      const result = await client.query(
+        `UPDATE auth_sessions SET revoked_at=now()
+         WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
+         RETURNING id`,
+        [sessionId,userId],
+      );
+      if (!result.rowCount) throw new NotFoundException('Active session not found.');
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id)
+         VALUES($1,$1,'auth.session.revoked','session',$2)`,
+        [userId,sessionId],
+      );
+      return { revoked: true };
+    });
   }
 
   async revokeAllSessions(userId: string) {
-    const result = await this.db.query(
-      `UPDATE auth_sessions SET revoked_at=now()
-       WHERE user_id=$1 AND revoked_at IS NULL
-       RETURNING id`,
-      [userId],
-    );
-    return { revokedCount: result.rowCount ?? 0 };
+    return this.db.transaction(async client => {
+      const result = await client.query(
+        `UPDATE auth_sessions SET revoked_at=now()
+         WHERE user_id=$1 AND revoked_at IS NULL
+         RETURNING id`,
+        [userId],
+      );
+      for (const session of result.rows) {
+        await client.query(
+          `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id)
+           VALUES($1,$1,'auth.session.revoked','session',$2)`,
+          [userId,session.id],
+        );
+      }
+      return { revokedCount: result.rowCount ?? 0 };
+    });
   }
 }
