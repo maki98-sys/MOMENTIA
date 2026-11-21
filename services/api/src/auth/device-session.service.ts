@@ -87,12 +87,20 @@ export class DeviceSessionService {
          RETURNING id`,
         [deviceId,userId],
       );
+      const pendingPush = await client.query(
+        `UPDATE notification_outbox
+         SET status='cancelled',processing_started_at=NULL,last_error_code='DEVICE_REVOKED'
+         WHERE device_id=$1 AND user_id=$2 AND channel='push'
+           AND status IN ('pending','failed','processing')
+         RETURNING id`,
+        [deviceId,userId],
+      );
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$1,'auth.device.revoked','device',$2,jsonb_build_object('revokedSessions',$3))`,
         [userId,deviceId,sessions.rowCount ?? 0],
       );
-      return { revoked: true, revokedSessions: sessions.rowCount ?? 0 };
+      return { revoked: true, revokedSessions: sessions.rowCount ?? 0, cancelledPushDeliveries: pendingPush.rowCount ?? 0 };
     });
   }
 
