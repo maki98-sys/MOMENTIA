@@ -161,15 +161,19 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
 async function processJob(job: Job): Promise<Record<string,unknown>> {
   if(job.job_type==='inspect') {
     const source=await storage.materialize(job.storage_key_original);
-    const info=await stat(source);
-    if(info.size!==Number(job.size_bytes)) throw new Error('Stored file size differs from the declared size');
-    if(await sha256(source)!==job.checksum_sha256) throw new Error('Stored file checksum mismatch');
-    return {success:true,result:{bytes:info.size}};
+    try {
+      const info=await stat(source);
+      if(info.size!==Number(job.size_bytes)) throw new Error('Stored file size differs from the declared size');
+      if(await sha256(source)!==job.checksum_sha256) throw new Error('Stored file checksum mismatch');
+      return {success:true,result:{bytes:info.size}};
+    } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
   }
   if(job.job_type==='virus_scan') {
     const source=await storage.materialize(job.storage_key_original);
-    const verdict=await clamScan(source);
-    return {success:true,scanVerdict:verdict,result:{scanner:process.env.CLAMD_HOST?'clamd':'not_configured'}};
+    try {
+      const verdict=await clamScan(source);
+      return {success:true,scanVerdict:verdict,result:{scanner:process.env.CLAMD_HOST?'clamd':'not_configured'}};
+    } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
   }
   if(job.job_type==='image_variants') {
     const variants=await makeImageVariants(job);
