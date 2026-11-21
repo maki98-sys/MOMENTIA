@@ -90,6 +90,11 @@ export class MembershipsService {
       );
       if (!result.rowCount) throw new NotFoundException('Member not found or permission denied.');
       await this.endDepartedAudioParticipation(client,spaceId,targetId);
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,'membership.removed','membership',$3,jsonb_build_object('targetUserId',$3))`,
+        [spaceId,actorId,targetId],
+      );
       return result.rows[0];
     });
   }
@@ -151,6 +156,11 @@ export class MembershipsService {
       );
       if (!result.rowCount) throw new BadRequestException('Owner transfer is required before leaving, or membership is inactive.');
       await this.endDepartedAudioParticipation(client,spaceId,userId);
+      await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,'membership.left','membership',$2,jsonb_build_object('userId',$2))`,
+        [spaceId,userId],
+      );
       return result.rows[0];
     });
   }
