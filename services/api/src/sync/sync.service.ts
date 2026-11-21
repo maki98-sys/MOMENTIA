@@ -448,14 +448,52 @@ export class SyncService {
   async pull(userId: string, cursor?: string, limit = 200) {
     if (cursor !== undefined && !/^\d{1,18}$/.test(cursor)) throw new BadRequestException('Sync cursor must be a non-negative integer.');
     const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
+    const requestedCursor=cursor ?? '0';
+    const bounds=await this.db.query(
+      `SELECT COALESCE(MIN(sequence_id),0)::text oldest_sequence,
+              COALESCE(MAX(sequence_id),0)::text latest_sequence
+       FROM sync_change_log WHERE user_id=$1`,[userId]);
+    const oldest=BigInt(bounds.rows[0].oldest_sequence);
+    const latest=BigInt(bounds.rows[0].latest_sequence);
+    const requested=BigInt(requestedCursor);
+    const resetRequired=oldest>0n && requested<oldest-1n;
+    if(resetRequired) return {changes:[],nextCursor:requestedCursor,hasMore:false,resetRequired:true,oldestCursor:(oldest-1n).toString(),serverCursor:latest.toString()};
     const result = await this.db.query(
       `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
        FROM sync_change_log WHERE user_id=$1 AND sequence_id>$2::bigint
        ORDER BY sequence_id ASC LIMIT $3`,
-      [userId,cursor ?? '0',safeLimit],
+      [userId,requestedCursor,safeLimit],
     );
-    const nextCursor = result.rowCount ? String(result.rows[result.rowCount - 1].sequence_id) : (cursor ?? '0');
-    return { changes: result.rows, nextCursor, hasMore: result.rowCount === safeLimit };
+    const nextCursor = result.rowCount ? String(result.rows[result.rows.length - 1].sequence_id) : requestedCursor;
+    return { changes: result.rows, nextCursor, hasMore: result.rowCount === safeLimit, resetRequired:false, serverCursor:latest.toString() };
+  }
+
+  async saveCheckpoint(userId:string,input:unknown) {
+    if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Checkpoint data is required.');
+    const value=input as Record<string,unknown>;
+    if(Object.keys(value).some(k=>!['deviceId','cursor'].includes(k))) throw new BadRequestException('Unsupported checkpoint fields.');
+    const deviceId=value.deviceId,cursor=value.cursor;
+    if(typeof deviceId!=='string'||!UUID.test(deviceId)) throw new BadRequestException('deviceId must be a UUID.');
+    if(typeof cursor!=='string'||!/^\d{1,18}$/.test(cursor)) throw new BadRequestException('cursor must be a non-negative integer string.');
+    return this.db.transaction(async client=>{
+      const device=await client.query(
+        `SELECT id FROM devices WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR UPDATE`,[deviceId,userId]);
+      if(!device.rowCount) throw new BadRequestException('Active device not found.');
+      const latest=await client.query(
+        `SELECT COALESCE(MAX(sequence_id),0)::text value FROM sync_change_log WHERE user_id=$1`,[userId]);
+      if(BigInt(cursor)>BigInt(latest.rows[0].value)) throw new BadRequestException('Checkpoint cannot exceed the server cursor.');
+      const saved=await client.query(
+        `INSERT INTO sync_device_cursors(device_id,user_id,last_sequence_id,updated_at)
+         VALUES($1,$2,$3::bigint,now())
+         ON CONFLICT(device_id) DO UPDATE SET
+           last_sequence_id=GREATEST(sync_device_cursors.last_sequence_id,EXCLUDED.last_sequence_id),
+           updated_at=now()
+         WHERE sync_device_cursors.user_id=EXCLUDED.user_id
+         RETURNING device_id,last_sequence_id::text,updated_at`,
+        [deviceId,userId,cursor]);
+      if(!saved.rowCount) throw new BadRequestException('Device checkpoint ownership conflict.');
+      return saved.rows[0];
+    });
   }
 
   private errorCode(error: unknown) {
