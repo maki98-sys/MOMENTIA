@@ -19,6 +19,7 @@ import { AudioModule } from './audio/audio.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { BillingModule } from './billing/billing.module';
 import { SyncModule } from './sync/sync.module';
+import { PrivacyModule } from './privacy/privacy.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { SyncModule } from './sync/sync.module';
     ModerationModule,
     BillingModule,
     SyncModule,
+    PrivacyModule,
   ],
 })
 export class AppModule {}
