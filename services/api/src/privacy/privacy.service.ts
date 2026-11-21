@@ -408,6 +408,14 @@ export class PrivacyService {
       await client.query(
         `UPDATE user_profiles SET display_name='Cuenta eliminada',bio=NULL,avatar_media_id=NULL,
            preferences='{}'::jsonb,updated_at=now() WHERE user_id=$1`, [request.user_id]);
+      // Purge private delivery and offline-sync state; the account remains only as a
+      // non-authenticating tombstone for retained ownership/audit foreign keys.
+      await client.query(`DELETE FROM notification_outbox WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM notifications WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM notification_preferences WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM sync_operation_receipts WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM sync_change_log WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM couple_space_key_envelopes WHERE user_id=$1`,[request.user_id]);
       await client.query(
         `DELETE FROM user_relationships WHERE requester_id=$1 OR target_id=$1`, [request.user_id]);
       await client.query(
