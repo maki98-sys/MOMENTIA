@@ -22,6 +22,13 @@ export class PrivacyService {
       ['notifications', `SELECT id,category,payload,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at`],
       ['reports', `SELECT id,target_type,target_id,reason,details,status,created_at,resolved_at FROM user_reports WHERE reporter_id=$1 ORDER BY created_at`],
       ['media', `SELECT id,mime_type_detected,size_bytes,width,height,checksum_sha256,status,created_at,deleted_at FROM media_assets WHERE owner_id=$1 ORDER BY created_at`],
+      ['ownedSpaces', `SELECT id,type,name,visibility,status,created_at,updated_at FROM spaces WHERE owner_id=$1 ORDER BY created_at`],
+      ['spaceInvitationsCreated', `SELECT id,space_id,role,expires_at,max_uses,uses,approval_required,revoked_at,created_at FROM space_invitations WHERE created_by=$1 ORDER BY created_at`],
+      ['coupleInvitationsSent', `SELECT id,invitee_user_id,expires_at,accepted_at,revoked_at,created_at FROM couple_space_invitations WHERE inviter_user_id=$1 ORDER BY created_at`],
+      ['coupleInvitationsReceived', `SELECT id,inviter_user_id,expires_at,accepted_at,revoked_at,created_at FROM couple_space_invitations WHERE invitee_user_id=$1 ORDER BY created_at`],
+      ['eventRsvps', `SELECT r.space_id,r.response,r.guest_count,r.note,r.responded_at FROM event_rsvps r WHERE r.user_id=$1 ORDER BY r.responded_at`],
+      ['coupleJournalEntries', `SELECT id,space_id,encode(ciphertext,'base64') ciphertext_base64,encode(nonce,'base64') nonce_base64,encryption_version,key_version,created_at,updated_at,deleted_at FROM couple_journal_entries WHERE author_id=$1 ORDER BY created_at`],
+      ['coupleKeyEnvelopes', `SELECT space_id,key_version,algorithm,encode(encrypted_key,'base64') encrypted_key_base64,encode(nonce,'base64') nonce_base64,created_at,updated_at FROM couple_space_key_envelopes WHERE user_id=$1 ORDER BY space_id,key_version`],
       ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
     ];
     const entries = await Promise.all(queries.map(async ([key,sql]) => {
