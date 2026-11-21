@@ -22,7 +22,10 @@ export class BillingService {
               p.currency,p.storage_quota_bytes,p.max_upload_bytes,p.features,
               COALESCE(s.status,'active') subscription_status,
               s.current_period_end,s.cancel_at_period_end,
-              COALESCE(usage.used_bytes,0)::bigint used_bytes
+              COALESCE(usage.used_bytes,0)::bigint used_bytes,
+              COALESCE(usage.asset_count,0)::int asset_count,
+              COALESCE(usage.pending_bytes,0)::bigint pending_bytes,
+              COALESCE(usage.ready_bytes,0)::bigint ready_bytes
        FROM subscription_plans p
        LEFT JOIN LATERAL (
          SELECT us.status,us.current_period_end,us.cancel_at_period_end,us.plan_id
@@ -35,7 +38,10 @@ export class BillingService {
          LIMIT 1
        ) s ON s.plan_id=p.id
        LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(a.size_bytes),0)::bigint used_bytes
+         SELECT COALESCE(sum(a.size_bytes),0)::bigint used_bytes,
+                count(*)::int asset_count,
+                COALESCE(sum(a.size_bytes) FILTER (WHERE a.status IN ('pending','quarantined','processing')),0)::bigint pending_bytes,
+                COALESCE(sum(a.size_bytes) FILTER (WHERE a.status='ready'),0)::bigint ready_bytes
          FROM media_assets a
          WHERE a.owner_id=$1 AND a.status<>'deleted'
        ) usage ON true
@@ -55,6 +61,9 @@ export class BillingService {
       storage_quota_bytes: quota.toString(),
       used_bytes: used.toString(),
       remaining_bytes: remaining.toString(),
+      asset_count: Number(row.asset_count),
+      pending_bytes: BigInt(row.pending_bytes).toString(),
+      ready_bytes: BigInt(row.ready_bytes).toString(),
       storage_usage_percent: quota > 0n
         ? Math.min(100, Number((used * 10000n) / quota) / 100)
         : 0,
