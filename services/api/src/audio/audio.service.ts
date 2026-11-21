@@ -227,18 +227,25 @@ export class AudioService {
   async updatePlayback(userId: string, sessionId: string, input: { action?: unknown; positionMs?: unknown; currentItemId?: unknown; expectedVersion?: unknown }) {
     this.id(sessionId, 'session id');
     await this.assertAudioEntitlement(this.db,userId);
-    const action = String(input?.action ?? '');
+    if (!input || typeof input !== 'object' || Array.isArray(input) ||
+        Object.keys(input).some(key => !['action','positionMs','currentItemId','expectedVersion'].includes(key))) {
+      throw new BadRequestException('Invalid playback command fields.');
+    }
+    const action = String(input.action ?? '');
     if (!['play','pause','seek','next','end'].includes(action)) throw new BadRequestException('Invalid playback action.');
-    const position = input?.positionMs === undefined ? 0 : Number(input.positionMs);
+    if (input.positionMs !== undefined && action !== 'seek') throw new BadRequestException('positionMs is only valid for seek.');
+    if (input.currentItemId !== undefined && !['play','next'].includes(action)) throw new BadRequestException('currentItemId is only valid for play or next.');
+    const position = input.positionMs === undefined ? 0 : Number(input.positionMs);
     if (!Number.isSafeInteger(position) || position < 0 || position > 86400000) throw new BadRequestException('Invalid playback position.');
-    if (input?.expectedVersion !== undefined && (!Number.isSafeInteger(Number(input.expectedVersion)) || Number(input.expectedVersion) < 1)) throw new BadRequestException('Invalid expected version.');
-    let itemId = input?.currentItemId ?? null;
+    if (input.expectedVersion !== undefined && (!Number.isSafeInteger(Number(input.expectedVersion)) || Number(input.expectedVersion) < 1)) throw new BadRequestException('Invalid expected version.');
+    let itemId = input.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
     return this.db.transaction(async client => {
-      const s = await client.query(`SELECT a.id,a.host_user_id,a.server_version FROM audio_sessions a
+      const s = await client.query(`SELECT a.id,a.host_user_id,a.state,a.server_version FROM audio_sessions a
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE a.id=$1 FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
+      if (s.rows[0].state === 'ended') throw new ConflictException('Audio session has ended.');
       if (s.rows[0].host_user_id !== userId) throw new ForbiddenException('Only the host can control playback.');
       if (input.expectedVersion !== undefined && Number(input.expectedVersion) !== Number(s.rows[0].server_version)) throw new ConflictException('Playback state changed; refresh and retry.');
       if (action === 'next' && itemId === null) {
