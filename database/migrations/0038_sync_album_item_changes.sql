@@ -29,7 +29,9 @@ BEGIN
   SELECT a.space_id,a.visibility INTO target_space,target_visibility
   FROM space_albums a WHERE a.id=target_album;
 
-  IF target_space IS NULL THEN RETURN COALESCE(NEW,OLD); END IF;
+  IF target_space IS NULL THEN
+    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
 
   INSERT INTO sync_change_log(user_id,entity_type,entity_id,change_type,payload)
   SELECT sm.user_id,'album_item',target_item,
@@ -45,7 +47,7 @@ BEGIN
   WHERE sm.space_id=target_space AND sm.state='active'
     AND (target_visibility='members' OR sm.role IN ('owner','admin','moderator'));
 
-  RETURN COALESCE(NEW,OLD);
+  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
 $$;
 
