@@ -4,7 +4,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 async function readUploadBody(request: Request): Promise<Buffer> {
  const chunks: Buffer[] = [];
@@ -12,7 +12,7 @@ async function readUploadBody(request: Request): Promise<Buffer> {
  for await (const chunk of request) {
   const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
   total += part.length;
-  if (total > MAX_UPLOAD_BYTES) throw new BadRequestException('File exceeds the 50 MB upload limit.');
+  if (total > MAX_UPLOAD_BYTES) throw new BadRequestException('File exceeds the 200 MB platform upload limit.');
   chunks.push(part);
  }
  if (!total) throw new BadRequestException('Upload body is empty.');
