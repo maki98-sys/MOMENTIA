@@ -13,6 +13,13 @@ export const environmentSchema = Joi.object({
     return ids.every((id: string) => uuid.test(id)) ? value : helpers.error('any.invalid');
   }),
   MEDIA_WORKER_TOKEN: Joi.string().min(32),
+  MEDIA_STORAGE_PROVIDER: Joi.string().valid('local','s3').default('local'),
+  MEDIA_S3_BUCKET: Joi.string().min(3).when('MEDIA_STORAGE_PROVIDER',{is:'s3',then:Joi.required()}),
+  MEDIA_S3_REGION: Joi.string().min(1).default('us-east-1'),
+  MEDIA_S3_ENDPOINT: Joi.string().uri({scheme:['http','https']}),
+  MEDIA_S3_ACCESS_KEY_ID: Joi.string().min(1),
+  MEDIA_S3_SECRET_ACCESS_KEY: Joi.string().min(1),
+  MEDIA_S3_FORCE_PATH_STYLE: Joi.boolean().truthy('true').falsy('false').default(false),
   NOTIFICATION_WORKER_TOKEN: Joi.string().min(32),
   PUSH_TOKEN_ENCRYPTION_KEY: Joi.string().base64().custom((value, helpers) => Buffer.from(value, 'base64').length === 32 ? value : helpers.error('any.invalid')),
   AUDIO_REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }),
@@ -20,4 +27,5 @@ export const environmentSchema = Joi.object({
   OIDC_AUDIENCE: Joi.string().min(1),
   OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https'] }),
 }).and('OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI')
+  .and('MEDIA_S3_ACCESS_KEY_ID', 'MEDIA_S3_SECRET_ACCESS_KEY')
   .messages({ 'object.and': 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be configured together.' });
