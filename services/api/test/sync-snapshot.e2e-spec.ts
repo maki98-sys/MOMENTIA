@@ -65,12 +65,12 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     await pool.end();
   });
 
-  async function createTimelinePost(audience: 'public' | 'followers', occurredAt: string) {
+  async function createTimelinePost(audience: 'public' | 'followers', occurredAt: string, postAuthorId = authorId) {
     const postId = randomUUID();
     await pool.query(
       `INSERT INTO posts(id,author_id,space_id,body,audience,status,published_at)
        VALUES ($1,$2,$3,'snapshot fixture',$4,'published',now())`,
-      [postId, authorId, spaceId, audience],
+      [postId, postAuthorId, spaceId, audience],
     );
     await pool.query(
       `INSERT INTO timeline_entries(space_id,post_id,occurred_at,source)
@@ -116,4 +116,55 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(nextPage.data.timeline).toEqual([]);
     expect(nextPage.hasMore).toBe(false);
   });
+  it('revalidates follower-only timeline content after unfollow', async () => {
+    await pool.query(
+      `INSERT INTO user_relationships(requester_id,target_id,state)
+       VALUES($1,$2,'accepted')`,
+      [viewerId, authorId],
+    );
+    await createTimelinePost('public', '2026-11-21T12:00:00Z', ownerId);
+    const followerPost = await createTimelinePost('followers', '2026-11-21T11:00:00Z');
+
+    const firstPage = await sync.snapshot(viewerId, { sections: ['timeline'], limit: 1 });
+    expect(firstPage.data.timeline).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+
+    await pool.query(
+      `DELETE FROM user_relationships WHERE requester_id=$1 AND target_id=$2`,
+      [viewerId, authorId],
+    );
+
+    const nextPage = await sync.snapshot(viewerId, {
+      snapshotId: firstPage.snapshotId,
+      offsets: firstPage.nextOffsets,
+      limit: 1,
+    });
+    expect(nextPage.data.timeline.map((row: any) => row.post_id)).not.toContain(followerPost);
+    expect(nextPage.data.timeline).toEqual([]);
+    expect(nextPage.hasMore).toBe(false);
+  });
+
+  it('revalidates public timeline content after a block is created', async () => {
+    await createTimelinePost('public', '2026-11-21T12:00:00Z', ownerId);
+    const blockedAuthorPost = await createTimelinePost('public', '2026-11-21T11:00:00Z');
+
+    const firstPage = await sync.snapshot(viewerId, { sections: ['timeline'], limit: 1 });
+    expect(firstPage.data.timeline).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+
+    await pool.query(
+      `INSERT INTO user_blocks(blocker_id,blocked_id) VALUES($1,$2)`,
+      [viewerId, authorId],
+    );
+
+    const nextPage = await sync.snapshot(viewerId, {
+      snapshotId: firstPage.snapshotId,
+      offsets: firstPage.nextOffsets,
+      limit: 1,
+    });
+    expect(nextPage.data.timeline.map((row: any) => row.post_id)).not.toContain(blockedAuthorPost);
+    expect(nextPage.data.timeline).toEqual([]);
+    expect(nextPage.hasMore).toBe(false);
+  });
+
 });
