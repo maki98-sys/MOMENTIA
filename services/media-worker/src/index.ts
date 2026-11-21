@@ -3,14 +3,14 @@ import { createConnection } from 'node:net';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { LocalMediaWorkerStorage } from './storage';
+import { createMediaWorkerStorage } from './storage';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
 const WORKER_TOKEN = required('MEDIA_WORKER_TOKEN');
 const MAINTENANCE_TOKEN = process.env.NOTIFICATION_WORKER_TOKEN;
 const WORKER_ID = process.env.MEDIA_WORKER_ID ?? `media-worker-${process.pid}`;
-const storage = new LocalMediaWorkerStorage();
+const storage = createMediaWorkerStorage();
 const POLL_MS = Math.min(Math.max(Number(process.env.MEDIA_WORKER_POLL_MS) || 1500, 250), 30000);
 const BATCH_SIZE = Math.min(Math.max(Number(process.env.MEDIA_WORKER_BATCH_SIZE) || 5, 1), 20);
 
@@ -104,7 +104,7 @@ async function runFfmpeg(args: string[]): Promise<void> {
 }
 
 async function makeImageVariants(job: Job): Promise<Variant[]> {
-  const source=safePath(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original);
   const meta=await sharp(source,{failOn:'error'}).metadata();
   if(!meta.width||!meta.height) throw new Error('Image dimensions could not be read');
   const definitions=[{type:'thumbnail' as const,width:320},{type:'preview' as const,width:1280},{type:'display' as const,width:2048}];
@@ -118,6 +118,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
       .webp({quality:82,effort:4})
       .toFile(target);
+    await storage.commit(storageKey,target);
     variants.push({
       variantType:definition.type,storageKey,mimeType:'image/webp',
       sizeBytes:output.size,width:output.width,height:output.height,
@@ -133,6 +134,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const target=safePath(storageKey);
   await storage.ensureParent(storageKey);
   await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
+  await storage.commit(storageKey,target);
   const meta=await sharp(target).metadata();
   const info=await stat(target);
   if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
@@ -144,14 +146,15 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
 
 async function processJob(job: Job): Promise<Record<string,unknown>> {
   if(job.job_type==='inspect') {
-    const source=safePath(job.storage_key_original);
+    const source=await storage.materialize(job.storage_key_original);
     const info=await stat(source);
     if(info.size!==Number(job.size_bytes)) throw new Error('Stored file size differs from the declared size');
     if(await sha256(source)!==job.checksum_sha256) throw new Error('Stored file checksum mismatch');
     return {success:true,result:{bytes:info.size}};
   }
   if(job.job_type==='virus_scan') {
-    const verdict=await clamScan(safePath(job.storage_key_original));
+    const source=await storage.materialize(job.storage_key_original);
+    const verdict=await clamScan(source);
     return {success:true,scanVerdict:verdict,result:{scanner:process.env.CLAMD_HOST?'clamd':'not_configured'}};
   }
   if(job.job_type==='image_variants') {
