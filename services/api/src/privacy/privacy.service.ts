@@ -307,6 +307,11 @@ export class PrivacyService {
             `UPDATE spaces SET status='archived',updated_at=now() WHERE id=$1 AND status='active'`,
             [space.id],
           );
+          await client.query(
+            `UPDATE space_memberships SET state='left',left_at=now(),joined_at=COALESCE(joined_at,created_at),role='member'
+             WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+            [space.id,request.user_id],
+          );
         }
       }
       // Leave non-owned spaces. A couple space is intentionally retained for its
