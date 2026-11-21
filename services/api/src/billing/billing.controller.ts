@@ -18,4 +18,9 @@ export class BillingController {
   getEntitlements(@Req() request: Request & AuthenticatedRequest) {
     return this.billing.getEntitlements(request.userId!);
   }
+
+  @Get('me/subscriptions')
+  listMySubscriptions(@Req() request: Request & AuthenticatedRequest) {
+    return this.billing.listMySubscriptions(request.userId!);
+  }
 }
