@@ -221,7 +221,7 @@ export class MediaProcessingService {
       `WITH picked AS (
          SELECT d.id FROM media_storage_deletions d
          JOIN media_assets a ON a.id=d.media_asset_id
-         WHERE d.status IN ('pending','failed') AND d.available_at<=now() AND d.attempts<8
+         WHERE d.status IN ('pending','failed') AND d.available_at<=now()
            AND ($3::uuid IS NULL OR a.owner_id=$3)
          ORDER BY d.available_at,d.created_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
        )
@@ -234,8 +234,13 @@ export class MediaProcessingService {
   async completeDeletion(workerId:string,deletionId:string,input:unknown) {
     if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deletionId)) throw new BadRequestException('Invalid deletion id.');
-    if(!input||typeof input!=='object'||Array.isArray(input)||typeof (input as Record<string,unknown>).success!=='boolean') throw new BadRequestException('Deletion result is required.');
+    if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Deletion result is required.');
     const value=input as Record<string,unknown>;
+    if(Object.keys(value).some(key=>!['success','errorCode'].includes(key))||
+       typeof value.success!=='boolean'||
+       (value.errorCode!==undefined&&(typeof value.errorCode!=='string'||value.errorCode.length>120))) {
+      throw new BadRequestException('Invalid storage deletion result.');
+    }
     const result=await this.db.query(
       `UPDATE media_storage_deletions SET status=$3,locked_at=NULL,locked_by=NULL,
          last_error_code=$4,available_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
