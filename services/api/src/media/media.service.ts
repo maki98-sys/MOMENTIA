@@ -120,8 +120,13 @@ export class MediaService {
     try {
       const inserted=await this.db.transaction(async client=>{
         const locked=await client.query(
-          `SELECT state FROM media_uploads WHERE id=$1 AND uploader_id=$2 FOR UPDATE`,[uploadId,userId]);
+          `SELECT u.state,a.size_bytes FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
         if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) throw new ConflictException('Upload is no longer accepting parts.');
+        const accumulated=await client.query(
+          `SELECT COALESCE(sum(byte_size),0)::bigint total FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
+        if(BigInt(accumulated.rows[0].total)+BigInt(bytes.length)>BigInt(locked.rows[0].size_bytes)) {
+          throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
+        }
         const saved=await client.query(
           `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key)
            VALUES($1,$2,$3,$4,$5)
