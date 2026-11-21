@@ -91,13 +91,14 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
   }
 }
 
-export function createMediaWorkerStorage(): MediaWorkerStorage {
-  if (process.env.MEDIA_STORAGE_PROVIDER === 's3') {
+export function createMediaWorkerStorage(provider = process.env.MEDIA_STORAGE_PROVIDER ?? 'local'): MediaWorkerStorage {
+  if (provider === 's3') {
     if (!process.env.MEDIA_S3_BUCKET) throw new Error('MEDIA_S3_BUCKET is required when MEDIA_STORAGE_PROVIDER=s3');
     if (Boolean(process.env.MEDIA_S3_ACCESS_KEY_ID) !== Boolean(process.env.MEDIA_S3_SECRET_ACCESS_KEY)) {
       throw new Error('Both S3 access key and secret key must be configured together');
     }
     return new S3MediaWorkerStorage();
   }
+  if (provider !== 'local') throw new Error('Unsupported media storage provider');
   return new LocalMediaWorkerStorage();
 }
