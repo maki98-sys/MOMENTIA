@@ -140,7 +140,11 @@ export class MediaProcessingService {
       `UPDATE media_processing_jobs SET status='failed',locked_at=NULL,locked_by=NULL,
          last_error_code='WORKER_LEASE_EXPIRED',available_at=now(),updated_at=now()
        WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
-       RETURNING id`,[seconds]);
+       RETURNING id,media_asset_id,attempts,max_attempts`,[seconds]);
+    const terminalAssets=result.rows.filter(job=>Number(job.attempts)>=Number(job.max_attempts)).map(job=>job.media_asset_id);
+    if(terminalAssets.length) await this.db.query(
+      `UPDATE media_assets SET status='failed'
+       WHERE id=ANY($1::uuid[]) AND status IN ('pending','processing','quarantined')`,[terminalAssets]);
     const deletions=await this.db.query(
       `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
          last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
