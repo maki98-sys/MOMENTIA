@@ -60,6 +60,11 @@ export class SessionTokenService {
          VALUES($1,$2,$3,$4)`,
         [refreshHash,inserted.rows[0].id,familyId,inserted.rows[0].expires_at],
       );
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'auth.session.created','session',$2,jsonb_build_object('deviceId',$3))`,
+        [userId,inserted.rows[0].id,deviceId ?? null],
+      );
       return inserted.rows[0];
     });
     return {
@@ -91,6 +96,11 @@ export class SessionTokenService {
           `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
            WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
         );
+        await client.query(
+          `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1)
+           FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
+        );
         return { reused: true as const };
       }
       if (new Date(row.expires_at).getTime() <= Date.now()) {
@@ -121,6 +131,11 @@ export class SessionTokenService {
       await client.query(
         `UPDATE auth_sessions SET refresh_token_hash=$1,last_used_at=now()
          WHERE id=$2`,[nextHash,row.session_id],
+      );
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id)
+         VALUES($1,$1,'auth.session.refreshed','session',$2)`,
+        [session.rows[0].user_id,row.session_id],
       );
       return { reused: false as const,userId:String(session.rows[0].user_id),sessionId:String(row.session_id),expiresAt:session.rows[0].expires_at };
     });
