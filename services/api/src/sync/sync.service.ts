@@ -678,14 +678,23 @@ export class SyncService {
                OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                  WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
                OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
-                 WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))))
+                 WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
+             AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+               (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
+               (b.blocker_id=p.author_id AND b.blocked_id=$1)))
            OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c JOIN posts p ON p.id=c.post_id
              WHERE c.id=r.target_id AND c.status='visible' AND p.status='published'
                AND (p.author_id=$1 OR p.audience='public'
                  OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                    WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
                  OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
-                   WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))))
+                   WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=c.author_id) OR
+                 (b.blocker_id=c.author_id AND b.blocked_id=$1))
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
+                 (b.blocker_id=p.author_id AND b.blocked_id=$1)))
          ) ORDER BY r.created_at DESC,r.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['reactions'] ?? 0]);
       data.reactions = page('reactions', r.rows);
     }
