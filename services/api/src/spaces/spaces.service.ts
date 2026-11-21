@@ -43,7 +43,8 @@ export class SpacesService {
     return this.database.transaction(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':space-quota']);
       const limits=await client.query(
-        `SELECT COALESCE((p.features->>'max_spaces')::integer,5) max_spaces
+        `SELECT COALESCE((p.features->>'max_spaces')::integer,5) max_spaces,
+                p.features
          FROM subscription_plans p
          LEFT JOIN LATERAL (
            SELECT us.plan_id FROM user_subscriptions us
@@ -55,11 +56,15 @@ export class SpacesService {
          WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
         [userId],
       );
+      if (!limits.rowCount) throw new BadRequestException('Your subscription plan could not be resolved.');
+      const features=limits.rows[0].features??{};
+      if (input.type==='EVENT' && features.events===false) throw new BadRequestException('Events are not included in your current plan.');
+      if (input.type==='CIRCLE' && features.circles===false) throw new BadRequestException('Circles are not included in your current plan.');
       const count=await client.query(
         `SELECT count(*)::integer total FROM spaces
          WHERE owner_id=$1 AND status IN ('active','archived')`,[userId],
       );
-      if(!limits.rowCount || Number(count.rows[0].total)>=Number(limits.rows[0].max_spaces)) {
+      if(Number(count.rows[0].total)>=Number(limits.rows[0].max_spaces)) {
         throw new BadRequestException('Your plan space limit has been reached. Upgrade your plan or close an existing space.');
       }
       if (input.type === 'COUPLE') {
