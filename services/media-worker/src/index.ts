@@ -185,28 +185,55 @@ async function deliverJob(job: Job): Promise<void> {
   }
 }
 
-async function processDeletion(deletion: {id:string;storage_key:string}): Promise<void> {
+async function processDeletion(deletion: {id:string;storage_key:string}): Promise<boolean> {
   try {
     await rm(safePath(deletion.storage_key),{force:true});
     await api(`/internal/media-processing/deletions/${deletion.id}/complete`,'POST',{
       workerId:WORKER_ID,success:true,
     });
+    return true;
   } catch(error) {
     await api(`/internal/media-processing/deletions/${deletion.id}/complete`,'POST',{
       workerId:WORKER_ID,success:false,errorCode:error instanceof Error?error.name:'DELETE_FAILED',
     });
     process.stderr.write(`deletion ${deletion.id} failed: ${String(error)}\\n`);
+    return false;
   }
 }
 
+type AccountDeletion = {id:string;user_id:string;processing_attempts:number};
+
 async function tick(): Promise<void> {
   await api('/internal/media-processing/uploads/cleanup-expired','POST',{limit:100});
+  const accountDeletions=await api<AccountDeletion[]>('/internal/deletions/claim','POST',{
+    workerId:WORKER_ID,limit:5,
+  });
   const jobs=await api<Job[]>('/internal/media-processing/jobs/claim','POST',{workerId:WORKER_ID,limit:BATCH_SIZE});
   for(const job of jobs??[]) await deliverJob(job);
-  const deletions=await api<Array<{id:string;storage_key:string}>>('/internal/media-processing/deletions/claim','POST',{
-    workerId:WORKER_ID,limit:BATCH_SIZE,
-  });
-  for(const deletion of deletions??[]) await processDeletion(deletion);
+
+  let deletionFailures=0;
+  for(let batch=0;batch<100;batch++) {
+    const deletions=await api<Array<{id:string;storage_key:string}>>('/internal/media-processing/deletions/claim','POST',{
+      workerId:WORKER_ID,limit:50,
+    });
+    if(!deletions?.length) break;
+    for(const deletion of deletions) {
+      if(!await processDeletion(deletion)) deletionFailures++;
+    }
+    if(deletions.length<50) break;
+  }
+
+  for(const request of accountDeletions??[]) {
+    try {
+      await api(`/internal/deletions/${request.id}/complete`,'POST',{
+        workerId:WORKER_ID,
+        success:deletionFailures===0,
+        ...(deletionFailures===0?{purged:true}:{errorCode:'MEDIA_STORAGE_DELETE_FAILED'}),
+      });
+    } catch(error) {
+      process.stderr.write(`account deletion ${request.id} not finalized: ${String(error)}\\n`);
+    }
+  }
   await api('/internal/media-processing/leases/recover','POST',{staleSeconds:300});
 }
 
