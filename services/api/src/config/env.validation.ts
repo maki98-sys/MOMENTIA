@@ -26,7 +26,7 @@ export const environmentSchema = Joi.object({
   OIDC_ISSUER: Joi.string().uri({ scheme: ['https'] }),
   OIDC_AUDIENCE: Joi.string().min(1),
   OIDC_JWKS_URI: Joi.string().uri({ scheme: ['https'] }),
-  MOMENTIA_SESSION_SECRET: Joi.string().min(32).when('NODE_ENV',{is:'production',then:Joi.required()}),
+  MOMENTIA_SESSION_SECRET: Joi.string().min(32).required(),
 }).and('OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI')
   .and('MEDIA_S3_ACCESS_KEY_ID', 'MEDIA_S3_SECRET_ACCESS_KEY')
   .messages({ 'object.and': 'OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URI must be configured together.' });
