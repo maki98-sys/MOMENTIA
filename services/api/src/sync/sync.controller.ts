@@ -14,6 +14,11 @@ export class SyncController {
     return this.sync.push(req.userId!, body);
   }
 
+  @Post('snapshot')
+  snapshot(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
+    return this.sync.snapshot(req.userId!, body);
+  }
+
   @Post('checkpoint')
   checkpoint(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
     return this.sync.saveCheckpoint(req.userId!, body);
