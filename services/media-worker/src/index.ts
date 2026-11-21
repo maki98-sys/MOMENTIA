@@ -10,7 +10,7 @@ const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
 const WORKER_TOKEN = required('MEDIA_WORKER_TOKEN');
 const MAINTENANCE_TOKEN = process.env.NOTIFICATION_WORKER_TOKEN;
 const WORKER_ID = process.env.MEDIA_WORKER_ID ?? `media-worker-${process.pid}`;
-const storage = createMediaWorkerStorage();
+let storage = createMediaWorkerStorage();
 const POLL_MS = Math.min(Math.max(Number(process.env.MEDIA_WORKER_POLL_MS) || 1500, 250), 30000);
 const BATCH_SIZE = Math.min(Math.max(Number(process.env.MEDIA_WORKER_BATCH_SIZE) || 5, 1), 20);
 
@@ -22,6 +22,7 @@ type Job = {
   mime_type_detected: string;
   size_bytes: number;
   checksum_sha256: string;
+  storage_provider: 'local'|'s3';
 };
 type Variant = {
   variantType: 'thumbnail'|'preview'|'display'|'video_poster';
@@ -189,6 +190,7 @@ async function processJob(job: Job): Promise<Record<string,unknown>> {
 
 async function deliverJob(job: Job): Promise<void> {
   try {
+    storage = createMediaWorkerStorage(job.storage_provider);
     const result=await processJob(job);
     await api(`/internal/media-processing/jobs/${job.id}/complete`,'POST',{workerId:WORKER_ID,...result});
   } catch(error) {
@@ -200,8 +202,9 @@ async function deliverJob(job: Job): Promise<void> {
   }
 }
 
-async function processDeletion(deletion: {id:string;storage_key:string}): Promise<boolean> {
+async function processDeletion(deletion: {id:string;storage_key:string;storage_provider:'local'|'s3'}): Promise<boolean> {
   try {
+    storage = createMediaWorkerStorage(deletion.storage_provider);
     await storage.remove(deletion.storage_key);
     await api(`/internal/media-processing/deletions/${deletion.id}/complete`,'POST',{
       workerId:WORKER_ID,success:true,
@@ -267,7 +270,7 @@ async function tick(): Promise<void> {
     let accountDeletionFailures=0;
     try {
       for(let batch=0;batch<100;batch++) {
-        const deletions=await api<Array<{id:string;storage_key:string}>>('/internal/media-processing/deletions/claim','POST',{
+        const deletions=await api<Array<{id:string;storage_key:string;storage_provider:'local'|'s3'}>>('/internal/media-processing/deletions/claim','POST',{
           workerId:WORKER_ID,limit:100,ownerUserId:request.user_id,
         });
         if(!deletions?.length) break;
