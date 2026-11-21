@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
@@ -16,10 +16,20 @@ export class NotificationsController {
     @Query('limit') limit?: string,
     @Query('unreadOnly') unreadOnly?: string,
   ) {
+    if (limit !== undefined && !/^\\d{1,3}$/.test(limit)) {
+      throw new BadRequestException('limit must be an integer between 1 and 100.');
+    }
+    const pageSize = limit === undefined ? 30 : Number(limit);
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new BadRequestException('limit must be an integer between 1 and 100.');
+    }
+    if (unreadOnly !== undefined && unreadOnly !== 'true' && unreadOnly !== 'false') {
+      throw new BadRequestException('unreadOnly must be true or false.');
+    }
     return this.notifications.list(
       request.userId!,
       cursor,
-      Number(limit) || 30,
+      pageSize,
       unreadOnly === 'true',
     );
   }
