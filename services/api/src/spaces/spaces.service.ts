@@ -226,6 +226,37 @@ export class SpacesService {
     });
   }
 
+
+  async enqueueEventReminders() {
+    return this.database.transaction(async client => {
+      const created = await client.query(
+        `WITH reminder_windows AS (
+           SELECT 24 AS hours_before, '24h'::text AS label
+           UNION ALL SELECT 1, '1h'
+         ),
+         due AS (
+           SELECT s.id AS space_id,s.name,ed.starts_at,r.hours_before,r.label,sm.user_id
+           FROM spaces s
+           JOIN event_details ed ON ed.space_id=s.id
+           JOIN space_memberships sm ON sm.space_id=s.id AND sm.state='active'
+           CROSS JOIN reminder_windows r
+           WHERE s.type='EVENT' AND s.status='active'
+             AND ed.starts_at IS NOT NULL
+             AND ed.starts_at > now() + ((r.hours_before-0.5) * interval '1 hour')
+             AND ed.starts_at <= now() + ((r.hours_before+0.5) * interval '1 hour')
+         )
+         INSERT INTO notifications(user_id,category,payload,dedupe_key)
+         SELECT user_id,'event.reminder',
+           jsonb_build_object('spaceId',space_id,'eventName',name,'startsAt',starts_at,'reminder',''||label),
+           'event-reminder:'||space_id::text||':'||user_id::text||':'||label
+         FROM due
+         ON CONFLICT(user_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
+         RETURNING id,user_id`,
+      );
+      return { queued: created.rowCount ?? 0 };
+    });
+  }
+
   async getMine(userId: string, spaceId: string) {
     const result = await this.database.query(
       `SELECT s.id, s.type, s.name, s.visibility, s.status, s.owner_id,
