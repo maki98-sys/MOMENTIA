@@ -40,8 +40,8 @@ export class PrivacyService {
       ['audioParticipations', `SELECT p.id,p.session_id,p.device_id,p.role,p.joined_at,p.last_heartbeat_at,p.left_at FROM audio_participants p WHERE p.user_id=$1 ORDER BY p.joined_at`],
       ['audioQueueItemsAdded', `SELECT q.id,q.session_id,q.provider_track_reference,q.position,q.state,q.created_at FROM audio_queue_items q WHERE q.added_by=$1 ORDER BY q.created_at`],
       ['audioVotes', `SELECT v.queue_item_id,v.vote,v.created_at FROM audio_votes v WHERE v.user_id=$1 ORDER BY v.created_at`],
-      ['joinRequests', `SELECT id,space_id,status,created_at,reviewed_at FROM space_join_requests WHERE user_id=$1 ORDER BY created_at`],
-      ['moderationReports', `SELECT id,target_type,target_id,reason,details,status,created_at,resolved_at FROM user_reports WHERE reporter_id=$1 ORDER BY created_at`],
+      ['joinRequests', `SELECT id,space_id,status,created_at,reviewed_at FROM space_join_requests WHERE requester_id=$1 ORDER BY created_at`],
+      ['moderationActions', `SELECT report_id,target_type,target_id,decision,action,note,created_at FROM moderation_audit_events WHERE moderator_id=$1 ORDER BY created_at`],
       ['storageUsageEvents', `SELECT event_type,bytes_delta,idempotency_key,metadata,created_at FROM storage_usage_events WHERE user_id=$1 ORDER BY created_at`],
     ];
     return this.db.transaction(async client => {
