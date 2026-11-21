@@ -21,4 +21,16 @@ export class EventsWorkerController {
     }
     return this.spaces.archiveEndedEvents(24);
   }
+
+  @Post('queue-reminders')
+  queueReminders(@Headers('x-worker-token') token?: string) {
+    const expected = this.config.get<string>('NOTIFICATION_WORKER_TOKEN');
+    if (!expected || !token) throw new UnauthorizedException();
+    const supplied = Buffer.from(token);
+    const configured = Buffer.from(expected);
+    if (supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
+      throw new UnauthorizedException();
+    }
+    return this.spaces.enqueueEventReminders();
+  }
 }
