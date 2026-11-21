@@ -38,10 +38,22 @@ export class BillingService {
          LIMIT 1
        ) s ON s.plan_id=p.id
        LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(a.size_bytes),0)::bigint used_bytes,
+         SELECT (
+                  COALESCE(sum(a.size_bytes),0)
+                  + COALESCE((SELECT sum(v.size_bytes)
+                              FROM media_variants v
+                              JOIN media_assets va ON va.id=v.media_asset_id
+                              WHERE va.owner_id=$1 AND va.status<>'deleted'),0)
+                )::bigint used_bytes,
                 count(*)::int asset_count,
                 COALESCE(sum(a.size_bytes) FILTER (WHERE a.status IN ('pending','quarantined','processing')),0)::bigint pending_bytes,
-                COALESCE(sum(a.size_bytes) FILTER (WHERE a.status='ready'),0)::bigint ready_bytes
+                (
+                  COALESCE(sum(a.size_bytes) FILTER (WHERE a.status='ready'),0)
+                  + COALESCE((SELECT sum(v.size_bytes)
+                              FROM media_variants v
+                              JOIN media_assets va ON va.id=v.media_asset_id
+                              WHERE va.owner_id=$1 AND va.status='ready'),0)
+                )::bigint ready_bytes
          FROM media_assets a
          WHERE a.owner_id=$1 AND a.status<>'deleted'
        ) usage ON true
