@@ -95,22 +95,25 @@ export class PrivacyService {
       );
       for (const request of claimed.rows) {
         const assets = await client.query(
-          `SELECT id,size_bytes,storage_key_original
+          `SELECT id,size_bytes,storage_key_original,storage_provider
            FROM media_assets WHERE owner_id=$1 AND status<>'deleted'
            FOR UPDATE`,
           [request.user_id],
         );
         for (const asset of assets.rows) {
           const variants = await client.query(
-            `SELECT storage_key,size_bytes FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,
+            `SELECT storage_key,size_bytes,storage_provider FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,
             [asset.id],
           );
-          const keys = [asset.storage_key_original, ...variants.rows.map((row: {storage_key:string})=>row.storage_key)];
-          for (const storageKey of keys) {
+          const objects = [
+            {storage_key:asset.storage_key_original,storage_provider:asset.storage_provider},
+            ...variants.rows.map((row: {storage_key:string;storage_provider:string})=>row),
+          ];
+          for (const object of objects) {
             await client.query(
-              `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-               VALUES($1,$2) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
-              [asset.id,storageKey],
+              `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+               VALUES($1,$2,$3) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+              [asset.id,object.storage_key,object.storage_provider],
             );
           }
           await client.query(
