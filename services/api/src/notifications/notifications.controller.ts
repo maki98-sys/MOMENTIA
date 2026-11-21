@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
@@ -36,4 +36,18 @@ export class NotificationsController {
   markAllRead(@Req() request: Request & AuthenticatedRequest) {
     return this.notifications.markAllRead(request.userId!);
   }
+  @Get('preferences')
+  listPreferences(@Req() request: Request & AuthenticatedRequest) {
+    return this.notifications.listPreferences(request.userId!);
+  }
+
+  @Put('preferences/:category')
+  setPreference(
+    @Req() request: Request & AuthenticatedRequest,
+    @Param('category') category: string,
+    @Body() body: unknown,
+  ) {
+    return this.notifications.setPreference(request.userId!, category, body);
+  }
+
 }
