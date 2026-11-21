@@ -10,6 +10,20 @@ const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 export class MediaService {
   constructor(private readonly db:DatabaseService) {}
 
+
+  private detectMime(bytes: Buffer): string | null {
+    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (bytes.length >= 8 && bytes.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))) return 'image/png';
+    if (bytes.length >= 12 && bytes.toString('ascii',0,4)==='RIFF' && bytes.toString('ascii',8,12)==='WEBP') return 'image/webp';
+    if (bytes.length >= 12 && bytes.toString('ascii',4,8)==='ftyp') {
+      const brand=bytes.toString('ascii',8,12);
+      if (['heic','heix','hevc','hevx','mif1','msf1'].includes(brand)) return brand==='msf1' ? 'image/heif' : 'image/heic';
+      if (brand==='qt  ') return 'video/quicktime';
+      return 'video/mp4';
+    }
+    return null;
+  }
+
   private validate(input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Upload data is required.');
     const v=input as Record<string,unknown>;
@@ -92,6 +106,10 @@ export class MediaService {
     if (Number(row.size_bytes) !== bytes.length) throw new BadRequestException('Uploaded byte count does not match the declared size.');
     const checksum=createHash('sha256').update(bytes).digest('hex');
     if (checksum !== String(row.checksum_sha256).trim().toLowerCase()) throw new BadRequestException('SHA-256 checksum mismatch.');
+    const detectedMime = this.detectMime(bytes);
+    if (!detectedMime || detectedMime !== row.declared_mime_type) {
+      throw new BadRequestException('File content does not match the declared media type.');
+    }
     const base=resolve(process.env.MEDIA_STORAGE_DIR || '/var/lib/momentia/media');
     const relative=String(row.storage_key_original);
     if (!relative.startsWith('pending/') || relative.includes('..')) throw new ServiceUnavailableException('Invalid storage key.');
@@ -120,6 +138,11 @@ export class MediaService {
           `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
            VALUES($1,$2,'uploaded',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
           [userId,row.media_asset_id,bytes.length,'media-upload:'+uploadId]);
+        await client.query(
+          `INSERT INTO media_processing_jobs(media_asset_id,job_type)
+           VALUES($1,'inspect'),($1,'virus_scan')
+           ON CONFLICT(media_asset_id,job_type) DO NOTHING`,
+          [row.media_asset_id]);
       });
     } catch (error) {
       await rm(destination,{force:true}).catch(()=>undefined);
