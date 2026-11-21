@@ -146,8 +146,8 @@ export class AudioService {
           )
         ), ended AS (
           UPDATE audio_sessions a
-          SET state='ended',playback_state='ended',updated_at=now(),
-              server_version=server_version+1
+          SET state='ended',playback_state='ended',position_ms=0,current_item_id=NULL,
+              updated_at=now(),server_version=server_version+1
           WHERE a.id IN (SELECT session_id FROM host_lost UNION SELECT session_id FROM no_listeners)
             AND a.state IN ('created','playing','paused')
           RETURNING a.id
