@@ -18,7 +18,7 @@ export class SyncService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
-      if (!['post.create', 'timeline.add', 'comment.create', 'reaction.set', 'reaction.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
+      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
@@ -53,6 +53,8 @@ export class SyncService {
           if (operation.type === 'post.create') created = await this.createPost(client, userId, operation.payload);
           else if (operation.type === 'timeline.add') created = await this.addTimelineEntry(client, userId, operation.payload);
           else if (operation.type === 'comment.create') created = await this.createComment(client, userId, operation.payload);
+          else if (operation.type === 'comment.update') created = await this.updateComment(client, userId, operation.payload);
+          else if (operation.type === 'comment.remove') created = await this.removeComment(client, userId, operation.payload);
           else if (operation.type === 'reaction.set') created = await this.setReaction(client, userId, operation.payload);
           else created = await this.removeReaction(client, userId, operation.payload);
           await client.query(
@@ -127,6 +129,37 @@ export class SyncService {
        RETURNING id,post_id,author_id,body,status,created_at`,
       [postId,userId,body.trim()]);
     return { entityType:'comment', ...result.rows[0] };
+  }
+
+  private async updateComment(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['commentId','body'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const commentId = payload.commentId;
+    const body = payload.body;
+    if (typeof commentId !== 'string' || !UUID.test(commentId)) throw new Error('INVALID_COMMENT_ID');
+    if (typeof body !== 'string' || !body.trim() || body.length > 3000) throw new Error('INVALID_COMMENT_BODY');
+    await this.resolveInteractablePost(client,userId,'comment',commentId);
+    const result = await client.query(
+      `UPDATE post_comments SET body=$3
+       WHERE id=$1 AND author_id=$2 AND status='visible'
+       RETURNING id,post_id,author_id,body,status,created_at`,
+      [commentId,userId,body.trim()]);
+    if (!result.rowCount) throw new Error('COMMENT_NOT_OWNED_OR_EDITABLE');
+    return { entityType:'comment', ...result.rows[0] };
+  }
+
+  private async removeComment(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => key !== 'commentId')) throw new Error('INVALID_PAYLOAD');
+    const commentId = payload.commentId;
+    if (typeof commentId !== 'string' || !UUID.test(commentId)) throw new Error('INVALID_COMMENT_ID');
+    await this.resolveInteractablePost(client,userId,'comment',commentId);
+    const result = await client.query(
+      `UPDATE post_comments SET status='removed'
+       WHERE id=$1 AND author_id=$2 AND status='visible'
+       RETURNING id,post_id`,
+      [commentId,userId]);
+    if (!result.rowCount) throw new Error('COMMENT_NOT_OWNED_OR_REMOVABLE');
+    await client.query(`DELETE FROM content_reactions WHERE target_type='comment' AND target_id=$1`,[commentId]);
+    return { entityType:'comment', id:result.rows[0].id, postId:result.rows[0].post_id, removed:true };
   }
 
   private async setReaction(client: any, userId: string, payload: Record<string, unknown>) {
