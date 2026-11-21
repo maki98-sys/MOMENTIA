@@ -34,6 +34,8 @@ export class MediaController {
  }
  @Get('uploads')
  list(@Req() req:Request&AuthenticatedRequest,@Query('limit') limit?:string){return this.media.listMine(req.userId!,Number(limit)||30);}
+ @Delete('uploads/:uploadId')
+ cancelUpload(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string){return this.media.cancelUpload(req.userId!,id);}
  @Get('uploads/:uploadId')
  get(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string){return this.media.getUpload(req.userId!,id);}
  @Get('assets/:assetId')
