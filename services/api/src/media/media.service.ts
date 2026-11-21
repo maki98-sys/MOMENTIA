@@ -478,7 +478,7 @@ export class MediaService {
         `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
          VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
         [userId,assetId,-(Number(asset.rows[0].size_bytes)+variants.rows.reduce((sum,v)=>sum+Number(v.size_bytes),0)),'media-delete:'+assetId]);
-      return {deleted:true,queuedStorageObjects:variants.rowCount+1};
+      return {deleted:true,queuedStorageObjects:(variants.rowCount ?? 0)+1};
     });
   }
 
