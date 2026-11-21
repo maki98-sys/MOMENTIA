@@ -72,7 +72,8 @@ export class AudioService {
   async getSession(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
     await this.assertAudioEntitlement(this.db,userId);
-    const r = await this.db.query(`SELECT a.* FROM audio_sessions a JOIN space_memberships sm ON sm.space_id=a.space_id
+    const r = await this.db.query(`SELECT a.* FROM audio_sessions a JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
+      JOIN space_memberships sm ON sm.space_id=a.space_id
       WHERE a.id=$1 AND sm.user_id=$2 AND sm.state='active'`, [sessionId,userId]);
     if (!r.rowCount) throw new NotFoundException('Audio session not found.');
     return this.withQueue(r.rows[0]);
@@ -105,6 +106,7 @@ export class AudioService {
     return this.db.transaction(async client => {
       await this.assertAudioEntitlement(client,userId);
       const s = await client.query(`SELECT a.id,a.space_id,a.state FROM audio_sessions a
+        JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE a.id=$1 FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
@@ -248,6 +250,7 @@ export class AudioService {
     await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
       const r = await client.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
+        JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
         WHERE q.id=$1 AND q.session_id=$2 AND a.id=q.session_id AND a.host_user_id=$3
         AND q.state IN ('queued','current') RETURNING q.id`, [itemId,sessionId,userId]);
