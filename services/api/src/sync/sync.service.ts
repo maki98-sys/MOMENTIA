@@ -509,6 +509,7 @@ export class SyncService {
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      await client.query(`DELETE FROM sync_snapshot_sessions WHERE expires_at <= now() OR created_at < now()-interval '24 hours'`);
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
       throw new BadRequestException('Snapshot input must be an object.');
     }
@@ -527,7 +528,7 @@ export class SyncService {
     let frozenCursor: string | null = null;
     if (snapshotId) {
       const saved = await this.db.query(
-        `SELECT sections,data,cursor::text,expires_at FROM sync_snapshot_sessions
+        `SELECT sections,data,cursor::text AS cursor,expires_at FROM sync_snapshot_sessions
          WHERE id=$1 AND user_id=$2 AND expires_at>now()`,
         [snapshotId,userId],
       );
