@@ -313,6 +313,7 @@ export class NotificationsService {
       'social.follow_accepted': 'Solicitud aceptada',
       'social.comment': 'Nuevo comentario',
       'social.reaction': 'Nueva reacción',
+      'event.reminder': 'Tu evento se acerca',
     };
     return titles[category] ?? 'Tienes una nueva notificación';
   }
@@ -322,6 +323,11 @@ export class NotificationsService {
     const value = payload as Record<string, unknown>;
     if (typeof value.message === 'string' && value.message.length <= 180) return value.message;
     if (typeof value.actorName === 'string' && value.actorName.length <= 80) return value.actorName;
+    if (typeof value.eventName === 'string' && value.eventName.length <= 120) {
+      const name=value.eventName.trim();
+      const reminder=value.reminder==='1h'?'en una hora':value.reminder==='24h'?'mañana':'pronto';
+      return name? `“${name}” comienza ${reminder}.` : `Tu evento comienza ${reminder}.`;
+    }
     return 'Abre MOMENTIA para ver los detalles.';
   }
 
