@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
@@ -73,4 +73,24 @@ export class SocialController {
   unreact(@Req() req: Request & AuthenticatedRequest, @Param('postId') id: string) {
     return this.social.removeReaction(req.userId!, id);
   }
+  @Patch('comments/:commentId')
+  updateComment(@Req() req: Request & AuthenticatedRequest, @Param('commentId') id: string, @Body() body: { body?: unknown }) {
+    return this.social.updateComment(req.userId!, id, body?.body);
+  }
+
+  @Delete('comments/:commentId')
+  deleteComment(@Req() req: Request & AuthenticatedRequest, @Param('commentId') id: string) {
+    return this.social.deleteComment(req.userId!, id);
+  }
+
+  @Post('comments/:commentId/reactions')
+  reactToComment(@Req() req: Request & AuthenticatedRequest, @Param('commentId') id: string, @Body() body: { reaction?: unknown }) {
+    return this.social.reactToComment(req.userId!, id, body?.reaction);
+  }
+
+  @Delete('comments/:commentId/reactions')
+  removeCommentReaction(@Req() req: Request & AuthenticatedRequest, @Param('commentId') id: string) {
+    return this.social.removeCommentReaction(req.userId!, id);
+  }
+
 }
