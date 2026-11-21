@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, rename, rm, writeFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
@@ -34,6 +34,31 @@ export class MediaService {
          FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
          WHERE u.uploader_id=$1 AND u.idempotency_key=$2`,[userId,idempotencyKey]);
       if(prior.rowCount) return prior.rows[0];
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':storage-quota']);
+      const entitlement=await client.query(
+        `SELECT p.storage_quota_bytes,p.max_upload_bytes,
+                COALESCE(usage.used_bytes,0)::bigint used_bytes
+         FROM subscription_plans p
+         LEFT JOIN LATERAL (
+           SELECT us.plan_id FROM user_subscriptions us
+           WHERE us.user_id=$1 AND us.status IN ('trialing','active','past_due')
+             AND (us.current_period_end IS NULL OR us.current_period_end>now())
+           ORDER BY CASE us.status WHEN 'active' THEN 0 WHEN 'trialing' THEN 1 ELSE 2 END,
+                    us.created_at DESC LIMIT 1
+         ) s ON s.plan_id=p.id
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(a.size_bytes),0)::bigint used_bytes
+           FROM media_assets a WHERE a.owner_id=$1 AND a.status<>'deleted'
+         ) usage ON true
+         WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
+        [userId],
+      );
+      if(!entitlement.rowCount) throw new ServiceUnavailableException('Storage plans are not configured.');
+      const limits=entitlement.rows[0];
+      if(Number(v.sizeBytes)>Number(limits.max_upload_bytes)) throw new PayloadTooLargeException('This file exceeds the maximum upload size for your plan.');
+      if(BigInt(limits.used_bytes)+BigInt(Number(v.sizeBytes))>BigInt(limits.storage_quota_bytes)) {
+        throw new PayloadTooLargeException('Your storage quota has been reached. Upgrade your plan or delete existing media.');
+      }
       const assetId=randomUUID();
       const storageKey='pending/'+userId+'/'+assetId;
       const asset=await client.query(
