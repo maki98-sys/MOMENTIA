@@ -135,6 +135,18 @@ export class MediaService {
     return {uploadId,partNumber,received:true,duplicate:false};
   }
 
+  private async enqueueUploadPartCleanup(uploadId:string) {
+    await this.db.transaction(async client=>{
+      await client.query(
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+         SELECT u.media_asset_id,p.storage_key
+         FROM media_upload_parts p JOIN media_uploads u ON u.id=p.upload_id
+         WHERE p.upload_id=$1
+         ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,[uploadId]);
+      await client.query(`DELETE FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
+    });
+  }
+
   async completeResumableUpload(userId:string,uploadId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     const upload=await this.db.query(
@@ -142,7 +154,7 @@ export class MediaService {
        FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
        WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
     if(!upload.rowCount) throw new NotFoundException('Upload not found.');
-    if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) return this.getUpload(userId,uploadId);
+    if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) { await this.enqueueUploadPartCleanup(uploadId); return this.getUpload(userId,uploadId); }
     const parts=await this.db.query(
       `SELECT part_number,byte_size,checksum_sha256,storage_key FROM media_upload_parts
        WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
@@ -165,7 +177,7 @@ export class MediaService {
       throw new BadRequestException('Final file checksum mismatch.');
     }
     const result=await this.receiveUpload(userId,uploadId,complete);
-    await this.db.query(`DELETE FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
+    await this.enqueueUploadPartCleanup(uploadId);
     return result;
   }
 
@@ -234,6 +246,13 @@ export class MediaService {
       if(!['created','uploading'].includes(String(upload.state))) {
         throw new ConflictException('Only an upload that has not been received can be cancelled.');
       }
+      await client.query(
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+         SELECT $1,p.storage_key FROM media_upload_parts p WHERE p.upload_id=$2
+         ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+        [upload.media_asset_id,uploadId],
+      );
+      await client.query(`DELETE FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
       await client.query(
         `UPDATE media_uploads SET state='cancelled',updated_at=now()
          WHERE id=$1 AND uploader_id=$2`,
