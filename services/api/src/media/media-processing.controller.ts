@@ -45,7 +45,11 @@ export class MediaProcessingController {
     if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker claim body is required.');
     const value=body as Record<string,unknown>;
     if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
-    return this.processing.claimDeletions(value.workerId,Number(value.limit)||50);
+    return this.processing.claimDeletions(
+      value.workerId,
+      Number(value.limit)||50,
+      typeof value.ownerUserId==='string'?value.ownerUserId:undefined,
+    );
   }
 
   @Post('deletions/:deletionId/complete')
