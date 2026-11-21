@@ -41,6 +41,27 @@ export class SpacesService {
       throw new BadRequestException('Couple spaces will be enabled with the consent-based invitation and acceptance flow.');
     }
     return this.database.transaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':space-quota']);
+      const limits=await client.query(
+        `SELECT COALESCE((p.features->>'max_spaces')::integer,5) max_spaces
+         FROM subscription_plans p
+         LEFT JOIN LATERAL (
+           SELECT us.plan_id FROM user_subscriptions us
+           WHERE us.user_id=$1 AND us.status IN ('trialing','active','past_due')
+             AND (us.current_period_end IS NULL OR us.current_period_end>now())
+           ORDER BY CASE us.status WHEN 'active' THEN 0 WHEN 'trialing' THEN 1 ELSE 2 END,
+                    us.created_at DESC LIMIT 1
+         ) s ON s.plan_id=p.id
+         WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
+        [userId],
+      );
+      const count=await client.query(
+        `SELECT count(*)::integer total FROM spaces
+         WHERE owner_id=$1 AND status IN ('active','archived')`,[userId],
+      );
+      if(!limits.rowCount || Number(count.rows[0].total)>=Number(limits.rows[0].max_spaces)) {
+        throw new BadRequestException('Your plan space limit has been reached. Upgrade your plan or close an existing space.');
+      }
       if (input.type === 'COUPLE') {
         if (!input.partnerUserId || input.partnerUserId === userId) {
           throw new BadRequestException('A different active partner account is required for a couple space.');
