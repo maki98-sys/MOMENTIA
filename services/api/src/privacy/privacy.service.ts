@@ -123,8 +123,18 @@ export class PrivacyService {
       }
       await client.query(
         `UPDATE users SET status='deleted',deleted_at=now(),deletion_requested_at=NULL,
-           email_normalized=NULL,phone_e164=NULL,updated_at=now()
+           email_normalized='deleted+'||id::text||'@deleted.invalid',phone_e164=NULL,updated_at=now()
          WHERE id=$1 AND status='deletion_pending'`, [request.user_id]);
+      await client.query(`DELETE FROM auth_identities WHERE user_id=$1`, [request.user_id]);
+      await client.query(
+        `UPDATE user_profiles SET display_name='Cuenta eliminada',bio=NULL,avatar_media_id=NULL,
+           preferences='{}'::jsonb,updated_at=now() WHERE user_id=$1`, [request.user_id]);
+      await client.query(
+        `DELETE FROM user_relationships WHERE requester_id=$1 OR target_id=$1`, [request.user_id]);
+      await client.query(
+        `DELETE FROM user_blocks WHERE blocker_id=$1 OR blocked_id=$1`, [request.user_id]);
+      await client.query(
+        `DELETE FROM devices WHERE user_id=$1`, [request.user_id]);
       const completed = await client.query(
         `UPDATE account_deletion_requests
          SET status='completed',completed_at=now(),processing_started_at=NULL,
