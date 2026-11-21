@@ -202,6 +202,73 @@ export class SocialService {
     return { removed:true };
   }
 
+
+  async updateComment(userId: string, commentId: string, body: unknown) {
+    if(typeof body!=='string'||!body.trim()||body.length>3000) {
+      throw new BadRequestException('Comment must contain 1 to 3000 characters.');
+    }
+    const result=await this.db.query(
+      `UPDATE post_comments c SET body=$3
+       WHERE c.id=$1 AND c.author_id=$2 AND c.status='visible'
+         AND EXISTS (SELECT 1 FROM posts p WHERE p.id=c.post_id AND p.status='published')
+       RETURNING c.id,c.post_id,c.author_id,c.body,c.created_at`,
+      [commentId,userId,body.trim()],
+    );
+    if(!result.rowCount) throw new NotFoundException('Comment not found.');
+    return result.rows[0];
+  }
+
+  async deleteComment(userId: string, commentId: string) {
+    const result=await this.db.query(
+      `UPDATE post_comments c SET status='removed'
+       WHERE c.id=$1 AND c.author_id=$2 AND c.status='visible'
+         AND EXISTS (SELECT 1 FROM posts p WHERE p.id=c.post_id AND p.status='published')
+       RETURNING c.id`,
+      [commentId,userId],
+    );
+    if(!result.rowCount) throw new NotFoundException('Comment not found.');
+    await this.db.query(
+      `DELETE FROM content_reactions WHERE target_type='comment' AND target_id=$1`,
+      [commentId],
+    );
+    return { removed:true, commentId };
+  }
+
+  async reactToComment(userId: string, commentId: string, reaction: unknown) {
+    if(!['like','love','laugh','wow','support'].includes(String(reaction))) {
+      throw new BadRequestException('Invalid reaction.');
+    }
+    const visible=await this.db.query(
+      `SELECT c.post_id FROM post_comments c
+       WHERE c.id=$1 AND c.status='visible'`,[commentId]);
+    if(!visible.rowCount) throw new NotFoundException('Comment not found.');
+    await this.assertCanView(userId,String(visible.rows[0].post_id));
+    await this.assertCanInteract(userId,String(visible.rows[0].post_id));
+    const result=await this.db.query(
+      `INSERT INTO content_reactions(target_type,target_id,user_id,reaction_type)
+       VALUES('comment',$1,$2,$3)
+       ON CONFLICT(target_type,target_id,user_id)
+       DO UPDATE SET reaction_type=EXCLUDED.reaction_type
+       RETURNING id,target_id,reaction_type,created_at`,
+      [commentId,userId,reaction],
+    );
+    return result.rows[0];
+  }
+
+  async removeCommentReaction(userId: string, commentId: string) {
+    const visible=await this.db.query(
+      `SELECT c.post_id FROM post_comments c
+       WHERE c.id=$1 AND c.status='visible'`,[commentId]);
+    if(!visible.rowCount) throw new NotFoundException('Comment not found.');
+    await this.assertCanView(userId,String(visible.rows[0].post_id));
+    await this.assertCanInteract(userId,String(visible.rows[0].post_id));
+    await this.db.query(
+      `DELETE FROM content_reactions WHERE target_type='comment' AND target_id=$1 AND user_id=$2`,
+      [commentId,userId],
+    );
+    return { removed:true };
+  }
+
   private async assertCanInteract(userId: string, postId: string) {
     const result=await this.db.query(`SELECT p.audience,p.space_id,sm.role
       FROM posts p LEFT JOIN space_memberships sm
