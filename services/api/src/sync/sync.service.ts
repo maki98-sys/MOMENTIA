@@ -471,8 +471,14 @@ export class SyncService {
     const oldest=BigInt(bounds.rows[0].oldest_sequence);
     const latest=BigInt(bounds.rows[0].latest_sequence);
     const requested=BigInt(requestedCursor);
-    const resetRequired=oldest>0n && requested<oldest-1n;
-    if(resetRequired) return {changes:[],nextCursor:requestedCursor,hasMore:false,resetRequired:true,oldestCursor:(oldest-1n).toString(),serverCursor:latest.toString()};
+    const cursorAhead=requested>latest;
+    const historyExpired=oldest>0n && requested<oldest-1n;
+    if(cursorAhead || historyExpired) return {
+      changes:[],nextCursor:requestedCursor,hasMore:false,resetRequired:true,
+      resetReason:cursorAhead?'cursor_ahead':'history_expired',
+      oldestCursor:oldest>0n?(oldest-1n).toString():'0',
+      serverCursor:latest.toString(),
+    };
     const result = await this.db.query(
       `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
        FROM sync_change_log WHERE user_id=$1 AND sequence_id>$2::bigint
