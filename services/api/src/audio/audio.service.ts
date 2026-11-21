@@ -185,13 +185,41 @@ export class AudioService {
     this.id(sessionId, 'session id');
     await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
-      const r = await client.query(`UPDATE audio_participants p SET left_at=now()
-        FROM audio_sessions a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
-        WHERE p.session_id=a.id AND p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
-        RETURNING p.id`, [sessionId,userId]);
-      if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
-      await client.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
-      return { left: true };
+      const participation = await client.query(
+        `SELECT p.id,p.role,a.state
+         FROM audio_participants p
+         JOIN audio_sessions a ON a.id=p.session_id
+         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
+         WHERE p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
+         FOR UPDATE OF p,a`,
+        [sessionId,userId],
+      );
+      if (!participation.rowCount) throw new NotFoundException('Active audio participation not found.');
+      const role = String(participation.rows[0].role);
+      await client.query(
+        `UPDATE audio_participants SET left_at=now() WHERE id=$1`,
+        [participation.rows[0].id],
+      );
+      if (role === 'host') {
+        await client.query(
+          `UPDATE audio_sessions
+           SET state='ended',playback_state='ended',position_ms=0,
+               server_version=server_version+1,updated_at=now()
+           WHERE id=$1 AND state IN ('created','playing','paused')`,
+          [sessionId],
+        );
+        await client.query(
+          `UPDATE audio_queue_items SET state='played'
+           WHERE session_id=$1 AND state IN ('queued','current')`,
+          [sessionId],
+        );
+        return { left: true, sessionEnded: true, reason: 'HOST_LEFT' };
+      }
+      await client.query(
+        `UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`,
+        [sessionId],
+      );
+      return { left: true, sessionEnded: false };
     });
   }
 
