@@ -141,7 +141,12 @@ export class MediaProcessingService {
          last_error_code='WORKER_LEASE_EXPIRED',available_at=now(),updated_at=now()
        WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
        RETURNING id`,[seconds]);
-    return {released:result.rowCount??0};
+    const deletions=await this.db.query(
+      `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
+         last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
+       WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
+       RETURNING id`,[seconds]);
+    return {released:(result.rowCount??0)+(deletions.rowCount??0)};
   }
   async claimDeletions(workerId:string,limit=50) {
     if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
