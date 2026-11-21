@@ -40,7 +40,7 @@ describe('MediaService',()=>{
   const root=await mkdtemp(join(tmpdir(),'momentia-media-'));
   const previous=process.env.MEDIA_STORAGE_DIR;
   process.env.MEDIA_STORAGE_DIR=root;
-  const bytes=Buffer.from('momentia-test-image-bytes');
+  const bytes=Buffer.from([0xff,0xd8,0xff,0xdb,0x00,0x43,0x00]);
   const uploadId='123e4567-e89b-42d3-a456-426614174000';
   query.mockResolvedValueOnce({rowCount:1,rows:[{
    id:uploadId,state:'created',uploader_id:'u',media_asset_id:'asset-1',
