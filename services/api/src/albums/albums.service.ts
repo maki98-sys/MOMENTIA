@@ -101,6 +101,7 @@ export class AlbumsService {
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
          WHERE a.id=$2 AND a.space_id=$3 FOR UPDATE`,[userId,albumId,spaceId]);
       if(!album.rowCount) throw new NotFoundException('Album not found.');
+      if(album.rows[0].role==='guest') throw new NotFoundException('Album not found.');
       if(album.rows[0].visibility==='admins'&&!['owner','admin','moderator'].includes(String(album.rows[0].role))) throw new NotFoundException('Album not found.');
       const media=await client.query(`SELECT id FROM media_assets WHERE id=$1 AND owner_id=$2 AND status='ready'`,[v.mediaAssetId,userId]);
       if(!media.rowCount) throw new NotFoundException('Ready media asset not found.');
