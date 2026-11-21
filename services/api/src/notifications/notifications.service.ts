@@ -233,6 +233,29 @@ export class NotificationsService {
     return updated.rows[0];
   }
 
+
+  async recoverStalePushDeliveries(staleAfterSeconds = 180) {
+    const seconds = Number(staleAfterSeconds);
+    if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 3600) {
+      throw new BadRequestException('Stale delivery timeout must be between 60 and 3600 seconds.');
+    }
+    const result = await this.db.query(
+      `UPDATE notification_outbox
+       SET status=CASE WHEN attempts>=8 THEN 'cancelled' ELSE 'failed' END,
+           last_error_code='DELIVERY_LEASE_EXPIRED',
+           next_attempt_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+       WHERE channel='push' AND status='processing'
+         AND updated_at < now()-make_interval(secs=>$1)
+       RETURNING id,status,attempts`,
+      [seconds],
+    );
+    return {
+      recovered: result.rowCount ?? 0,
+      cancelled: result.rows.filter(row => row.status === 'cancelled').length,
+      retryable: result.rows.filter(row => row.status === 'failed').length,
+    };
+  }
+
   async dispatchPushBatch(limit = 50) {
     const deliveries = await this.claimPushDeliveries(limit);
     let delivered = 0;
