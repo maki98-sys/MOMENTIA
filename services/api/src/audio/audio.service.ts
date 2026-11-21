@@ -168,6 +168,7 @@ export class AudioService {
 
   async heartbeat(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
+    await this.assertAudioEntitlement(this.db,userId);
     const r = await this.db.query(`UPDATE audio_participants p
       SET last_heartbeat_at=now()
       FROM audio_sessions s
@@ -212,6 +213,7 @@ export class AudioService {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
     await this.assertAudioEntitlement(this.db,userId);
     const r = await this.db.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
+      JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
       WHERE q.id=$1 AND q.session_id=$2 AND a.id=q.session_id AND a.host_user_id=$3
       AND q.state IN ('queued','current') RETURNING q.id`, [itemId,sessionId,userId]);
     if (!r.rowCount) throw new NotFoundException('Queue item not found.');
@@ -230,7 +232,9 @@ export class AudioService {
     let itemId = input?.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
     return this.db.transaction(async client => {
-      const s = await client.query(`SELECT id,host_user_id,server_version FROM audio_sessions WHERE id=$1 FOR UPDATE`, [sessionId]);
+      const s = await client.query(`SELECT a.id,a.host_user_id,a.server_version FROM audio_sessions a
+        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
+        WHERE a.id=$1 FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
       if (s.rows[0].host_user_id !== userId) throw new ForbiddenException('Only the host can control playback.');
       if (input.expectedVersion !== undefined && Number(input.expectedVersion) !== Number(s.rows[0].server_version)) throw new ConflictException('Playback state changed; refresh and retry.');
@@ -265,7 +269,10 @@ export class AudioService {
     const value = Number(vote);
     if (value !== -1 && value !== 1) throw new BadRequestException('Vote must be -1 or 1.');
     return this.db.transaction(async client => {
-      const allowed = await client.query(`SELECT 1 FROM audio_queue_items q JOIN audio_participants p ON p.session_id=q.session_id
+      const allowed = await client.query(`SELECT 1 FROM audio_queue_items q
+        JOIN audio_participants p ON p.session_id=q.session_id
+        JOIN audio_sessions a ON a.id=q.session_id
+        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
         WHERE q.id=$1 AND q.session_id=$2 AND p.user_id=$3 AND p.left_at IS NULL AND q.state='queued'`, [itemId,sessionId,userId]);
       if (!allowed.rowCount) throw new NotFoundException('Queue item or active participant not found.');
       const r = await client.query(`INSERT INTO audio_votes(queue_item_id,user_id,vote) VALUES($1,$2,$3)
