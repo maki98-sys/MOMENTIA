@@ -15,6 +15,7 @@ export class AuthSessionController {
   @Post('sessions')
   @UseGuards(OidcBearerGuard)
   create(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
+    if (!req.auth) throw new BadRequestException('An OIDC provider token is required to create a MOMENTIA session.');
     const value = body && typeof body === 'object' && !Array.isArray(body)
       ? body as Record<string,unknown> : {};
     if (Object.keys(value).some(key => key !== 'deviceId')) {
