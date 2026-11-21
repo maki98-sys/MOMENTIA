@@ -129,7 +129,7 @@ export class OidcIdentityService {
         provider: String(row.provider),
         linkedAt: row.created_at,
       })),
-      canUnlink: result.rowCount > 1,
+      canUnlink: (result.rowCount ?? 0) > 1,
     };
   }
 
@@ -152,7 +152,7 @@ export class OidcIdentityService {
       const target = identities.rows.find((row: Record<string, unknown>) =>
         row.provider === principal.issuer && row.provider_subject === principal.subject);
       if (!target) throw new ConflictException('This external identity is not linked to the current account.');
-      if (identities.rowCount <= 1) {
+      if ((identities.rowCount ?? 0) <= 1) {
         throw new ConflictException('The last sign-in identity cannot be removed. Link another identity first.');
       }
       await client.query(
