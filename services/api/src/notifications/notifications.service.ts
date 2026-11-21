@@ -333,7 +333,20 @@ export class NotificationsService {
         if (body.data?.status !== 'ok') {
           const providerError = body.data?.details?.error || body.data?.message || 'EXPO_TICKET_ERROR';
           if (providerError === 'DeviceNotRegistered') {
-            await this.db.query(`UPDATE devices SET push_token_encrypted=NULL WHERE id=$1`, [item.device_id]);
+            await this.db.transaction(async client => {
+              await client.query(
+                `UPDATE devices SET push_token_encrypted=NULL WHERE id=$1`,
+                [item.device_id],
+              );
+              await client.query(
+                `UPDATE notification_outbox
+                 SET status='cancelled',processing_started_at=NULL,last_error_code='DEVICE_NOT_REGISTERED'
+                 WHERE device_id=$1 AND channel='push'
+                   AND status IN ('pending','failed','processing')`,
+                [item.device_id],
+              );
+            });
+            continue;
           }
           throw new Error(providerError);
         }
