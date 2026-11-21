@@ -133,6 +133,11 @@ export class SocialService {
          VALUES($1,$2,$3,$4,$5,'published',now())
          RETURNING id,author_id,space_id,media_asset_id,body,audience,status,created_at,published_at`,
         [userId,v.body,v.mediaAssetId,v.audience,v.spaceId]);
+      if(v.spaceId) {
+        await client.query(
+          `INSERT INTO timeline_entries(space_id,post_id,occurred_at,source)
+           VALUES($1,$2,now(),'post')`,[v.spaceId,result.rows[0].id]);
+      }
       return result.rows[0];
     });
   }
