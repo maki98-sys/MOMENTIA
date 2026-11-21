@@ -51,7 +51,8 @@ describe('MediaService',()=>{
   transaction.mockImplementation(async (operation:(client:unknown)=>Promise<unknown>) =>
    operation({query:jest.fn().mockResolvedValue({rowCount:1,rows:[]})}));
   try {
-   const result=await service.receiveUpload('u',uploadId,bytes);
+   const uploadService=new MediaService({query,transaction} as unknown as DatabaseService,new LocalMediaStorage());
+   const result=await uploadService.receiveUpload('u',uploadId,bytes);
    const stored=await readFile(join(root,'pending','u','asset-1'));
    expect(stored).toEqual(bytes);
    expect(result).toMatchObject({state:'uploaded',asset_status:'quarantined'});
