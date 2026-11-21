@@ -55,30 +55,33 @@ export class MembershipsService {
 
   async remove(actorId: string, spaceId: string, targetId: string) {
     if (actorId === targetId) throw new BadRequestException('Use the leave endpoint to remove yourself.');
-    const result = await this.database.query(
-      `UPDATE space_memberships target SET state = 'removed', left_at = now()
-       WHERE target.space_id = $2 AND target.user_id = $3 AND target.state = 'active'
-         AND target.role <> 'owner'
-         AND EXISTS (
-           SELECT 1 FROM space_memberships actor
-           WHERE actor.space_id = target.space_id AND actor.user_id = $1
-             AND actor.state = 'active' AND actor.role IN ('owner','admin','moderator')
-         )
-         AND (target.role <> 'admin' OR EXISTS (
-           SELECT 1 FROM space_memberships owner
-           WHERE owner.space_id = target.space_id AND owner.user_id = $1
-             AND owner.state = 'active' AND owner.role = 'owner'
-         ))
-         AND (target.role <> 'moderator' OR EXISTS (
-           SELECT 1 FROM space_memberships admin_or_owner
-           WHERE admin_or_owner.space_id = target.space_id AND admin_or_owner.user_id = $1
-             AND admin_or_owner.state = 'active' AND admin_or_owner.role IN ('owner','admin')
-         ))
-       RETURNING user_id, state, left_at`,
-      [actorId, spaceId, targetId],
-    );
-    if (!result.rowCount) throw new NotFoundException('Member not found or permission denied.');
-    return result.rows[0];
+    return this.database.transaction(async client => {
+      const result = await client.query(
+        `UPDATE space_memberships target SET state = 'removed', left_at = now()
+         WHERE target.space_id = $2 AND target.user_id = $3 AND target.state = 'active'
+           AND target.role <> 'owner'
+           AND EXISTS (
+             SELECT 1 FROM space_memberships actor
+             WHERE actor.space_id = target.space_id AND actor.user_id = $1
+               AND actor.state = 'active' AND actor.role IN ('owner','admin','moderator')
+           )
+           AND (target.role <> 'admin' OR EXISTS (
+             SELECT 1 FROM space_memberships owner
+             WHERE owner.space_id = target.space_id AND owner.user_id = $1
+               AND owner.state = 'active' AND owner.role = 'owner'
+           ))
+           AND (target.role <> 'moderator' OR EXISTS (
+             SELECT 1 FROM space_memberships admin_or_owner
+             WHERE admin_or_owner.space_id = target.space_id AND admin_or_owner.user_id = $1
+               AND admin_or_owner.state = 'active' AND admin_or_owner.role IN ('owner','admin')
+           ))
+         RETURNING user_id, state, left_at`,
+        [actorId, spaceId, targetId],
+      );
+      if (!result.rowCount) throw new NotFoundException('Member not found or permission denied.');
+      await this.endDepartedAudioParticipation(client,spaceId,targetId);
+      return result.rows[0];
+    });
   }
 
   async transferOwnership(actorId: string, spaceId: string, targetId: string) {
@@ -129,13 +132,49 @@ export class MembershipsService {
   }
 
   async leave(userId: string, spaceId: string) {
-    const result = await this.database.query(
-      `UPDATE space_memberships SET state = 'left', left_at = now()
-       WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role <> 'owner'
-       RETURNING user_id, state, left_at`,
-      [spaceId, userId],
+    return this.database.transaction(async client => {
+      const result = await client.query(
+        `UPDATE space_memberships SET state = 'left', left_at = now()
+         WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role <> 'owner'
+         RETURNING user_id, state, left_at`,
+        [spaceId, userId],
+      );
+      if (!result.rowCount) throw new BadRequestException('Owner transfer is required before leaving, or membership is inactive.');
+      await this.endDepartedAudioParticipation(client,spaceId,userId);
+      return result.rows[0];
+    });
+  }
+
+  private async endDepartedAudioParticipation(client: {query:(sql:string,values?:unknown[])=>Promise<any>},spaceId:string,userId:string) {
+    const departed=await client.query(
+      `UPDATE audio_participants p SET left_at=now()
+       FROM audio_sessions a
+       WHERE p.session_id=a.id AND a.space_id=$1 AND p.user_id=$2
+         AND p.left_at IS NULL AND a.state IN ('created','playing','paused')
+       RETURNING p.session_id,p.role`,
+      [spaceId,userId],
     );
-    if (!result.rowCount) throw new BadRequestException('Owner transfer is required before leaving, or membership is inactive.');
-    return result.rows[0];
+    if(!departed.rowCount) return;
+    const sessionIds=[...new Set(departed.rows.map((row:any)=>String(row.session_id)))];
+    const hostSessionIds=[...new Set(departed.rows.filter((row:any)=>row.role==='host').map((row:any)=>String(row.session_id)))];
+    if(hostSessionIds.length) {
+      const ended=await client.query(
+        `UPDATE audio_sessions SET state='ended',playback_state='ended',position_ms=0,
+           server_version=server_version+1,updated_at=now()
+         WHERE id=ANY($1::uuid[]) AND state IN ('created','playing','paused') RETURNING id`,
+        [hostSessionIds],
+      );
+      if(ended.rowCount) await client.query(
+        `UPDATE audio_queue_items SET state='played'
+         WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+        [ended.rows.map((row:any)=>row.id)],
+      );
+    }
+    const nonHostSessionIds=sessionIds.filter(id=>!hostSessionIds.includes(id));
+    if(nonHostSessionIds.length) await client.query(
+      `UPDATE audio_sessions SET server_version=server_version+1,updated_at=now()
+       WHERE id=ANY($1::uuid[]) AND state IN ('created','playing','paused')`,
+      [nonHostSessionIds],
+    );
   }
 }
