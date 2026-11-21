@@ -116,6 +116,7 @@ export class MediaService {
     }
     await this.storage.put(key,bytes);
     let keepStoredPart=false;
+    let transactionCommitted=false;
     try {
       const inserted=await this.db.transaction(async client=>{
         const locked=await client.query(
@@ -141,10 +142,11 @@ export class MediaService {
              updated_at=now() WHERE id=$1`,[uploadId]);
         return !saved.rowCount;
       });
+      transactionCommitted=true;
       if(!keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
       return {uploadId,partNumber,received:true,duplicate:inserted};
     } catch(error) {
-      if(!keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
+      if(!transactionCommitted || !keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
       throw error;
     }
   }
