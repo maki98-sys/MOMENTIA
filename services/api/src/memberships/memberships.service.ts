@@ -59,6 +59,27 @@ export class MembershipsService {
            jsonb_build_object('targetUserId',$4,'previousRole',$5,'newRole',$6))`,
         [spaceId,actorId,targetId,targetId,previousRole,String(role)],
       );
+      if(!['owner','admin','moderator'].includes(String(role))) {
+        const ended=await client.query(
+          `UPDATE audio_sessions SET state='ended',playback_state='ended',position_ms=0,
+             current_item_id=NULL,server_version=server_version+1,updated_at=now()
+           WHERE space_id=$1 AND host_user_id=$2 AND state IN ('created','playing','paused')
+           RETURNING id`,
+          [spaceId,targetId],
+        );
+        if(ended.rowCount) {
+          await client.query(
+            `UPDATE audio_queue_items SET state='played'
+             WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+            [ended.rows.map((row:{id:string})=>row.id)],
+          );
+          await client.query(
+            `UPDATE audio_participants SET left_at=COALESCE(left_at,now())
+             WHERE session_id=ANY($1::uuid[]) AND left_at IS NULL`,
+            [ended.rows.map((row:{id:string})=>row.id)],
+          );
+        }
+      }
       return result.rows[0];
     });
   }
