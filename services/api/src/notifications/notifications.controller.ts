@@ -16,7 +16,7 @@ export class NotificationsController {
     @Query('limit') limit?: string,
     @Query('unreadOnly') unreadOnly?: string,
   ) {
-    if (limit !== undefined && !/^\\d{1,3}$/.test(limit)) {
+    if (limit !== undefined && !/^\d{1,3}$/.test(limit)) {
       throw new BadRequestException('limit must be an integer between 1 and 100.');
     }
     const pageSize = limit === undefined ? 30 : Number(limit);
