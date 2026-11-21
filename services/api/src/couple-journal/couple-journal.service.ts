@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 
@@ -42,6 +42,12 @@ export class CoupleJournalService {
   if(!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new BadRequestException('Invalid journal key version.');
   return this.db.transaction(async client=>{
    await this.assertCouple(client,spaceId,userId);
+   const envelopes=await client.query(
+    `SELECT count(DISTINCT e.user_id)::int total
+     FROM couple_space_key_envelopes e
+     JOIN space_memberships m ON m.space_id=e.space_id AND m.user_id=e.user_id AND m.state='active'
+     WHERE e.space_id=$1 AND e.key_version=$2`,[spaceId,keyVersion]);
+   if(Number(envelopes.rows[0].total)!==2) throw new ConflictException('Both partners must have the same journal key version before creating entries.');
    const id=randomUUID();
    const r=await client.query(
     `INSERT INTO couple_journal_entries(id,space_id,author_id,ciphertext,nonce,encryption_version,key_version)
@@ -75,10 +81,13 @@ export class CoupleJournalService {
    const result=await client.query(
     `INSERT INTO couple_space_key_envelopes(space_id,user_id,key_version,algorithm,encrypted_key,nonce)
      VALUES($1,$2,$3,$4,$5,$6)
-     ON CONFLICT(space_id,user_id,key_version) DO UPDATE SET
-       algorithm=EXCLUDED.algorithm,encrypted_key=EXCLUDED.encrypted_key,nonce=EXCLUDED.nonce,updated_at=now()
+     ON CONFLICT(space_id,user_id,key_version) DO UPDATE SET updated_at=now()
+       WHERE couple_space_key_envelopes.algorithm=EXCLUDED.algorithm
+         AND couple_space_key_envelopes.encrypted_key=EXCLUDED.encrypted_key
+         AND couple_space_key_envelopes.nonce=EXCLUDED.nonce
      RETURNING id,space_id,user_id,key_version,algorithm,created_at,updated_at`,
     [spaceId,userId,keyVersion,v.algorithm,encryptedKey,nonce]);
+   if(!result.rowCount) throw new ConflictException('A journal key envelope already exists for this version. Use a new key version to rotate keys.');
    await client.query(
     `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
      VALUES($1,$2,'couple.journal_key_envelope.updated','couple_key',$3,$4::jsonb)`,
