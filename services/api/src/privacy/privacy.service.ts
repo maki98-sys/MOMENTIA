@@ -426,6 +426,7 @@ export class PrivacyService {
       await client.query(`DELETE FROM notification_outbox WHERE user_id=$1`,[request.user_id]);
       await client.query(`DELETE FROM notifications WHERE user_id=$1`,[request.user_id]);
       await client.query(`DELETE FROM notification_preferences WHERE user_id=$1`,[request.user_id]);
+      await client.query(`DELETE FROM sync_snapshot_sessions WHERE user_id=$1`,[request.user_id]);
       await client.query(`DELETE FROM sync_operation_receipts WHERE user_id=$1`,[request.user_id]);
       await client.query(`DELETE FROM sync_change_log WHERE user_id=$1`,[request.user_id]);
       await client.query(`DELETE FROM couple_space_key_envelopes WHERE user_id=$1`,[request.user_id]);
