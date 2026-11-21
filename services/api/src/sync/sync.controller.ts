@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import type { AuthenticatedRequest } from '../auth/auth.types';
@@ -19,6 +19,14 @@ export class SyncController {
   @Post('snapshot')
   snapshot(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
     return this.sync.snapshot(req.userId!, body);
+  }
+
+  @Delete('snapshot/:snapshotId')
+  releaseSnapshot(
+    @Req() req: Request & AuthenticatedRequest,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    return this.sync.releaseSnapshot(req.userId!, snapshotId);
   }
 
   @Get('status')
