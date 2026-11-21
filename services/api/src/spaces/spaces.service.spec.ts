@@ -60,9 +60,9 @@ describe('SpacesService', () => {
     transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
     await expect(service.updateEvent('user-1','event-1',{startsAt:'2026-12-01T10:00:00Z',moderationMode:'approval'}))
       .resolves.toMatchObject({spaceId:'event-1',moderation_mode:'approval'});
-    expect(clientQuery).toHaveBeenCalledTimes(5);
+    expect(clientQuery).toHaveBeenCalledTimes(3);
     expect(clientQuery.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
-    expect(clientQuery.mock.calls[4][0]).toContain('space_audit_events');
+    expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
   });
 
   it('archives an active space only for its owner and audits the transition', async () => {
@@ -74,9 +74,9 @@ describe('SpacesService', () => {
       .mockResolvedValueOnce({rowCount:1,rows:[]});
     transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
     await expect(service.changeLifecycle('owner-1','space-1','archive')).resolves.toMatchObject({status:'archived'});
-    expect(clientQuery).toHaveBeenCalledTimes(6);
+    expect(clientQuery).toHaveBeenCalledTimes(5);
     expect(clientQuery.mock.calls[0][0]).toContain("sm.role='owner'");
-    expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
+    expect(clientQuery.mock.calls[4][0]).toContain('space_audit_events');
   });
 
   it('does not allow admins or non-owners to change lifecycle', async () => {
@@ -118,7 +118,7 @@ describe('SpacesService', () => {
     await expect(service.create('user-1', {
       type: 'CIRCLE', name: 'Friends', visibility: 'private',
     })).resolves.toMatchObject({ id: 'space-1', memberCount: 1 });
-    expect(clientQuery).toHaveBeenCalledTimes(3);
+    expect(clientQuery).toHaveBeenCalledTimes(6);
     expect(clientQuery.mock.calls[4][0]).toContain('space_memberships');
     expect(clientQuery.mock.calls[5][0]).toContain('circle_details');
   });
