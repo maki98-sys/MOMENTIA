@@ -143,7 +143,7 @@ export class MediaProcessingService {
            SELECT u.id,u.media_asset_id,a.storage_key_original
            FROM media_uploads u
            JOIN media_assets a ON a.id=u.media_asset_id
-           WHERE u.state IN ('created','uploading') AND u.expires_at<=now()
+           WHERE u.state IN ('created','uploading','assembling') AND u.expires_at<=now()
              AND a.status IN ('pending','quarantined')
            ORDER BY u.expires_at,u.created_at
            LIMIT $1 FOR UPDATE OF u,a SKIP LOCKED
