@@ -88,4 +88,20 @@ export class BillingService {
       features: row.features ?? {},
     };
   }
+  async listMySubscriptions(userId: string) {
+    const result = await this.db.query(
+      `SELECT us.id,us.status,us.current_period_start,us.current_period_end,
+              us.cancel_at_period_end,us.created_at,us.updated_at,
+              p.code AS plan_code,p.display_name AS plan_name,
+              p.monthly_price_minor,p.currency
+       FROM user_subscriptions us
+       JOIN subscription_plans p ON p.id=us.plan_id
+       WHERE us.user_id=$1
+       ORDER BY us.created_at DESC,us.id DESC
+       LIMIT 100`,
+      [userId],
+    );
+    return result.rows;
+  }
+
 }
