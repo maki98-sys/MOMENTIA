@@ -27,30 +27,40 @@ export class MembershipsService {
     if (!['admin', 'moderator', 'member', 'guest'].includes(String(role))) {
       throw new BadRequestException('Unsupported membership role.');
     }
-    const result = await this.database.query(
-      `UPDATE space_memberships target SET role = $4
-       WHERE target.space_id = $2 AND target.user_id = $3 AND target.state = 'active'
-         AND target.role <> 'owner'
-         AND EXISTS (
-           SELECT 1 FROM space_memberships actor
-           WHERE actor.space_id = target.space_id AND actor.user_id = $1
-             AND actor.state = 'active' AND actor.role IN ('owner','admin')
-         )
-         AND (target.role <> 'admin' OR EXISTS (
-           SELECT 1 FROM space_memberships owner
-           WHERE owner.space_id = target.space_id AND owner.user_id = $1
-             AND owner.state = 'active' AND owner.role = 'owner'
-         ))
-         AND ($4 <> 'admin' OR EXISTS (
-           SELECT 1 FROM space_memberships owner
-           WHERE owner.space_id = target.space_id AND owner.user_id = $1
-             AND owner.state = 'active' AND owner.role = 'owner'
-         ))
-       RETURNING user_id, role, state`,
-      [actorId, spaceId, targetId, role],
-    );
-    if (!result.rowCount) throw new NotFoundException('Member not found or permission denied.');
-    return result.rows[0];
+    return this.database.transaction(async client => {
+      const current=await client.query(
+        `SELECT target.role FROM space_memberships target
+         WHERE target.space_id=$2 AND target.user_id=$3 AND target.state='active'
+           AND target.role<>'owner'
+           AND EXISTS (SELECT 1 FROM space_memberships actor
+             WHERE actor.space_id=target.space_id AND actor.user_id=$1
+               AND actor.state='active' AND actor.role IN ('owner','admin'))
+           AND (target.role<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
+             WHERE owner.space_id=target.space_id AND owner.user_id=$1
+               AND owner.state='active' AND owner.role='owner'))
+           AND ($4<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
+             WHERE owner.space_id=target.space_id AND owner.user_id=$1
+               AND owner.state='active' AND owner.role='owner'))
+         FOR UPDATE OF target`,
+        [actorId,spaceId,targetId,role],
+      );
+      if(!current.rowCount) throw new NotFoundException('Member not found or permission denied.');
+      const previousRole=String(current.rows[0].role);
+      const result=await client.query(
+        `UPDATE space_memberships SET role=$3
+         WHERE space_id=$1 AND user_id=$2 AND state='active'
+         RETURNING user_id,role,state`,
+        [spaceId,targetId,role],
+      );
+      if(!result.rowCount) throw new NotFoundException('Member not found or permission denied.');
+      if(previousRole!==String(role)) await client.query(
+        `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+         VALUES($1,$2,'membership.role_changed','membership',$3,
+           jsonb_build_object('targetUserId',$4,'previousRole',$5,'newRole',$6))`,
+        [spaceId,actorId,targetId,targetId,previousRole,String(role)],
+      );
+      return result.rows[0];
+    });
   }
 
   async remove(actorId: string, spaceId: string, targetId: string) {
