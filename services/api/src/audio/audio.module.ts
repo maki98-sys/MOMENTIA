@@ -4,10 +4,11 @@ import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { AudioController } from './audio.controller';
 import { AudioGateway } from './audio.gateway';
 import { AudioService } from './audio.service';
+import { AudioWorkerController } from './audio-worker.controller';
 
 @Module({
   imports: [AuthModule],
-  controllers: [AudioController],
+  controllers: [AudioController, AudioWorkerController],
   providers: [AudioService, AudioGateway, OidcBearerGuard],
 })
 export class AudioModule {}
