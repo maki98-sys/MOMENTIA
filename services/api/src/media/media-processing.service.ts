@@ -165,7 +165,25 @@ export class MediaProcessingService {
          RETURNING id,media_asset_id,storage_key`,
         [batch],
       );
-      return { expired: expired.rowCount ?? 0, storageDeletions: expired.rows };
+      const uploadIds=expired.rows.map(row=>row.id);
+      let removedParts=0;
+      if(uploadIds.length) {
+        const parts=await client.query(
+          `SELECT p.upload_id,p.storage_key,u.media_asset_id
+           FROM media_upload_parts p JOIN media_uploads u ON u.id=p.upload_id
+           WHERE p.upload_id=ANY($1::uuid[])`,[uploadIds]);
+        if(parts.rowCount) {
+          await client.query(
+            `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+             SELECT x.media_asset_id,x.storage_key FROM jsonb_to_recordset($1::jsonb)
+             AS x(media_asset_id uuid,storage_key text)
+             ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+            [JSON.stringify(parts.rows)]);
+          await client.query(`DELETE FROM media_upload_parts WHERE upload_id=ANY($1::uuid[])`,[uploadIds]);
+          removedParts=parts.rowCount;
+        }
+      }
+      return { expired: expired.rowCount ?? 0, storageDeletions: expired.rows, removedParts };
     });
   }
 
