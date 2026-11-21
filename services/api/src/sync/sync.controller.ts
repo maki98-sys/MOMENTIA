@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { SyncService } from './sync.service';
+import { validateSyncPushEnvelope } from './sync-payload.validator';
 
 @Controller('sync')
 @UseGuards(OidcBearerGuard)
@@ -11,6 +12,7 @@ export class SyncController {
 
   @Post('push')
   push(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
+    validateSyncPushEnvelope(body);
     return this.sync.push(req.userId!, body);
   }
 
