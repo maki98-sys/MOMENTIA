@@ -50,7 +50,7 @@ export class MediaProcessingService {
     if (value.scanVerdict!==undefined && !['clean','rejected','unavailable'].includes(String(value.scanVerdict))) throw new BadRequestException('Invalid scan verdict.');
     return this.db.transaction(async client=>{
       const locked=await client.query(
-        `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected,a.status asset_status
+        `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected,a.storage_provider,a.status asset_status
          FROM media_processing_jobs j JOIN media_assets a ON a.id=j.media_asset_id
          WHERE j.id=$1 AND j.status='processing' AND j.locked_by=$2
          FOR UPDATE OF j,a`,[jobId,workerId]);
@@ -107,7 +107,7 @@ export class MediaProcessingService {
                storage_key=EXCLUDED.storage_key,mime_type=EXCLUDED.mime_type,size_bytes=EXCLUDED.size_bytes,
                width=EXCLUDED.width,height=EXCLUDED.height,checksum_sha256=EXCLUDED.checksum_sha256,
                storage_provider=EXCLUDED.storage_provider`,
-            [job.media_asset_id,v.variantType,v.storageKey,v.mimeType,v.sizeBytes,v.width,v.height,String(v.checksumSha256).toLowerCase(),process.env.MEDIA_STORAGE_PROVIDER??'local']);
+            [job.media_asset_id,v.variantType,v.storageKey,v.mimeType,v.sizeBytes,v.width,v.height,String(v.checksumSha256).toLowerCase(),String(job.storage_provider??'local')]);
         }
         await client.query(
           `INSERT INTO media_processing_jobs(media_asset_id,job_type)
