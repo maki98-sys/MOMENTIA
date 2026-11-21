@@ -821,7 +821,7 @@ export class SyncService {
     }
     let cursorValue = frozenCursor;
     let snapshotAt: unknown = null;
-    let activeSnapshotId = snapshotId ?? null;
+    let activeSnapshotId: string | null = snapshotId ?? null;
     if (!frozenData) {
       const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
       if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 24 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
