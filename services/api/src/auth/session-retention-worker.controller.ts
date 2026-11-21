@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { SessionTokenService } from './session-token.service';
@@ -20,6 +20,21 @@ export class SessionRetentionWorkerController {
     }
   }
 
-  @Body()
-  cleanupBodyPlaceholder() {}
+  @Post('cleanup')
+  cleanup(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
+    this.authorize(token);
+    const value = body === undefined ? {} : body;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new UnauthorizedException('Invalid cleanup payload.');
+    }
+    const fields = value as Record<string, unknown>;
+    if (Object.keys(fields).some(key => key !== 'limit')) {
+      throw new UnauthorizedException('Unsupported cleanup fields.');
+    }
+    const limit = fields.limit === undefined ? 100 : Number(fields.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new UnauthorizedException('limit must be between 1 and 500.');
+    }
+    return this.sessions.cleanupExpiredSessions(limit);
+  }
 }
