@@ -158,7 +158,7 @@ export class MediaProcessingService {
          deleted AS (
            UPDATE media_assets a SET status='deleted',deleted_at=now()
            FROM cancelled c WHERE a.id=c.media_asset_id
-           RETURNING a.id,a.storage_key_original
+           RETURNING a.id,a.storage_key_original,a.storage_provider
          )
          INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
          SELECT d.id,d.storage_key_original,d.storage_provider FROM deleted d
