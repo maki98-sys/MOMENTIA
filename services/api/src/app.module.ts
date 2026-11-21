@@ -20,6 +20,7 @@ import { ModerationModule } from './moderation/moderation.module';
 import { BillingModule } from './billing/billing.module';
 import { SyncModule } from './sync/sync.module';
 import { PrivacyModule } from './privacy/privacy.module';
+import { EventRsvpsModule } from './events/event-rsvps.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { PrivacyModule } from './privacy/privacy.module';
     BillingModule,
     SyncModule,
     PrivacyModule,
+    EventRsvpsModule,
   ],
 })
 export class AppModule {}
