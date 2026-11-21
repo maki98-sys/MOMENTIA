@@ -258,6 +258,23 @@ export class SpacesService {
          ON CONFLICT(user_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
          RETURNING id,user_id`,
       );
+      if (created.rowCount) {
+        await client.query(
+          `INSERT INTO notification_outbox(notification_id,user_id,device_id,channel)
+           SELECT n.id,n.user_id,d.id,'push'
+           FROM notifications n
+           JOIN devices d ON d.user_id=n.user_id AND d.revoked_at IS NULL
+             AND d.push_token_encrypted IS NOT NULL
+           WHERE n.id=ANY($1::uuid[])
+             AND NOT EXISTS (
+               SELECT 1 FROM notification_preferences np
+               WHERE np.user_id=n.user_id AND np.category=n.category
+                 AND np.push_enabled=false
+             )
+           ON CONFLICT(notification_id,device_id,channel) DO NOTHING`,
+          [created.rows.map((row:any)=>row.id)],
+        );
+      }
       return { queued: created.rowCount ?? 0 };
     });
   }
