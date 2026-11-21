@@ -39,10 +39,11 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
         `INSERT INTO event_details(space_id,timezone) VALUES ($1,'UTC')`,
         [spaceId],
       );
+      // The database invariant requires the space owner to have an active owner membership.
       await client.query(
         `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
-         VALUES ($1,$2,'member','active',now())`,
-        [spaceId, viewerId],
+         VALUES ($1,$2,'owner','active',now()),($1,$3,'member','active',now())`,
+        [spaceId, ownerId, viewerId],
       );
       await client.query('COMMIT');
     } catch (error) {
