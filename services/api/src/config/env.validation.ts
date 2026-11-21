@@ -13,6 +13,7 @@ export const environmentSchema = Joi.object({
     return ids.every((id: string) => uuid.test(id)) ? value : helpers.error('any.invalid');
   }),
   MEDIA_WORKER_TOKEN: Joi.string().min(32),
+  ACCOUNT_DELETION_WORKER_TOKEN: Joi.string().min(32),
   MEDIA_STORAGE_PROVIDER: Joi.string().valid('local','s3').default('local'),
   MEDIA_S3_BUCKET: Joi.when('MEDIA_STORAGE_PROVIDER',{is:'s3',then:Joi.string().min(3).required(),otherwise:Joi.string().allow('')}),
   MEDIA_S3_REGION: Joi.string().min(1).default('us-east-1'),
