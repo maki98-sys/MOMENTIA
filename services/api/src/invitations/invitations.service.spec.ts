@@ -11,7 +11,7 @@ describe('InvitationsService', () => {
   beforeEach(() => { query.mockReset(); transaction.mockReset(); });
 
   it('defaults to a seven-day member invitation', () => {
-    expect(service.validateCreateInput({})).toEqual({ role: 'member', expiresInDays: 7 });
+    expect(service.validateCreateInput({})).toEqual({ role: 'member', expiresInDays: 7, maxUses: 1 });
   });
 
   it('rejects privilege escalation and invalid expiry', () => {
@@ -25,7 +25,7 @@ describe('InvitationsService', () => {
       .mockResolvedValueOnce({rowCount:1,rows:[{id:'invite-1',role:'member',space_id:'space-1',expires_at:'2026-12-01'}]})
       .mockResolvedValueOnce({rowCount:1,rows:[]});
     transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) => work({query:clientQuery}));
-    const result = await service.create('user-1', 'space-1', { role: 'member', expiresInDays: 7 });
+    const result = await service.create('user-1', 'space-1', { role: 'member', expiresInDays: 7, maxUses: 1 });
     expect(result.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(clientQuery.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
     expect(clientQuery.mock.calls[0][0]).toContain('token_hash');
