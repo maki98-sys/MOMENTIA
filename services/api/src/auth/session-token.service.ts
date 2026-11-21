@@ -150,6 +150,45 @@ export class SessionTokenService {
     };
   }
 
+  async cleanupExpiredSessions(limit = 100) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error('Cleanup limit must be between 1 and 500.');
+    }
+    return this.db.transaction(async client => {
+      const refreshTokens = await client.query(
+        `WITH expired AS (
+           SELECT ctid FROM auth_session_refresh_tokens
+           WHERE expires_at < now() - interval '30 days'
+           ORDER BY expires_at ASC
+           FOR UPDATE SKIP LOCKED
+           LIMIT $1
+         )
+         DELETE FROM auth_session_refresh_tokens t
+         USING expired e WHERE t.ctid=e.ctid
+         RETURNING t.token_hash`,
+        [limit],
+      );
+      const sessions = await client.query(
+        `WITH expired AS (
+           SELECT id FROM auth_sessions
+           WHERE expires_at < now() - interval '90 days'
+              OR (revoked_at IS NOT NULL AND revoked_at < now() - interval '90 days')
+           ORDER BY COALESCE(revoked_at,expires_at) ASC
+           FOR UPDATE SKIP LOCKED
+           LIMIT $1
+         )
+         DELETE FROM auth_sessions s
+         USING expired e WHERE s.id=e.id
+         RETURNING s.id`,
+        [limit],
+      );
+      return {
+        deletedRefreshTokens: refreshTokens.rowCount ?? 0,
+        deletedSessions: sessions.rowCount ?? 0,
+      };
+    });
+  }
+
   async verifyAccessToken(token: string): Promise<{ userId: string; sessionId: string }> {
     if (!token.startsWith('mta_')) throw new UnauthorizedException('Invalid MOMENTIA access token.');
     let userId: string;
