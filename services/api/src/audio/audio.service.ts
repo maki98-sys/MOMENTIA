@@ -184,13 +184,15 @@ export class AudioService {
   async leave(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
     await this.assertAudioEntitlement(this.db,userId);
-    const r = await this.db.query(`UPDATE audio_participants p SET left_at=now()
-      FROM audio_sessions a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
-      WHERE p.session_id=a.id AND p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
-      RETURNING p.id`, [sessionId,userId]);
-    if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
-    await this.db.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
-    return { left: true };
+    return this.db.transaction(async client => {
+      const r = await client.query(`UPDATE audio_participants p SET left_at=now()
+        FROM audio_sessions a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
+        WHERE p.session_id=a.id AND p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
+        RETURNING p.id`, [sessionId,userId]);
+      if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
+      await client.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
+      return { left: true };
+    });
   }
 
   async addQueueItem(userId: string, sessionId: string, trackReference: unknown) {
@@ -198,8 +200,11 @@ export class AudioService {
     if (typeof trackReference !== 'string' || !trackReference.trim() || trackReference.length > 500) throw new BadRequestException('A valid provider track reference is required.');
     return this.db.transaction(async client => {
       await this.assertAudioEntitlement(client,userId);
-      const s = await client.query(`SELECT a.id FROM audio_sessions a JOIN audio_participants p ON p.session_id=a.id
-        WHERE a.id=$1 AND p.user_id=$2 AND p.left_at IS NULL AND a.state IN ('created','playing','paused') FOR UPDATE OF a`, [sessionId,userId]);
+      const s = await client.query(`SELECT a.id FROM audio_sessions a
+        JOIN audio_participants p ON p.session_id=a.id
+        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
+        WHERE a.id=$1 AND p.user_id=$2 AND p.left_at IS NULL AND a.state IN ('created','playing','paused')
+        FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Active audio participation not found.');
       const pos = await client.query(`SELECT COALESCE(MAX(position),-1)+1 AS next_position FROM audio_queue_items WHERE session_id=$1`, [sessionId]);
       const r = await client.query(`INSERT INTO audio_queue_items(session_id,added_by,provider_track_reference,position)
