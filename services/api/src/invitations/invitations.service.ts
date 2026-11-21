@@ -89,6 +89,30 @@ export class InvitationsService {
       return result.rows[0];
     });
   }
+
+  async preview(token: string) {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      throw new BadRequestException('The invitation token is invalid.');
+    }
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const result = await this.database.query(
+      `SELECT i.id,i.role,i.expires_at,i.max_uses,i.uses,
+              s.id space_id,s.type,s.name,s.visibility,
+              ed.starts_at,ed.ends_at,ed.timezone,
+              up.display_name owner_display_name
+       FROM space_invitations i
+       JOIN spaces s ON s.id=i.space_id
+       LEFT JOIN event_details ed ON ed.space_id=s.id
+       LEFT JOIN user_profiles up ON up.user_id=s.owner_id
+       WHERE i.token_hash=$1 AND i.revoked_at IS NULL
+         AND i.expires_at>now() AND i.uses<i.max_uses
+         AND s.status='active'`,
+      [tokenHash],
+    );
+    if (!result.rowCount) throw new NotFoundException('Invitation is invalid or unavailable.');
+    return { invitation: result.rows[0] };
+  }
+
   async accept(userId: string, token: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
       throw new BadRequestException('The invitation token is invalid.');
