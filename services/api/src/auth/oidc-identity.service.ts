@@ -100,10 +100,15 @@ export class OidcIdentityService {
         [userId],
       );
       if (!account.rowCount) throw new ForbiddenException('The MOMENTIA account is not active.');
-      await client.query(
+      const inserted = await client.query(
         `INSERT INTO auth_identities(user_id,provider,provider_subject)
-         VALUES($1,$2,$3)`,
+         VALUES($1,$2,$3) RETURNING id`,
         [userId, principal.issuer, principal.subject],
+      );
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'AUTH_IDENTITY_LINKED','auth_identity',$2,$3::jsonb)`,
+        [userId,inserted.rows[0].id,JSON.stringify({ provider: principal.issuer })],
       );
       return { linked: true };
     });
