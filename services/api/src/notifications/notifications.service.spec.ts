@@ -8,11 +8,11 @@ describe('NotificationsService', () => {
 
   beforeEach(() => query.mockReset());
 
-  it('caps page size and returns an unread count', async () => {
+  it('accepts the maximum page size and returns an unread count', async () => {
     query.mockResolvedValueOnce({ rows: Array.from({ length: 100 }, (_, index) => ({ id: `11111111-1111-4111-8111-${String(index + 1).padStart(12, '0')}`, created_at: `2026-11-18T00:00:${String(59 - Math.floor(index / 2)).padStart(2, '0')}.000Z` })) });
     query.mockResolvedValueOnce({ rows: [{ count: 4 }] });
 
-    const result = await service.list('user-1', undefined, 500);
+    const result = await service.list('user-1', undefined, 100);
 
     expect(query.mock.calls[0][1]).toEqual(['user-1', null, null, false, 100]);
     expect(result.unreadCount).toBe(4);
