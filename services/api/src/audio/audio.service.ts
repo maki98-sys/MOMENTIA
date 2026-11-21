@@ -91,7 +91,8 @@ export class AudioService {
           FROM audio_votes WHERE queue_item_id=q.id
         ) v ON true
         WHERE q.session_id=$1 AND q.state IN ('queued','current')
-        ORDER BY q.position ASC`, [session.id]),
+        ORDER BY (COALESCE(v.upvotes,0)-COALESCE(v.downvotes,0)) DESC,
+                 q.position ASC,q.created_at ASC,q.id ASC`, [session.id]),
       this.db.query(`SELECT p.user_id,p.role,p.joined_at,p.last_heartbeat_at,up.display_name FROM audio_participants p
         LEFT JOIN user_profiles up ON up.user_id=p.user_id WHERE p.session_id=$1 AND p.left_at IS NULL
         ORDER BY p.joined_at ASC`, [session.id]),
@@ -239,8 +240,16 @@ export class AudioService {
       if (s.rows[0].host_user_id !== userId) throw new ForbiddenException('Only the host can control playback.');
       if (input.expectedVersion !== undefined && Number(input.expectedVersion) !== Number(s.rows[0].server_version)) throw new ConflictException('Playback state changed; refresh and retry.');
       if (action === 'next' && itemId === null) {
-        const next = await client.query(`SELECT id FROM audio_queue_items
-          WHERE session_id=$1 AND state='queued' ORDER BY position ASC,id ASC LIMIT 1 FOR UPDATE`, [sessionId]);
+        const next = await client.query(`SELECT q.id FROM audio_queue_items q
+          LEFT JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE vote=1) AS upvotes,
+                   count(*) FILTER (WHERE vote=-1) AS downvotes
+            FROM audio_votes WHERE queue_item_id=q.id
+          ) v ON true
+          WHERE q.session_id=$1 AND q.state='queued'
+          ORDER BY (COALESCE(v.upvotes,0)-COALESCE(v.downvotes,0)) DESC,
+                   q.position ASC,q.created_at ASC,q.id ASC
+          LIMIT 1 FOR UPDATE OF q`, [sessionId]);
         itemId = next.rowCount ? next.rows[0].id : null;
       }
       if (itemId !== null) {
