@@ -786,6 +786,15 @@ export class SyncService {
     });
   }
 
+  async releaseSnapshot(userId: string, snapshotId: string) {
+    if (!UUID.test(snapshotId)) throw new BadRequestException('snapshotId must be a UUID.');
+    const result = await this.db.query(
+      `DELETE FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2 RETURNING id`,
+      [snapshotId,userId],
+    );
+    return { released: result.rowCount === 1 };
+  }
+
   async saveCheckpoint(userId:string,input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Checkpoint data is required.');
     const value=input as Record<string,unknown>;
