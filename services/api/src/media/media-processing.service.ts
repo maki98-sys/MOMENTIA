@@ -50,12 +50,16 @@ export class MediaProcessingService {
     if (value.scanVerdict!==undefined && !['clean','rejected','unavailable'].includes(String(value.scanVerdict))) throw new BadRequestException('Invalid scan verdict.');
     return this.db.transaction(async client=>{
       const locked=await client.query(
-        `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected
+        `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected,a.status asset_status
          FROM media_processing_jobs j JOIN media_assets a ON a.id=j.media_asset_id
          WHERE j.id=$1 AND j.status='processing' AND j.locked_by=$2
          FOR UPDATE OF j,a`,[jobId,workerId]);
       if(!locked.rowCount) throw new NotFoundException('Processing job not found or not owned by this worker.');
       const job=locked.rows[0];
+      if(job.asset_status==='deleted') {
+        await client.query(`UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now() WHERE id=$1`,[jobId]);
+        return {jobId,status:'cancelled',reason:'MEDIA_DELETED'};
+      }
       if(!value.success) {
         const terminal=Number(job.attempts)>=Number(job.max_attempts);
         await client.query(
@@ -139,4 +143,34 @@ export class MediaProcessingService {
        RETURNING id`,[seconds]);
     return {released:result.rowCount??0};
   }
+  async claimDeletions(workerId:string,limit=50) {
+    if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
+    const batch=Math.min(Math.max(Number(limit)||50,1),100);
+    const result=await this.db.query(
+      `WITH picked AS (
+         SELECT id FROM media_storage_deletions
+         WHERE status IN ('pending','failed') AND available_at<=now() AND attempts<8
+         ORDER BY available_at,created_at LIMIT $1 FOR UPDATE SKIP LOCKED
+       )
+       UPDATE media_storage_deletions d SET status='processing',attempts=d.attempts+1,locked_at=now(),locked_by=$2
+       FROM picked p WHERE d.id=p.id
+       RETURNING d.id,d.media_asset_id,d.storage_key,d.attempts`,[batch,workerId]);
+    return result.rows;
+  }
+
+  async completeDeletion(workerId:string,deletionId:string,input:unknown) {
+    if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deletionId)) throw new BadRequestException('Invalid deletion id.');
+    if(!input||typeof input!=='object'||Array.isArray(input)||typeof (input as Record<string,unknown>).success!=='boolean') throw new BadRequestException('Deletion result is required.');
+    const value=input as Record<string,unknown>;
+    const result=await this.db.query(
+      `UPDATE media_storage_deletions SET status=$3,locked_at=NULL,locked_by=NULL,
+         last_error_code=$4,available_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+       WHERE id=$1 AND status='processing' AND locked_by=$2
+       RETURNING id,status,media_asset_id`,
+      [deletionId,workerId,value.success?'completed':'failed',value.success?null:String(value.errorCode??'STORAGE_DELETE_FAILED').slice(0,120)]);
+    if(!result.rowCount) throw new NotFoundException('Storage deletion task not found or not owned by this worker.');
+    return result.rows[0];
+  }
+
 }
