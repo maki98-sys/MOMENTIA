@@ -31,7 +31,7 @@ describe('OidcBearerGuard', () => {
     const principal = { issuer: 'https://identity.example.test/', subject: 'subject-123', audience: ['momentia-api'] };
     (verifier.verifyAccessToken as jest.Mock).mockResolvedValue(principal);
     (identities.resolveOrProvision as jest.Mock).mockResolvedValue({ userId: 'user-1', created: true });
-    const guard = new OidcBearerGuard(verifier, identities);
+    const guard = new OidcBearerGuard(verifier, identities, sessions);
     const token = 'eyJhbGciOiJSUzI1NiJ9.payload.signature';
     const request = { headers: { authorization: `Bearer ${token}` } };
     const context = { switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
