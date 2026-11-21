@@ -233,6 +233,18 @@ export class MediaService {
         `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
          WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,[assetId]);
       await client.query(
+        `UPDATE posts SET status='removed',updated_at=now()
+         WHERE media_asset_id=$1 AND author_id=$2 AND status<>'removed'`,[assetId,userId]);
+      await client.query(
+        `UPDATE space_album_items SET status='removed',removed_at=now()
+         WHERE media_asset_id=$1 AND status='active'`,[assetId]);
+      await client.query(
+        `DELETE FROM timeline_entries WHERE media_asset_id=$1
+          OR post_id IN (SELECT id FROM posts WHERE media_asset_id=$1)`,[assetId]);
+      await client.query(
+        `UPDATE user_profiles SET avatar_media_id=NULL,updated_at=now()
+         WHERE user_id=$1 AND avatar_media_id=$2`,[userId,assetId]);
+      await client.query(
         `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,[assetId]);
       await client.query(
         `UPDATE media_uploads SET state='cancelled',updated_at=now()
