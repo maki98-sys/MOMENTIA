@@ -32,6 +32,24 @@ export class MediaController {
   const body = await readUploadBody(req);
   return this.media.receiveUpload(req.userId!,id,body);
  }
+ @Put('uploads/:uploadId/parts/:partNumber')
+ async uploadPart(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string,@Param('partNumber') part:string,@Headers('content-type') contentType?:string,@Headers('x-part-sha256') checksum?:string) {
+  if(!contentType||!contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
+  const partNumber=Number(part);
+  if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
+  const chunks:Buffer[]=[];let total=0;
+  for await(const chunk of req) {
+   const buffer=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);total+=buffer.length;
+   if(total>8*1024*1024) throw new BadRequestException('Upload part exceeds 8 MB.');
+   chunks.push(buffer);
+  }
+  if(!total) throw new BadRequestException('Upload part is empty.');
+  return this.media.receiveUploadPart(req.userId!,id,partNumber,Buffer.concat(chunks,total),checksum??'');
+ }
+ @Post('uploads/:uploadId/complete')
+ completeResumable(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string) {
+  return this.media.completeResumableUpload(req.userId!,id);
+ }
  @Get('uploads')
  list(@Req() req:Request&AuthenticatedRequest,@Query('limit') limit?:string){return this.media.listMine(req.userId!,Number(limit)||30);}
  @Delete('uploads/:uploadId')
