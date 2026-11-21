@@ -156,17 +156,39 @@ export class NotificationsService {
         (value.inAppEnabled === undefined && value.pushEnabled === undefined)) {
       throw new BadRequestException('Provide inAppEnabled and/or pushEnabled as booleans.');
     }
-    const result = await this.db.query(
-      `INSERT INTO notification_preferences(user_id,category,in_app_enabled,push_enabled)
-       VALUES($1,$2,COALESCE($3,true),COALESCE($4,true))
-       ON CONFLICT(user_id,category) DO UPDATE SET
-         in_app_enabled=COALESCE($3,notification_preferences.in_app_enabled),
-         push_enabled=COALESCE($4,notification_preferences.push_enabled),
-         updated_at=now()
-       RETURNING category,in_app_enabled,push_enabled,updated_at`,
-      [userId,category,value.inAppEnabled ?? null,value.pushEnabled ?? null],
-    );
-    return result.rows[0];
+    return this.db.transaction(async client => {
+      const result = await client.query(
+        `INSERT INTO notification_preferences(user_id,category,in_app_enabled,push_enabled)
+         VALUES($1,$2,COALESCE($3,true),COALESCE($4,true))
+         ON CONFLICT(user_id,category) DO UPDATE SET
+           in_app_enabled=COALESCE($3,notification_preferences.in_app_enabled),
+           push_enabled=COALESCE($4,notification_preferences.push_enabled),
+           updated_at=now()
+         RETURNING category,in_app_enabled,push_enabled,updated_at`,
+        [userId,category,value.inAppEnabled ?? null,value.pushEnabled ?? null],
+      );
+      if (value.pushEnabled === false) {
+        await client.query(
+          `UPDATE notification_outbox o
+           SET status='cancelled',processing_started_at=NULL,last_error_code='PUSH_OPTED_OUT'
+           FROM notifications n
+           WHERE n.id=o.notification_id AND o.user_id=$1 AND n.category=$2
+             AND o.channel='push' AND o.status IN ('pending','failed','processing')`,
+          [userId,category],
+        );
+      } else if (value.pushEnabled === true) {
+        await client.query(
+          `UPDATE notification_outbox o
+           SET status='pending',processing_started_at=NULL,last_error_code=NULL,next_attempt_at=now()
+           FROM notifications n JOIN devices d ON d.user_id=n.user_id
+           WHERE n.id=o.notification_id AND o.user_id=$1 AND n.category=$2
+             AND o.device_id=d.id AND d.revoked_at IS NULL AND d.push_token_encrypted IS NOT NULL
+             AND o.channel='push' AND o.status='cancelled' AND o.last_error_code='PUSH_OPTED_OUT'`,
+          [userId,category],
+        );
+      }
+      return result.rows[0];
+    });
   }
 
   async claimPushDeliveries(limit = 50) {
