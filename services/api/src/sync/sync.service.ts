@@ -748,6 +748,44 @@ export class SyncService {
     });
   }
 
+  async getDeviceSyncStatus(userId: string, deviceId: string) {
+    if (!UUID.test(deviceId)) throw new BadRequestException('deviceId must be a UUID.');
+    const result = await this.db.query(
+      `SELECT d.id,d.platform,d.last_seen_at,d.revoked_at,
+              COALESCE(c.last_sequence_id,0)::text AS device_cursor,
+              COALESCE(bounds.oldest_sequence,0)::text AS oldest_sequence,
+              COALESCE(bounds.latest_sequence,0)::text AS latest_sequence
+       FROM devices d
+       LEFT JOIN sync_device_cursors c ON c.device_id=d.id AND c.user_id=d.user_id
+       CROSS JOIN LATERAL (
+         SELECT MIN(sequence_id) AS oldest_sequence,MAX(sequence_id) AS latest_sequence
+         FROM sync_change_log WHERE user_id=$2
+       ) bounds
+       WHERE d.id=$1 AND d.user_id=$2`,
+      [deviceId,userId],
+    );
+    if (!result.rowCount || result.rows[0].revoked_at) {
+      throw new BadRequestException('Active device not found.');
+    }
+    const row = result.rows[0];
+    const cursor = BigInt(row.device_cursor);
+    const oldest = BigInt(row.oldest_sequence);
+    const latest = BigInt(row.latest_sequence);
+    const historyExpired = oldest > 0n && cursor < oldest - 1n;
+    const cursorAhead = cursor > latest;
+    return {
+      deviceId: row.id,
+      platform: row.platform,
+      lastSeenAt: row.last_seen_at,
+      cursor: cursor.toString(),
+      oldestCursor: oldest > 0n ? (oldest - 1n).toString() : '0',
+      serverCursor: latest.toString(),
+      resetRequired: historyExpired || cursorAhead,
+      resetReason: cursorAhead ? 'cursor_ahead' : historyExpired ? 'history_expired' : null,
+      recommendedAction: historyExpired || cursorAhead ? 'snapshot' : 'pull',
+    };
+  }
+
   private errorCode(error: unknown) {
     const message = error instanceof Error ? error.message : '';
     return /^[A-Z][A-Z0-9_]{1,80}$/.test(message) ? message : 'SYNC_OPERATION_FAILED';
