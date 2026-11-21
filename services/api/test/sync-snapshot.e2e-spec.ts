@@ -170,4 +170,24 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(nextPage.hasMore).toBe(false);
   });
 
+  it('revalidates public timeline content after its audience becomes private', async () => {
+    await createTimelinePost('public', '2026-11-21T12:00:00Z', ownerId);
+    const restrictedPost = await createTimelinePost('public', '2026-11-21T11:00:00Z');
+
+    const firstPage = await sync.snapshot(viewerId, { sections: ['timeline'], limit: 1 });
+    expect(firstPage.data.timeline).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+
+    await pool.query(`UPDATE posts SET audience='private' WHERE id=$1`, [restrictedPost]);
+
+    const nextPage = await sync.snapshot(viewerId, {
+      snapshotId: firstPage.snapshotId,
+      offsets: firstPage.nextOffsets,
+      limit: 1,
+    });
+    expect(nextPage.data.timeline.map((row: any) => row.post_id)).not.toContain(restrictedPost);
+    expect(nextPage.data.timeline).toEqual([]);
+    expect(nextPage.hasMore).toBe(false);
+  });
+
 });
