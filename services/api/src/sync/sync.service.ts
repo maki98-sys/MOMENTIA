@@ -18,7 +18,7 @@ export class SyncService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
-      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove', 'event.rsvp.set', 'event.rsvp.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
+      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove', 'event.rsvp.set', 'event.rsvp.remove', 'couple.journal.create', 'couple.journal.update', 'couple.journal.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
@@ -60,7 +60,10 @@ export class SyncService {
           else if (operation.type === 'album.item.add') created = await this.addAlbumItem(client, userId, operation.payload);
           else if (operation.type === 'album.item.remove') created = await this.removeAlbumItem(client, userId, operation.payload);
           else if (operation.type === 'event.rsvp.set') created = await this.setEventRsvp(client, userId, operation.payload);
-          else created = await this.removeEventRsvp(client, userId, operation.payload);
+          else if (operation.type === 'event.rsvp.remove') created = await this.removeEventRsvp(client, userId, operation.payload);
+          else if (operation.type === 'couple.journal.create') created = await this.createCoupleJournalEntry(client, userId, operation.payload);
+          else if (operation.type === 'couple.journal.update') created = await this.updateCoupleJournalEntry(client, userId, operation.payload);
+          else created = await this.removeCoupleJournalEntry(client, userId, operation.payload);
           await client.query(
             `UPDATE sync_operation_receipts SET state='succeeded',result=$3::jsonb,completed_at=now()
              WHERE user_id=$1 AND operation_id=$2`,
@@ -367,6 +370,78 @@ export class SyncService {
          AND s.type='EVENT' AND sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
        RETURNING r.id,r.space_id`,[spaceId,userId]);
     return { entityType:'event_rsvp',spaceId,removed:!!result.rowCount };
+  }
+
+
+  private decodeJournalBytes(value: unknown, min: number, max: number, code: string): Buffer {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error(code);
+    const bytes=Buffer.from(value,'base64');
+    if (bytes.toString('base64')!==value || bytes.length<min || bytes.length>max) throw new Error(code);
+    return bytes;
+  }
+
+  private async assertCoupleJournalWrite(client: any, userId: string, spaceId: unknown, keyVersion: number) {
+    if (typeof spaceId!=='string' || !UUID.test(spaceId)) throw new Error('INVALID_SPACE_ID');
+    if (!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new Error('INVALID_KEY_VERSION');
+    const space=await client.query(
+      `SELECT s.id FROM spaces s
+       JOIN space_memberships mine ON mine.space_id=s.id AND mine.user_id=$2 AND mine.state='active'
+       WHERE s.id=$1 AND s.type='COUPLE' AND s.status='active'
+         AND (SELECT count(*) FROM space_memberships m WHERE m.space_id=s.id AND m.state='active')=2
+       FOR SHARE OF s,mine`,[spaceId,userId]);
+    if(!space.rowCount) throw new Error('COUPLE_SPACE_ACCESS_DENIED');
+    const envelopes=await client.query(
+      `SELECT count(DISTINCT e.user_id)::int total
+       FROM couple_space_key_envelopes e
+       JOIN space_memberships m ON m.space_id=e.space_id AND m.user_id=e.user_id AND m.state='active'
+       WHERE e.space_id=$1 AND e.key_version=$2`,[spaceId,keyVersion]);
+    if(Number(envelopes.rows[0].total)!==2) throw new Error('COUPLE_KEY_NOT_SHARED');
+  }
+
+  private async createCoupleJournalEntry(client:any,userId:string,payload:Record<string,unknown>) {
+    if(Object.keys(payload).some(k=>!['spaceId','ciphertext','nonce','keyVersion','encryptionVersion'].includes(k))) throw new Error('INVALID_PAYLOAD');
+    const keyVersion=Number(payload.keyVersion??1);
+    const encryptionVersion=payload.encryptionVersion??1;
+    if(encryptionVersion!==1) throw new Error('UNSUPPORTED_ENCRYPTION_VERSION');
+    const ciphertext=this.decodeJournalBytes(payload.ciphertext,1,65536,'INVALID_CIPHERTEXT');
+    const nonce=this.decodeJournalBytes(payload.nonce,12,24,'INVALID_NONCE');
+    await this.assertCoupleJournalWrite(client,userId,payload.spaceId,keyVersion);
+    const result=await client.query(
+      `INSERT INTO couple_journal_entries(space_id,author_id,ciphertext,nonce,encryption_version,key_version)
+       VALUES($1,$2,$3,$4,1,$5)
+       RETURNING id,space_id,author_id,key_version,created_at,updated_at`,
+      [payload.spaceId,userId,ciphertext,nonce,keyVersion]);
+    return {entityType:'couple_journal_entry',...result.rows[0]};
+  }
+
+  private async updateCoupleJournalEntry(client:any,userId:string,payload:Record<string,unknown>) {
+    if(Object.keys(payload).some(k=>!['spaceId','entryId','ciphertext','nonce','keyVersion','encryptionVersion'].includes(k))) throw new Error('INVALID_PAYLOAD');
+    if(typeof payload.entryId!=='string'||!UUID.test(payload.entryId)) throw new Error('INVALID_ENTRY_ID');
+    const keyVersion=Number(payload.keyVersion??1);
+    if((payload.encryptionVersion??1)!==1) throw new Error('UNSUPPORTED_ENCRYPTION_VERSION');
+    const ciphertext=this.decodeJournalBytes(payload.ciphertext,1,65536,'INVALID_CIPHERTEXT');
+    const nonce=this.decodeJournalBytes(payload.nonce,12,24,'INVALID_NONCE');
+    await this.assertCoupleJournalWrite(client,userId,payload.spaceId,keyVersion);
+    const result=await client.query(
+      `UPDATE couple_journal_entries SET ciphertext=$4,nonce=$5,encryption_version=1,
+         key_version=$6,updated_at=now()
+       WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
+       RETURNING id,space_id,author_id,key_version,created_at,updated_at`,
+      [payload.entryId,payload.spaceId,userId,ciphertext,nonce,keyVersion]);
+    if(!result.rowCount) throw new Error('JOURNAL_ENTRY_NOT_OWNED');
+    return {entityType:'couple_journal_entry',...result.rows[0]};
+  }
+
+  private async removeCoupleJournalEntry(client:any,userId:string,payload:Record<string,unknown>) {
+    if(Object.keys(payload).some(k=>!['spaceId','entryId'].includes(k))) throw new Error('INVALID_PAYLOAD');
+    if(typeof payload.entryId!=='string'||!UUID.test(payload.entryId)) throw new Error('INVALID_ENTRY_ID');
+    await this.assertCoupleJournalWrite(client,userId,payload.spaceId,1);
+    const result=await client.query(
+      `UPDATE couple_journal_entries SET deleted_at=now(),updated_at=now()
+       WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
+       RETURNING id`,[payload.entryId,payload.spaceId,userId]);
+    if(!result.rowCount) throw new Error('JOURNAL_ENTRY_NOT_OWNED');
+    return {entityType:'couple_journal_entry',id:result.rows[0].id,deleted:true};
   }
 
   async pull(userId: string, cursor?: string, limit = 200) {
