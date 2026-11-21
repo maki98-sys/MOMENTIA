@@ -1,6 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { mkdir, rename, rm, stat, writeFile } from 'fs/promises';
+import { mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 
 /**
@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'path';
 export abstract class MediaStorage {
   abstract put(storageKey: string, bytes: Buffer): Promise<void>;
   abstract remove(storageKey: string): Promise<void>;
-  abstract locate(storageKey: string, expectedSize?: number): Promise<string>;
+  abstract locate(storageKey: string, expectedSize?: number): Promise<string>;\n  abstract read(storageKey: string): Promise<Buffer>;
 }
 
 @Injectable()
@@ -43,6 +43,12 @@ export class LocalMediaStorage extends MediaStorage {
 
   async remove(storageKey: string): Promise<void> {
     await rm(this.pathFor(storageKey), { force: true });
+  }
+
+  async read(storageKey: string): Promise<Buffer> {
+    const target = await this.locate(storageKey);
+    try { return await readFile(target); }
+    catch { throw new ServiceUnavailableException('Media content is unavailable.'); }
   }
 
   async locate(storageKey: string, expectedSize?: number): Promise<string> {
