@@ -18,7 +18,7 @@ export class SyncService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
-      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
+      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
@@ -56,7 +56,9 @@ export class SyncService {
           else if (operation.type === 'comment.update') created = await this.updateComment(client, userId, operation.payload);
           else if (operation.type === 'comment.remove') created = await this.removeComment(client, userId, operation.payload);
           else if (operation.type === 'reaction.set') created = await this.setReaction(client, userId, operation.payload);
-          else created = await this.removeReaction(client, userId, operation.payload);
+          else if (operation.type === 'reaction.remove') created = await this.removeReaction(client, userId, operation.payload);
+          else if (operation.type === 'album.item.add') created = await this.addAlbumItem(client, userId, operation.payload);
+          else created = await this.removeAlbumItem(client, userId, operation.payload);
           await client.query(
             `UPDATE sync_operation_receipts SET state='succeeded',result=$3::jsonb,completed_at=now()
              WHERE user_id=$1 AND operation_id=$2`,
@@ -263,6 +265,63 @@ export class SyncService {
       [spaceId,postId,mediaAssetId,occurredAt,source],
     );
     return { entityType: 'timeline_entry', ...inserted.rows[0] };
+  }
+
+
+  private async addAlbumItem(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['spaceId','albumId','mediaAssetId','caption','occurredAt'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const { spaceId, albumId, mediaAssetId } = payload;
+    if (![spaceId,albumId,mediaAssetId].every(value => typeof value === 'string' && UUID.test(value as string))) throw new Error('INVALID_ALBUM_ITEM');
+    const caption = payload.caption ?? null;
+    if (caption !== null && (typeof caption !== 'string' || caption.length > 500)) throw new Error('INVALID_CAPTION');
+    const occurredAt = payload.occurredAt ?? new Date().toISOString();
+    if (typeof occurredAt !== 'string' || Number.isNaN(Date.parse(occurredAt))) throw new Error('INVALID_OCCURRED_AT');
+    const album = await client.query(
+      `SELECT a.id,a.visibility,sm.role FROM space_albums a
+       JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+       JOIN spaces s ON s.id=a.space_id AND s.status='active'
+       WHERE a.id=$2 AND a.space_id=$3 FOR SHARE OF a,sm,s`,
+      [userId,albumId,spaceId]);
+    if (!album.rowCount || album.rows[0].role === 'guest' ||
+      (album.rows[0].visibility === 'admins' && !['owner','admin','moderator'].includes(String(album.rows[0].role)))) {
+      throw new Error('ALBUM_ACCESS_DENIED');
+    }
+    const media = await client.query(
+      `SELECT id FROM media_assets WHERE id=$1 AND owner_id=$2 AND status='ready' FOR SHARE`,
+      [mediaAssetId,userId]);
+    if (!media.rowCount) throw new Error('MEDIA_NOT_READY_OR_NOT_OWNED');
+    const inserted = await client.query(
+      `INSERT INTO space_album_items(album_id,media_asset_id,added_by,caption,occurred_at)
+       VALUES($1,$2,$3,$4,$5) ON CONFLICT(album_id,media_asset_id) DO NOTHING
+       RETURNING id,album_id,media_asset_id,added_by,caption,occurred_at,created_at`,
+      [albumId,mediaAssetId,userId,caption,occurredAt]);
+    if (!inserted.rowCount) throw new Error('ALBUM_ITEM_ALREADY_EXISTS');
+    await client.query(
+      `INSERT INTO timeline_entries(space_id,media_asset_id,occurred_at,source)
+       VALUES($1,$2,$3,'upload')`,[spaceId,mediaAssetId,occurredAt]);
+    await client.query(
+      `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
+       VALUES($1,$2,'album.item_added','album_item',$3)`,[spaceId,userId,inserted.rows[0].id]);
+    return { entityType:'album_item', ...inserted.rows[0] };
+  }
+
+  private async removeAlbumItem(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['spaceId','albumId','itemId'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const { spaceId,albumId,itemId } = payload;
+    if (![spaceId,albumId,itemId].every(value => typeof value === 'string' && UUID.test(value as string))) throw new Error('INVALID_ALBUM_ITEM');
+    const found = await client.query(
+      `SELECT i.id,i.added_by,sm.role FROM space_album_items i
+       JOIN space_albums a ON a.id=i.album_id
+       JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+       WHERE a.space_id=$2 AND a.id=$3 AND i.id=$4 AND i.status='active'
+       FOR UPDATE OF i,sm`,[userId,spaceId,albumId,itemId]);
+    if (!found.rowCount || (found.rows[0].added_by !== userId &&
+      !['owner','admin','moderator'].includes(String(found.rows[0].role)))) throw new Error('ALBUM_ITEM_NOT_REMOVABLE');
+    await client.query(`UPDATE space_album_items SET status='removed',removed_at=now() WHERE id=$1`,[itemId]);
+    await client.query(
+      `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
+       VALUES($1,$2,'album.item_removed','album_item',$3)`,[spaceId,userId,itemId]);
+    return { entityType:'album_item',id:itemId,removed:true };
   }
 
   async pull(userId: string, cursor?: string, limit = 200) {
