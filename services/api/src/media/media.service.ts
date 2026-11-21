@@ -40,13 +40,26 @@ export class MediaService {
   async createUpload(userId:string,input:unknown,idempotencyKey:string) {
     const v=this.validate(input);
     if(!idempotencyKey||idempotencyKey.length>128) throw new BadRequestException('A valid Idempotency-Key header is required.');
+    const requestFingerprint=createHash('sha256').update(JSON.stringify({
+      fileName:v.fileName,mimeType:v.mimeType,sizeBytes:v.sizeBytes,
+      checksumSha256:String(v.checksumSha256).toLowerCase(),
+      capturedAt:v.capturedAt??null,capturedTimezone:v.capturedTimezone??null,
+      gpsConsent:v.gpsConsent===true,
+    })).digest('hex');
     return this.db.transaction(async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':'+idempotencyKey]);
       const prior=await client.query(
-        `SELECT u.id upload_id,u.state,u.created_at,a.id media_asset_id,a.status
+        `SELECT u.id upload_id,u.state,u.created_at,u.request_fingerprint,
+                a.id media_asset_id,a.status
          FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
          WHERE u.uploader_id=$1 AND u.idempotency_key=$2`,[userId,idempotencyKey]);
-      if(prior.rowCount) return prior.rows[0];
+      if(prior.rowCount) {
+        if(prior.rows[0].request_fingerprint &&
+           String(prior.rows[0].request_fingerprint)!==requestFingerprint) {
+          throw new ConflictException('Idempotency-Key was already used with a different upload request.');
+        }
+        return prior.rows[0];
+      }
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[userId+':storage-quota']);
       const entitlement=await client.query(
         `SELECT p.storage_quota_bytes,p.max_upload_bytes,
@@ -90,9 +103,9 @@ export class MediaService {
          VALUES($1,$2,$3,CASE WHEN $4::boolean THEN now() ELSE NULL END)`,
         [assetId,v.capturedAt??null,v.capturedTimezone??null,v.gpsConsent===true]);
       const upload=await client.query(
-        `INSERT INTO media_uploads(media_asset_id,uploader_id,state,idempotency_key,declared_mime_type)
-         VALUES($1,$2,'created',$3,$4)
-         RETURNING id,state,created_at`,[assetId,userId,idempotencyKey,v.mimeType]);
+        `INSERT INTO media_uploads(media_asset_id,uploader_id,state,idempotency_key,declared_mime_type,request_fingerprint)
+         VALUES($1,$2,'created',$3,$4,$5)
+         RETURNING id,state,created_at`,[assetId,userId,idempotencyKey,v.mimeType,requestFingerprint]);
       return {...upload.rows[0],media_asset_id:asset.rows[0].id,asset_status:asset.rows[0].status,size_bytes:asset.rows[0].size_bytes};
     });
   }
