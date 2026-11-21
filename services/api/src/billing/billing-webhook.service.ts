@@ -4,7 +4,7 @@ import { DatabaseService } from '../database/database.service';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SUPPORTED=new Set(['subscription.activated','subscription.updated','subscription.cancelled','subscription.payment_failed','subscription.expired']);
-type EventData={userId:string;planCode:string;subscriptionId:string;customerId?:string;status?:'trialing'|'active'|'past_due'|'cancelled'|'expired';periodStart?:string|null;periodEnd?:string|null;cancelAtPeriodEnd?:boolean};
+type EventData={userId:string;planCode:string;subscriptionId:string;customerId?:string;status?:'trialing'|'active'|'past_due'|'cancelled'|'expired';periodStart?:string|null;periodEnd?:string|null;cancelAtPeriodEnd?:boolean;occurredAt?:string};
 
 @Injectable()
 export class BillingWebhookService {
@@ -18,6 +18,7 @@ export class BillingWebhookService {
     if(v.periodStart&&v.periodEnd&&Date.parse(v.periodEnd as string)<=Date.parse(v.periodStart as string)) throw new BadRequestException('Subscription period end must be after period start.');
     if(v.customerId!==undefined&&(typeof v.customerId!=='string'||v.customerId.length>255)) throw new BadRequestException('Invalid customerId.');
     if(v.cancelAtPeriodEnd!==undefined&&typeof v.cancelAtPeriodEnd!=='boolean') throw new BadRequestException('cancelAtPeriodEnd must be boolean.');
+    if(v.occurredAt!==undefined&&(typeof v.occurredAt!=='string'||!Number.isFinite(Date.parse(v.occurredAt)))) throw new BadRequestException('Invalid occurredAt event timestamp.');
     if(v.status!==undefined&&!['trialing','active','past_due','cancelled','expired'].includes(String(v.status))) throw new BadRequestException('Invalid subscription status.');
     return v as unknown as EventData;
   }
@@ -57,8 +58,14 @@ export class BillingWebhookService {
     if(!plan.rowCount) throw new BadRequestException('Unknown subscription plan.');
     const user=await client.query(`SELECT id FROM users WHERE id=$1 FOR UPDATE`,[d.userId]);
     if(!user.rowCount) throw new BadRequestException('Unknown subscription user.');
-    const existing=await client.query(`SELECT id,user_id FROM user_subscriptions WHERE provider=$1 AND provider_subscription_id=$2 FOR UPDATE`,[provider,d.subscriptionId]);
+    const existing=await client.query(`SELECT id,user_id,last_provider_event_at FROM user_subscriptions WHERE provider=$1 AND provider_subscription_id=$2 FOR UPDATE`,[provider,d.subscriptionId]);
     if(existing.rowCount && existing.rows[0].user_id!==d.userId) throw new BadRequestException('Provider subscription is already linked to a different user.');
+    const eventAt=d.occurredAt?new Date(d.occurredAt):null;
+    const previousEventAt=existing.rows[0]?.last_provider_event_at?new Date(existing.rows[0].last_provider_event_at):null;
+    if(eventAt && previousEventAt && eventAt.getTime()<=previousEventAt.getTime()) {
+      await client.query(`UPDATE billing_webhook_events SET processing_status='ignored',processing_started_at=NULL,processed_at=now(),processing_error='STALE_PROVIDER_EVENT',updated_at=now() WHERE id=$1`,[e.id]);
+      return;
+    }
     const params=[d.userId,plan.rows[0].id,status,provider,d.customerId??null,d.subscriptionId,d.periodStart??null,d.periodEnd??null,cancel];
     if(['trialing','active','past_due'].includes(status)) await client.query(
       `UPDATE user_subscriptions SET status='cancelled',cancel_at_period_end=false,updated_at=now()
@@ -67,9 +74,9 @@ export class BillingWebhookService {
       [d.userId,provider,d.subscriptionId],
     );
     if(existing.rowCount) {
-      await client.query(`UPDATE user_subscriptions SET user_id=$1,plan_id=$2,status=$3,provider=$4,provider_customer_id=$5,provider_subscription_id=$6,current_period_start=$7,current_period_end=$8,cancel_at_period_end=$9,updated_at=now() WHERE id=$10`,[...params,existing.rows[0].id]);
+      await client.query(`UPDATE user_subscriptions SET user_id=$1,plan_id=$2,status=$3,provider=$4,provider_customer_id=$5,provider_subscription_id=$6,current_period_start=$7,current_period_end=$8,cancel_at_period_end=$9,last_provider_event_at=COALESCE($10,last_provider_event_at),updated_at=now() WHERE id=$11`,[...params,eventAt,existing.rows[0].id]);
     } else {
-      await client.query(`INSERT INTO user_subscriptions(user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,cancel_at_period_end) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,params);
+      await client.query(`INSERT INTO user_subscriptions(user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,cancel_at_period_end,last_provider_event_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[...params,eventAt]);
     }
     await client.query(`UPDATE billing_webhook_events SET processing_status='processed',processing_started_at=NULL,processed_at=now(),processing_error=NULL,updated_at=now() WHERE id=$1`,[e.id]);
   }
