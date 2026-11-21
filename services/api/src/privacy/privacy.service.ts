@@ -86,7 +86,65 @@ export class PrivacyService {
          RETURNING r.id,r.user_id,r.requested_at,r.scheduled_for,r.processing_attempts`,
         [batch,workerId],
       );
-      return claimed.rows;
+      for (const request of claimed.rows) {
+        const assets = await client.query(
+          `SELECT id,size_bytes,storage_key_original
+           FROM media_assets WHERE owner_id=$1 AND status<>'deleted'
+           FOR UPDATE`,
+          [request.user_id],
+        );
+        for (const asset of assets.rows) {
+          const variants = await client.query(
+            `SELECT storage_key FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,
+            [asset.id],
+          );
+          const keys = [asset.storage_key_original, ...variants.rows.map((row: {storage_key:string})=>row.storage_key)];
+          for (const storageKey of keys) {
+            await client.query(
+              `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+               VALUES($1,$2) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+              [asset.id,storageKey],
+            );
+          }
+          await client.query(
+            `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
+             WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,
+            [asset.id],
+          );
+          await client.query(
+            `UPDATE posts SET status='removed',updated_at=now()
+             WHERE media_asset_id=$1 AND status<>'removed'`,
+            [asset.id],
+          );
+          await client.query(
+            `UPDATE space_album_items SET status='removed',removed_at=now()
+             WHERE media_asset_id=$1 AND status='active'`,
+            [asset.id],
+          );
+          await client.query(
+            `DELETE FROM timeline_entries
+             WHERE media_asset_id=$1 OR post_id IN (SELECT id FROM posts WHERE media_asset_id=$1)`,
+            [asset.id],
+          );
+          await client.query(
+            `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,
+            [asset.id],
+          );
+          await client.query(
+            `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+             VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+            [request.user_id,asset.id,-Number(asset.size_bytes),'account-delete-media:'+asset.id],
+          );
+        }
+        await client.query(
+          `UPDATE user_profiles SET avatar_media_id=NULL,updated_at=now() WHERE user_id=$1`,
+          [request.user_id],
+        );
+      }
+      return claimed.rows.map((request: Record<string,unknown>)=>({
+        ...request,
+        purgePreparation:'media_deletion_queued',
+      }));
     });
   }
 
@@ -111,6 +169,31 @@ export class PrivacyService {
          FOR UPDATE`, [requestId,workerId]);
       if (!locked.rowCount) throw new NotFoundException('Deletion request not found or not owned by this worker.');
       const request = locked.rows[0];
+      if (value.success) {
+        const outstandingMedia = await client.query(
+          `SELECT count(*)::int total FROM media_assets
+           WHERE owner_id=$1 AND status<>'deleted'`,
+          [request.user_id],
+        );
+        const outstandingStorage = await client.query(
+          `SELECT count(*)::int total
+           FROM media_storage_deletions d
+           JOIN media_assets a ON a.id=d.media_asset_id
+           WHERE a.owner_id=$1 AND d.status<>'completed'`,
+          [request.user_id],
+        );
+        const activeJobs = await client.query(
+          `SELECT count(*)::int total FROM media_processing_jobs j
+           JOIN media_assets a ON a.id=j.media_asset_id
+           WHERE a.owner_id=$1 AND j.status IN ('pending','processing')`,
+          [request.user_id],
+        );
+        if (Number(outstandingMedia.rows[0].total)>0 ||
+            Number(outstandingStorage.rows[0].total)>0 ||
+            Number(activeJobs.rows[0].total)>0) {
+          throw new ConflictException('Account purge cannot finish while media or storage deletion tasks remain.');
+        }
+      }
       if (!value.success) {
         const updated = await client.query(
           `UPDATE account_deletion_requests
