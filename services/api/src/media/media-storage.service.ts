@@ -86,7 +86,7 @@ export class S3MediaStorage extends MediaStorage {
   });
 
   private key(storageKey: string): string {
-    if (!storageKey || storageKey.startsWith('/') || storageKey.includes('..') || storageKey.includes('\\') || storageKey.includes('\\0')) {
+    if (!storageKey || storageKey.startsWith('/') || storageKey.includes('..') || storageKey.includes('\\') || storageKey.includes('\0')) {
       throw new ServiceUnavailableException('Invalid media storage key.');
     }
     return storageKey;
