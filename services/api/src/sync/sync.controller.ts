@@ -49,7 +49,7 @@ export class SyncController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    if (limit !== undefined && !/^\\d{1,4}$/.test(limit)) {
+    if (limit !== undefined && !/^\d{1,4}$/.test(limit)) {
       throw new BadRequestException('limit must be a positive integer.');
     }
     const parsedLimit = limit === undefined ? 200 : Number(limit);
