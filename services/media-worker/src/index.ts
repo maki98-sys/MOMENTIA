@@ -200,6 +200,7 @@ async function processDeletion(deletion: {id:string;storage_key:string}): Promis
 }
 
 async function tick(): Promise<void> {
+  await api('/internal/media-processing/uploads/cleanup-expired','POST',{limit:100});
   const jobs=await api<Job[]>('/internal/media-processing/jobs/claim','POST',{workerId:WORKER_ID,limit:BATCH_SIZE});
   for(const job of jobs??[]) await deliverJob(job);
   const deletions=await api<Array<{id:string;storage_key:string}>>('/internal/media-processing/deletions/claim','POST',{
