@@ -477,7 +477,9 @@ export class SyncService {
 
   async pull(userId: string, cursor?: string, limit = 200) {
     if (cursor !== undefined && !/^\d{1,18}$/.test(cursor)) throw new BadRequestException('Sync cursor must be a non-negative integer.');
-    const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
+    const requestedLimit = Number(limit);
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) throw new BadRequestException('Sync limit must be a positive integer.');
+    const safeLimit = Math.min(requestedLimit, 500);
     const requestedCursor=cursor ?? '0';
     const bounds=await this.db.query(
       `SELECT COALESCE(MIN(sequence_id),0)::text oldest_sequence,
