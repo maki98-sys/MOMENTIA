@@ -262,7 +262,6 @@ export class AudioService {
 
   async updatePlayback(userId: string, sessionId: string, input: { action?: unknown; positionMs?: unknown; currentItemId?: unknown; expectedVersion?: unknown }) {
     this.id(sessionId, 'session id');
-    await this.assertAudioEntitlement(this.db,userId);
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         Object.keys(input).some(key => !['action','positionMs','currentItemId','expectedVersion'].includes(key))) {
       throw new BadRequestException('Invalid playback command fields.');
@@ -276,6 +275,7 @@ export class AudioService {
     if (input.expectedVersion !== undefined && (!Number.isSafeInteger(Number(input.expectedVersion)) || Number(input.expectedVersion) < 1)) throw new BadRequestException('Invalid expected version.');
     let itemId = input.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
+    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
       const s = await client.query(`SELECT a.id,a.host_user_id,a.state,a.server_version FROM audio_sessions a
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
@@ -319,9 +319,9 @@ export class AudioService {
 
   async vote(userId: string, sessionId: string, itemId: string, vote: unknown) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
-    await this.assertAudioEntitlement(this.db,userId);
     const value = Number(vote);
     if (value !== -1 && value !== 1) throw new BadRequestException('Vote must be -1 or 1.');
+    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
       const allowed = await client.query(`SELECT 1 FROM audio_queue_items q
         JOIN audio_participants p ON p.session_id=q.session_id
