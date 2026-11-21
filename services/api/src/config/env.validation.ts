@@ -21,6 +21,7 @@ export const environmentSchema = Joi.object({
   MEDIA_S3_SECRET_ACCESS_KEY: Joi.string().min(1).allow(''),
   MEDIA_S3_FORCE_PATH_STYLE: Joi.boolean().truthy('true').falsy('false').default(false),
   NOTIFICATION_WORKER_TOKEN: Joi.string().min(32),
+  BILLING_WORKER_TOKEN: Joi.string().min(32),
   PUSH_TOKEN_ENCRYPTION_KEY: Joi.string().base64().custom((value, helpers) => Buffer.from(value, 'base64').length === 32 ? value : helpers.error('any.invalid')),
   AUDIO_REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }),
   OIDC_ISSUER: Joi.string().uri({ scheme: ['https'] }),
