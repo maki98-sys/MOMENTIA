@@ -179,6 +179,12 @@ export class NotificationsService {
            WHERE o.channel='push' AND o.status IN ('pending','failed')
              AND o.next_attempt_at<=now() AND o.attempts<8
              AND d.push_token_encrypted IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM notification_preferences np
+               JOIN notifications n ON n.id=o.notification_id
+               WHERE np.user_id=o.user_id AND np.category=n.category
+                 AND np.push_enabled=false
+             )
            ORDER BY o.next_attempt_at,o.created_at
            LIMIT $1 FOR UPDATE OF o SKIP LOCKED
          )
