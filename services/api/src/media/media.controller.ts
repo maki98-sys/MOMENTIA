@@ -73,7 +73,7 @@ export class MediaController {
   const file=await this.media.openAssetContent(req.userId!,id,variantType);
   response.setHeader('Cache-Control','private, max-age=300');
   response.setHeader('X-Content-Type-Options','nosniff');
-  return new StreamableFile(createReadStream(file.path),{
+  return new StreamableFile(file.stream,{
    type:file.mimeType,
    disposition:`inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
    length:file.sizeBytes,
