@@ -56,9 +56,9 @@ export class MediaProcessingService {
          FOR UPDATE OF j,a`,[jobId,workerId]);
       if(!locked.rowCount) throw new NotFoundException('Processing job not found or not owned by this worker.');
       const job=locked.rows[0];
-      if(job.asset_status==='deleted') {
+      if(job.asset_status==='deleted'||job.asset_status==='failed') {
         await client.query(`UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now() WHERE id=$1`,[jobId]);
-        return {jobId,status:'cancelled',reason:'MEDIA_DELETED'};
+        return {jobId,status:'cancelled',reason:job.asset_status==='deleted'?'MEDIA_DELETED':'MEDIA_FAILED'};
       }
       if(!value.success) {
         const terminal=Number(job.attempts)>=Number(job.max_attempts);
