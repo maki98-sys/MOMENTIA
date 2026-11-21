@@ -62,6 +62,14 @@ export class MediaProcessingController {
     return this.processing.completeDeletion(workerId,deletionId,result);
   }
 
+
+  @Post('uploads/cleanup-expired')
+  cleanupExpiredUploads(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
+    this.authorize(token);
+    const value=body&&typeof body==='object'&&!Array.isArray(body)?body as Record<string,unknown>:{};
+    return this.processing.cleanupExpiredUploads(Number(value.limit)||100);
+  }
+
   @Post('leases/recover')
   recover(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
     this.authorize(token);
