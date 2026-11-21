@@ -109,6 +109,42 @@ export class OidcIdentityService {
     });
   }
 
+
+  async unlinkAuthenticatedIdentity(userId: string, principal: OidcPrincipal): Promise<{ unlinked: true }> {
+    return this.database.transaction(async (client) => {
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`identity-link:${principal.issuer}:${principal.subject}`],
+      );
+      const account = await client.query(
+        `SELECT id FROM users WHERE id=$1 AND status='active' FOR UPDATE`,
+        [userId],
+      );
+      if (!account.rowCount) throw new ForbiddenException('The MOMENTIA account is not active.');
+      const identities = await client.query(
+        `SELECT id,provider,provider_subject FROM auth_identities
+         WHERE user_id=$1 ORDER BY created_at,id FOR UPDATE`,
+        [userId],
+      );
+      const target = identities.rows.find((row: Record<string, unknown>) =>
+        row.provider === principal.issuer && row.provider_subject === principal.subject);
+      if (!target) throw new ConflictException('This external identity is not linked to the current account.');
+      if (identities.rowCount <= 1) {
+        throw new ConflictException('The last sign-in identity cannot be removed. Link another identity first.');
+      }
+      await client.query(
+        'DELETE FROM auth_identities WHERE id=$1 AND user_id=$2',
+        [target.id,userId],
+      );
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'AUTH_IDENTITY_UNLINKED','auth_identity',$2,$3::jsonb)`,
+        [userId,target.id,JSON.stringify({ provider: principal.issuer })],
+      );
+      return { unlinked: true };
+    });
+  }
+
   private async findIdentity(
     client: PoolClient,
     issuer: string,
