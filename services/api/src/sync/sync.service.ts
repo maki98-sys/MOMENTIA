@@ -487,7 +487,7 @@ export class SyncService {
     if (Object.keys(value).some(key => !['sections','limit'].includes(key))) {
       throw new BadRequestException('Unsupported snapshot fields.');
     }
-    const allowed = ['spaces','posts','comments','timeline','albums','notifications','rsvps','coupleJournal','media'];
+    const allowed = ['profile','relationships','spaces','posts','comments','reactions','timeline','albums','notifications','notificationPreferences','devices','rsvps','coupleJournal','coupleKeyEnvelopes','media'];
     const requested = value.sections === undefined ? allowed
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
@@ -600,6 +600,66 @@ export class SyncService {
          FROM media_assets a WHERE a.owner_id=$1 AND a.status <> 'deleted'
          ORDER BY a.created_at DESC,a.id LIMIT $2`, [userId,limit]);
       data.media = r.rows;
+    }
+    if (has('profile')) {
+      const r = await this.db.query(
+        `SELECT u.id AS user_id,p.display_name,p.bio,p.avatar_media_id,p.visibility,p.preferences,
+                p.created_at,p.updated_at
+         FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id
+         WHERE u.id=$1 AND u.status IN ('active','deletion_pending')`, [userId]);
+      data.profile = r.rows;
+    }
+    if (has('relationships')) {
+      const r = await this.db.query(
+        `SELECT id,requester_id,target_id,state,created_at,updated_at
+         FROM user_relationships WHERE requester_id=$1 OR target_id=$1
+         ORDER BY updated_at DESC,id LIMIT $2`, [userId,limit]);
+      data.relationships = r.rows;
+    }
+    if (has('reactions')) {
+      const r = await this.db.query(
+        `SELECT r.id,r.target_type,r.target_id,r.reaction_type,r.created_at
+         FROM content_reactions r
+         WHERE r.user_id=$1 AND (
+           (r.target_type='post' AND EXISTS(SELECT 1 FROM posts p WHERE p.id=r.target_id AND p.status='published'
+             AND (p.author_id=$1 OR p.audience='public'
+               OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
+                 WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+               OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+                 WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))))
+           OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c JOIN posts p ON p.id=c.post_id
+             WHERE c.id=r.target_id AND c.status='visible' AND p.status='published'
+               AND (p.author_id=$1 OR p.audience='public'
+                 OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
+                   WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+                 OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+                   WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))))
+         ) ORDER BY r.created_at DESC,r.id LIMIT $2`, [userId,limit]);
+      data.reactions = r.rows;
+    }
+    if (has('notificationPreferences')) {
+      const r = await this.db.query(
+        `SELECT category,in_app_enabled,push_enabled,updated_at
+         FROM notification_preferences WHERE user_id=$1 ORDER BY category LIMIT $2`, [userId,limit]);
+      data.notificationPreferences = r.rows;
+    }
+    if (has('devices')) {
+      const r = await this.db.query(
+        `SELECT id,platform,last_seen_at,revoked_at,created_at
+         FROM devices WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2`, [userId,limit]);
+      data.devices = r.rows;
+    }
+    if (has('coupleKeyEnvelopes')) {
+      const r = await this.db.query(
+        `SELECT e.id,e.space_id,e.key_version,e.algorithm,
+                encode(e.encrypted_key,'base64') AS encrypted_key,
+                encode(e.nonce,'base64') AS nonce,e.created_at,e.updated_at
+         FROM couple_space_key_envelopes e
+         JOIN space_memberships m ON m.space_id=e.space_id AND m.user_id=e.user_id
+         JOIN spaces s ON s.id=e.space_id AND s.type='COUPLE' AND s.status='active'
+         WHERE e.user_id=$1 AND m.state='active'
+         ORDER BY e.space_id,e.key_version DESC LIMIT $2`, [userId,limit]);
+      data.coupleKeyEnvelopes = r.rows;
     }
     const cursor = await this.db.query(
       `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
