@@ -712,7 +712,8 @@ export class SyncService {
     }
     if (has('blocks')) {
       const r = await client.query(
-        `SELECT blocker_id,blocked_id,created_at
+        `SELECT md5(blocker_id::text || ':' || blocked_id::text)::uuid AS id,
+                blocker_id,blocked_id,created_at
          FROM user_blocks
          WHERE blocker_id=$1 OR blocked_id=$1
          ORDER BY created_at DESC,blocker_id,blocked_id`,
