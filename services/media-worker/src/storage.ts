@@ -13,7 +13,7 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
 
   pathFor(storageKey: string): string {
     if (!storageKey || storageKey.startsWith('/') || storageKey.includes('..') ||
-        storageKey.includes('\\\\') || storageKey.includes('\\0')) {
+        storageKey.includes('\\') || storageKey.includes('\0')) {
       throw new Error('Unsafe storage key');
     }
     const target = resolve(join(this.root, storageKey));
