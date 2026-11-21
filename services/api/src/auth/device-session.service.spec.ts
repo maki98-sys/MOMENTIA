@@ -14,15 +14,15 @@ describe('DeviceSessionService', () => {
 
   it('registers a supported device without returning push credentials', async () => {
     query.mockResolvedValue({ rowCount: 1, rows: [{ id: 'device-1', platform: 'android' }] });
-    await expect(service.registerDevice('user-1', { platform: 'android' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'android' }))
       .resolves.toMatchObject({ id: 'device-1', platform: 'android' });
     expect(query.mock.calls[0][0]).toContain('RETURNING id, platform, last_seen_at, created_at');
   });
 
   it('rejects unsupported device platforms and fields', async () => {
-    await expect(service.registerDevice('user-1', { platform: 'desktop' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'desktop' }))
       .rejects.toBeInstanceOf(BadRequestException);
-    await expect(service.registerDevice('user-1', { platform: 'ios', userId: 'other-user' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'ios', userId: 'other-user' }))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
   });
@@ -36,11 +36,14 @@ describe('DeviceSessionService', () => {
 
   it('revokes a device and its sessions in one transaction', async () => {
     query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'device-1' }] })
-      .mockResolvedValueOnce({ rowCount: 2, rows: [] });
-    await expect(service.revokeDevice('user-1', 'device-1')).resolves.toEqual({ revoked: true, revokedSessions: 2, cancelledPushDeliveries: 3 });
+      .mockResolvedValueOnce({ rowCount: 2, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 3, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    await expect(service.revokeDevice('user-1', '11111111-1111-4111-8111-111111111111')).resolves.toEqual({ revoked: true, revokedSessions: 2, cancelledPushDeliveries: 3 });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledTimes(4);
     expect(query.mock.calls[1][0]).toContain('UPDATE auth_sessions');
+    expect(query.mock.calls[2][0]).toContain('UPDATE notification_outbox');
   });
 
   it('does not revoke a device owned by another user', async () => {
