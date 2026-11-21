@@ -157,14 +157,13 @@ export class SessionTokenService {
     return this.db.transaction(async client => {
       const refreshTokens = await client.query(
         `WITH expired AS (
-           SELECT ctid FROM auth_session_refresh_tokens
+           SELECT token_hash FROM auth_session_refresh_tokens
            WHERE expires_at < now() - interval '30 days'
            ORDER BY expires_at ASC
-           FOR UPDATE SKIP LOCKED
-           LIMIT $1
+           LIMIT $1 FOR UPDATE SKIP LOCKED
          )
          DELETE FROM auth_session_refresh_tokens t
-         USING expired e WHERE t.ctid=e.ctid
+         USING expired e WHERE t.token_hash=e.token_hash
          RETURNING t.token_hash`,
         [limit],
       );
@@ -174,8 +173,7 @@ export class SessionTokenService {
            WHERE expires_at < now() - interval '90 days'
               OR (revoked_at IS NOT NULL AND revoked_at < now() - interval '90 days')
            ORDER BY COALESCE(revoked_at,expires_at) ASC
-           FOR UPDATE SKIP LOCKED
-           LIMIT $1
+           LIMIT $1 FOR UPDATE SKIP LOCKED
          )
          DELETE FROM auth_sessions s
          USING expired e WHERE s.id=e.id
