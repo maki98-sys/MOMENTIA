@@ -29,7 +29,7 @@ export class PrivacyService {
       ['eventRsvps', `SELECT r.space_id,r.response,r.guest_count,r.note,r.responded_at FROM event_rsvps r WHERE r.user_id=$1 ORDER BY r.responded_at`],
       ['coupleJournalEntries', `SELECT id,space_id,encode(ciphertext,'base64') ciphertext_base64,encode(nonce,'base64') nonce_base64,encryption_version,key_version,created_at,updated_at,deleted_at FROM couple_journal_entries WHERE author_id=$1 ORDER BY created_at`],
       ['coupleKeyEnvelopes', `SELECT space_id,key_version,algorithm,encode(encrypted_key,'base64') encrypted_key_base64,encode(nonce,'base64') nonce_base64,created_at,updated_at FROM couple_space_key_envelopes WHERE user_id=$1 ORDER BY space_id,key_version`],
-      ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
+      ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at,failed_at,last_error_code FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
     ];
     const entries = await Promise.all(queries.map(async ([key,sql]) => {
       const result = await this.db.query(sql,[userId]);
@@ -318,7 +318,7 @@ export class PrivacyService {
 
   async getDeletionStatus(userId: string) {
     const result = await this.db.query(
-      `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at
+      `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at,failed_at,last_error_code
        FROM account_deletion_requests WHERE user_id=$1
        ORDER BY requested_at DESC LIMIT 1`,[userId]);
     return { request: result.rows[0] ?? null };
@@ -328,7 +328,7 @@ export class PrivacyService {
     return this.db.transaction(async client => {
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
-      if (!account.rowCount || !['deletion_pending','active'].includes(account.rows[0].status)) {
+      if (!account.rowCount || account.rows[0].status!=='deletion_pending') {
         throw new ConflictException('There is no cancellable deletion request.');
       }
       const request = await client.query(
