@@ -583,11 +583,15 @@ export class SyncService {
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
     if (!requested) throw new BadRequestException('Invalid snapshot sections.');
+    // A continuation must never serve previously materialized authorization-sensitive data.
+    // Rebuild every requested section from current database permissions on every page.
+    // This trades strict point-in-time pagination for fail-closed authorization freshness.
+    let continuationSnapshotId: string | null = null;
     let frozenData: Record<string, unknown[]> | null = null;
     let frozenCursor: string | null = null;
     if (snapshotId) {
       const saved = await client.query(
-        `SELECT sections,data,cursor::text AS cursor,expires_at,created_at FROM sync_snapshot_sessions
+        `SELECT sections FROM sync_snapshot_sessions
          WHERE id=$1 AND user_id=$2 AND expires_at>now() FOR UPDATE`,
         [snapshotId,userId],
       );
@@ -597,8 +601,11 @@ export class SyncService {
         throw new BadRequestException('Snapshot sections cannot change during pagination.');
       }
       requested = savedSections;
-      frozenData = saved.rows[0].data as Record<string, unknown[]>;
-      frozenCursor = String(saved.rows[0].cursor);
+      continuationSnapshotId = String(snapshotId);
+      await client.query(
+        `DELETE FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2`,
+        [snapshotId,userId],
+      );
     }
     const requestedLimit = value.limit === undefined ? 500 : value.limit;
     if (!Number.isSafeInteger(requestedLimit) || Number(requestedLimit) < 1 || Number(requestedLimit) > 1000) {
@@ -819,12 +826,19 @@ export class SyncService {
       const cursor = await client.query(
         `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
       cursorValue = String(cursor.rows[0].cursor);
-      const saved = await client.query(
-        `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
-         VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
-         RETURNING id,created_at`,
-        [userId,requested,JSON.stringify(data),cursorValue],
-      );
+      const saved = continuationSnapshotId
+        ? await client.query(
+            `INSERT INTO sync_snapshot_sessions(id,user_id,sections,data,cursor,expires_at)
+             VALUES($1,$2,$3::text[],$4::jsonb,$5::bigint,now()+interval '30 minutes')
+             RETURNING id,created_at`,
+            [continuationSnapshotId,userId,requested,JSON.stringify(data),cursorValue],
+          )
+        : await client.query(
+            `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
+             VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
+             RETURNING id,created_at`,
+            [userId,requested,JSON.stringify(data),cursorValue],
+          );
       activeSnapshotId = String(saved.rows[0].id);
       snapshotAt = saved.rows[0].created_at;
       const excess = await client.query(
@@ -852,7 +866,7 @@ export class SyncService {
       snapshotId: activeSnapshotId, data, limit, sections: requested, nextOffsets,
       hasMore: Object.keys(nextOffsets).length > 0,
       cursor: cursorValue, snapshotAt, expiresInSeconds: 1800,
-      consistency: 'materialized_snapshot', generatedAt: new Date().toISOString(),
+      consistency: 'authorization_revalidated_materialization', generatedAt: new Date().toISOString(),
     };
     });
   }
