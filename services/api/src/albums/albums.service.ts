@@ -110,6 +110,9 @@ export class AlbumsService {
          RETURNING id,album_id,media_asset_id,added_by,caption,occurred_at,created_at`,
         [albumId,v.mediaAssetId,userId,caption,occurred]);
       if(!result.rowCount) throw new BadRequestException('This photo is already in the album.');
+      await client.query(
+        `INSERT INTO timeline_entries(space_id,media_asset_id,occurred_at,source)
+         VALUES($1,$2,$3,'upload')`,[spaceId,v.mediaAssetId,occurred]);
       await client.query(`INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
         VALUES($1,$2,'album.item_added','album_item',$3)`,[spaceId,userId,result.rows[0].id]);
       return result.rows[0];
