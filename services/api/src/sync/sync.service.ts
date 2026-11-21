@@ -744,12 +744,10 @@ export class SyncService {
     let activeSnapshotId = snapshotId ?? null;
     if (!frozenData) {
       const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
-      if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 32 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
+      if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 24 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
       const cursor = await client.query(
         `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
       cursorValue = String(cursor.rows[0].cursor);
-      const watermark = await client.query(`SELECT transaction_timestamp() AS snapshot_at`);
-      snapshotAt = watermark.rows[0].snapshot_at;
       const saved = await client.query(
         `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
          VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
