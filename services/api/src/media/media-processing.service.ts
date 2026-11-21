@@ -101,12 +101,13 @@ export class MediaProcessingService {
             throw new BadRequestException('Invalid generated media variant metadata.');
           }
           await client.query(
-            `INSERT INTO media_variants(media_asset_id,variant_type,storage_key,mime_type,size_bytes,width,height,checksum_sha256)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+            `INSERT INTO media_variants(media_asset_id,variant_type,storage_key,mime_type,size_bytes,width,height,checksum_sha256,storage_provider)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
              ON CONFLICT(media_asset_id,variant_type) DO UPDATE SET
                storage_key=EXCLUDED.storage_key,mime_type=EXCLUDED.mime_type,size_bytes=EXCLUDED.size_bytes,
-               width=EXCLUDED.width,height=EXCLUDED.height,checksum_sha256=EXCLUDED.checksum_sha256`,
-            [job.media_asset_id,v.variantType,v.storageKey,v.mimeType,v.sizeBytes,v.width,v.height,String(v.checksumSha256).toLowerCase()]);
+               width=EXCLUDED.width,height=EXCLUDED.height,checksum_sha256=EXCLUDED.checksum_sha256,
+               storage_provider=EXCLUDED.storage_provider`,
+            [job.media_asset_id,v.variantType,v.storageKey,v.mimeType,v.sizeBytes,v.width,v.height,String(v.checksumSha256).toLowerCase(),process.env.MEDIA_STORAGE_PROVIDER??'local']);
         }
         await client.query(
           `INSERT INTO media_processing_jobs(media_asset_id,job_type)
