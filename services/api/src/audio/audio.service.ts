@@ -181,8 +181,11 @@ export class AudioService {
 
   async leave(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
-    const r = await this.db.query(`UPDATE audio_participants SET left_at=now()
-      WHERE session_id=$1 AND user_id=$2 AND left_at IS NULL RETURNING id`, [sessionId,userId]);
+    await this.assertAudioEntitlement(this.db,userId);
+    const r = await this.db.query(`UPDATE audio_participants p SET left_at=now()
+      FROM audio_sessions a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
+      WHERE p.session_id=a.id AND p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
+      RETURNING p.id`, [sessionId,userId]);
     if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
     await this.db.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
     return { left: true };
@@ -192,6 +195,7 @@ export class AudioService {
     this.id(sessionId, 'session id');
     if (typeof trackReference !== 'string' || !trackReference.trim() || trackReference.length > 500) throw new BadRequestException('A valid provider track reference is required.');
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       const s = await client.query(`SELECT a.id FROM audio_sessions a JOIN audio_participants p ON p.session_id=a.id
         WHERE a.id=$1 AND p.user_id=$2 AND p.left_at IS NULL AND a.state IN ('created','playing','paused') FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Active audio participation not found.');
@@ -206,6 +210,7 @@ export class AudioService {
 
   async removeQueueItem(userId: string, sessionId: string, itemId: string) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
+    await this.assertAudioEntitlement(this.db,userId);
     const r = await this.db.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
       WHERE q.id=$1 AND q.session_id=$2 AND a.id=q.session_id AND a.host_user_id=$3
       AND q.state IN ('queued','current') RETURNING q.id`, [itemId,sessionId,userId]);
@@ -216,6 +221,7 @@ export class AudioService {
 
   async updatePlayback(userId: string, sessionId: string, input: { action?: unknown; positionMs?: unknown; currentItemId?: unknown; expectedVersion?: unknown }) {
     this.id(sessionId, 'session id');
+    await this.assertAudioEntitlement(this.db,userId);
     const action = String(input?.action ?? '');
     if (!['play','pause','seek','next','end'].includes(action)) throw new BadRequestException('Invalid playback action.');
     const position = input?.positionMs === undefined ? 0 : Number(input.positionMs);
@@ -248,6 +254,7 @@ export class AudioService {
 
   async vote(userId: string, sessionId: string, itemId: string, vote: unknown) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
+    await this.assertAudioEntitlement(this.db,userId);
     const value = Number(vote);
     if (value !== -1 && value !== 1) throw new BadRequestException('Vote must be -1 or 1.');
     return this.db.transaction(async client => {
