@@ -62,14 +62,8 @@ async function api<T>(path: string, method='POST', body?: unknown): Promise<T> {
 
 async function sha256(path: string): Promise<string> {
   const hash=createHash('sha256');
-  await pipeline(createReadStream(path),async function* (source) {
-    for await (const chunk of source) { hash.update(chunk as Buffer); yield chunk; }
-  },new WriteStreamSink());
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest('hex');
-}
-
-class WriteStreamSink extends (await import('node:stream')).Writable {
-  _write(_chunk: Buffer,_encoding: BufferEncoding,callback: (error?: Error|null)=>void) { callback(); }
 }
 
 async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'> {
