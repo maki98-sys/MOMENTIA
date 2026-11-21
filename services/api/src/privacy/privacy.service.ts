@@ -285,6 +285,22 @@ export class PrivacyService {
            AND NOT EXISTS (SELECT 1 FROM spaces s WHERE s.id=sm.space_id AND s.owner_id=$1)`,
         [request.user_id],
       );
+      // Remove authored social content while retaining shared spaces and moderation audit records.
+      await client.query(
+        `UPDATE posts SET status='removed',body=NULL,updated_at=now()
+         WHERE author_id=$1 AND status<>'removed'`,[request.user_id]);
+      await client.query(
+        `UPDATE post_comments SET status='removed',body=NULL
+         WHERE author_id=$1 AND status<>'removed'`,[request.user_id]);
+      await client.query(
+        `DELETE FROM content_reactions WHERE user_id=$1`,[request.user_id]);
+      await client.query(
+        `DELETE FROM timeline_entries WHERE user_id=$1
+          OR post_id IN (SELECT id FROM posts WHERE author_id=$1)
+          OR comment_id IN (SELECT id FROM post_comments WHERE author_id=$1)`,
+        [request.user_id]);
+      await client.query(
+        `DELETE FROM couple_journal_entries WHERE author_id=$1`,[request.user_id]);
       await client.query(
         `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
          WHERE user_id=$1 AND revoked_at IS NULL`, [request.user_id]);
