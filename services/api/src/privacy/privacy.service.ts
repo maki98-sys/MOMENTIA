@@ -102,7 +102,7 @@ export class PrivacyService {
         );
         for (const asset of assets.rows) {
           const variants = await client.query(
-            `SELECT storage_key FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,
+            `SELECT storage_key,size_bytes FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,
             [asset.id],
           );
           const keys = [asset.storage_key_original, ...variants.rows.map((row: {storage_key:string})=>row.storage_key)];
@@ -140,7 +140,7 @@ export class PrivacyService {
           await client.query(
             `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
              VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
-            [request.user_id,asset.id,-Number(asset.size_bytes),'account-delete-media:'+asset.id],
+            [request.user_id,asset.id,-(Number(asset.size_bytes)+variants.rows.reduce((sum: number,row: {size_bytes: string|number})=>sum+Number(row.size_bytes),0)),'account-delete-media:'+asset.id],
           );
         }
         await client.query(
