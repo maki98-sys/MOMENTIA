@@ -78,7 +78,7 @@ export class MediaProcessingService {
         if(verdict==='clean') {
           await client.query(
             `INSERT INTO media_processing_jobs(media_asset_id,job_type)
-             VALUES($1,$2),($1,'finalize')
+             VALUES($1,$2)
              ON CONFLICT(media_asset_id,job_type) DO NOTHING`,
             [job.media_asset_id,job.mime_type_detected.startsWith('video/')?'video_poster':'image_variants']);
         }
@@ -104,6 +104,10 @@ export class MediaProcessingService {
                width=EXCLUDED.width,height=EXCLUDED.height,checksum_sha256=EXCLUDED.checksum_sha256`,
             [job.media_asset_id,v.variantType,v.storageKey,v.mimeType,v.sizeBytes,v.width,v.height,String(v.checksumSha256).toLowerCase()]);
         }
+        await client.query(
+          `INSERT INTO media_processing_jobs(media_asset_id,job_type)
+           VALUES($1,'finalize') ON CONFLICT(media_asset_id,job_type) DO NOTHING`,
+          [job.media_asset_id]);
       } else if(job.job_type==='finalize') {
         const ready=await client.query(
           `SELECT status,moderation_scan_status FROM media_assets WHERE id=$1 FOR UPDATE`,[job.media_asset_id]);
