@@ -179,7 +179,7 @@ export class NotificationsService {
              AND o.next_attempt_at<=now() AND o.attempts<8
              AND d.push_token_encrypted IS NOT NULL
            ORDER BY o.next_attempt_at,o.created_at
-           FOR UPDATE OF o SKIP LOCKED LIMIT $1
+           LIMIT $1 FOR UPDATE OF o SKIP LOCKED
          )
          UPDATE notification_outbox o SET status='processing',attempts=o.attempts+1
          FROM candidates c WHERE o.id=c.id
