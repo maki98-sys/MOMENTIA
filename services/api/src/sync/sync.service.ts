@@ -481,6 +481,131 @@ export class SyncService {
     return { changes: result.rows, nextCursor, hasMore: result.rowCount === safeLimit, resetRequired:false, serverCursor:latest.toString() };
   }
 
+  async snapshot(userId: string, input?: unknown) {
+    const value = input && typeof input === 'object' && !Array.isArray(input)
+      ? input as Record<string, unknown> : {};
+    if (Object.keys(value).some(key => !['sections','limit'].includes(key))) {
+      throw new BadRequestException('Unsupported snapshot fields.');
+    }
+    const allowed = ['spaces','posts','comments','timeline','albums','notifications','rsvps','coupleJournal','media'];
+    const requested = value.sections === undefined ? allowed
+      : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
+        ? [...new Set(value.sections as string[])] : null;
+    if (!requested) throw new BadRequestException('Invalid snapshot sections.');
+    const limit = Math.min(Math.max(Number(value.limit) || 500, 1), 1000);
+    const data: Record<string, unknown[]> = {};
+    const has = (section: string) => requested.includes(section);
+
+    if (has('spaces')) {
+      const r = await this.db.query(
+        `SELECT s.id,s.type,s.owner_id,s.name,s.visibility,s.status,s.settings,s.created_at,s.updated_at,
+                m.role,m.state,m.joined_at,
+                CASE WHEN s.type='EVENT' THEN jsonb_build_object(
+                  'startsAt',e.starts_at,'endsAt',e.ends_at,'timezone',e.timezone,
+                  'moderationMode',e.moderation_mode,'downloadPolicy',e.download_policy)
+                WHEN s.type='CIRCLE' THEN jsonb_build_object(
+                  'description',c.description,'joinPolicy',c.join_policy)
+                WHEN s.type='COUPLE' THEN jsonb_build_object(
+                  'anniversaryDate',p.anniversary_date,'settings',p.settings) ELSE '{}'::jsonb END AS details
+         FROM space_memberships m JOIN spaces s ON s.id=m.space_id
+         LEFT JOIN event_details e ON e.space_id=s.id
+         LEFT JOIN circle_details c ON c.space_id=s.id
+         LEFT JOIN couple_details p ON p.space_id=s.id
+         WHERE m.user_id=$1 AND m.state='active'
+         ORDER BY s.updated_at DESC,s.id LIMIT $2`, [userId,limit]);
+      data.spaces = r.rows;
+    }
+    if (has('posts')) {
+      const r = await this.db.query(
+        `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.status,p.created_at,p.published_at,p.updated_at
+         FROM posts p
+         WHERE p.status='published' AND (
+           p.author_id=$1 OR p.audience='public'
+           OR (p.audience='followers' AND EXISTS(
+             SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+           OR (p.audience='space' AND EXISTS(
+             SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
+         ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+         ORDER BY p.updated_at DESC,p.id LIMIT $2`, [userId,limit]);
+      data.posts = r.rows;
+    }
+    if (has('comments')) {
+      const r = await this.db.query(
+        `SELECT c.id,c.post_id,c.author_id,c.body,c.status,c.created_at
+         FROM post_comments c JOIN posts p ON p.id=c.post_id
+         WHERE c.status='visible' AND p.status='published' AND (
+           p.author_id=$1 OR p.audience='public'
+           OR (p.audience='followers' AND EXISTS(
+             SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+           OR (p.audience='space' AND EXISTS(
+             SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
+         ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+         ORDER BY c.created_at DESC,c.id LIMIT $2`, [userId,limit]);
+      data.comments = r.rows;
+    }
+    if (has('timeline')) {
+      const r = await this.db.query(
+        `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at
+         FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id
+         JOIN spaces s ON s.id=t.space_id
+         WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
+           AND (t.post_id IS NULL OR EXISTS(SELECT 1 FROM posts p WHERE p.id=t.post_id AND p.status='published'))
+           AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
+         ORDER BY t.occurred_at DESC,t.id LIMIT $2`, [userId,limit]);
+      data.timeline = r.rows;
+    }
+    if (has('albums')) {
+      const r = await this.db.query(
+        `SELECT a.id AS album_id,a.space_id,a.name,a.description,a.visibility,
+                i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
+         FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
+         LEFT JOIN space_album_items i ON i.album_id=a.id AND i.status='active'
+           AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready')
+         WHERE m.user_id=$1 AND m.state='active'
+           AND (a.visibility='members' OR m.role IN ('owner','admin','moderator'))
+         ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id LIMIT $2`, [userId,limit]);
+      data.albums = r.rows;
+    }
+    if (has('notifications')) {
+      const r = await this.db.query(
+        `SELECT id,category,payload,read_at,created_at FROM notifications
+         WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2`, [userId,limit]);
+      data.notifications = r.rows;
+    }
+    if (has('rsvps')) {
+      const r = await this.db.query(
+        `SELECT r.id,r.space_id,r.response,r.guest_count,r.note,r.responded_at
+         FROM event_rsvps r JOIN space_memberships m ON m.space_id=r.space_id AND m.user_id=r.user_id
+         WHERE r.user_id=$1 AND m.state='active'
+         ORDER BY r.responded_at DESC,r.id LIMIT $2`, [userId,limit]);
+      data.rsvps = r.rows;
+    }
+    if (has('coupleJournal')) {
+      const r = await this.db.query(
+        `SELECT j.id,j.space_id,j.author_id,encode(j.ciphertext,'base64') AS ciphertext,
+                encode(j.nonce,'base64') AS nonce,j.encryption_version,j.created_at,j.updated_at
+         FROM couple_journal_entries j
+         JOIN space_memberships m ON m.space_id=j.space_id AND m.user_id=$1
+         JOIN spaces s ON s.id=j.space_id AND s.type='COUPLE' AND s.status='active'
+         WHERE m.state='active' AND j.deleted_at IS NULL
+         ORDER BY j.created_at DESC,j.id LIMIT $2`, [userId,limit]);
+      data.coupleJournal = r.rows;
+    }
+    if (has('media')) {
+      const r = await this.db.query(
+        `SELECT a.id,a.mime_type_detected,a.size_bytes,a.width,a.height,a.checksum_sha256,
+                a.status,a.created_at,a.processing_completed_at
+         FROM media_assets a WHERE a.owner_id=$1 AND a.status <> 'deleted'
+         ORDER BY a.created_at DESC,a.id LIMIT $2`, [userId,limit]);
+      data.media = r.rows;
+    }
+    const cursor = await this.db.query(
+      `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
+    return { data, limit, sections: requested, cursor: cursor.rows[0].cursor, generatedAt: new Date().toISOString() };
+  }
+
   async saveCheckpoint(userId:string,input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Checkpoint data is required.');
     const value=input as Record<string,unknown>;
