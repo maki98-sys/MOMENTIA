@@ -96,6 +96,76 @@ export class MediaService {
     });
   }
 
+  async receiveUploadPart(userId:string,uploadId:string,partNumber:number,bytes:Buffer,checksumHeader:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
+    if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
+    if(!Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>8*1024*1024) throw new PayloadTooLargeException('Each upload part must be between 1 byte and 8 MB.');
+    const checksum=createHash('sha256').update(bytes).digest('hex');
+    if(!/^[a-f0-9]{64}$/i.test(checksumHeader)||checksum!==checksumHeader.toLowerCase()) throw new BadRequestException('Part checksum mismatch.');
+    const upload=await this.db.query(
+      `SELECT u.id,u.state,u.uploader_id,a.size_bytes FROM media_uploads u
+       JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
+    if(!upload.rowCount) throw new NotFoundException('Upload not found.');
+    if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
+    const key='parts/'+userId+'/'+uploadId+'/'+partNumber+'-'+checksum;
+    const existing=await this.db.query(
+      `SELECT byte_size,checksum_sha256 FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
+    if(existing.rowCount) {
+      if(Number(existing.rows[0].byte_size)!==bytes.length||String(existing.rows[0].checksum_sha256)!==checksum) throw new ConflictException('Part number already contains different data.');
+      return {uploadId,partNumber,received:true,duplicate:true};
+    }
+    await this.storage.put(key,bytes);
+    try {
+      await this.db.transaction(async client=>{
+        const locked=await client.query(
+          `SELECT state FROM media_uploads WHERE id=$1 AND uploader_id=$2 FOR UPDATE`,[uploadId,userId]);
+        if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) throw new ConflictException('Upload is no longer accepting parts.');
+        await client.query(
+          `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key)
+           VALUES($1,$2,$3,$4,$5)`,[uploadId,partNumber,bytes.length,checksum,key]);
+        await client.query(`UPDATE media_uploads SET state='uploading',updated_at=now() WHERE id=$1`,[uploadId]);
+      });
+    } catch(error) {
+      await this.storage.remove(key).catch(()=>undefined);
+      throw error;
+    }
+    return {uploadId,partNumber,received:true,duplicate:false};
+  }
+
+  async completeResumableUpload(userId:string,uploadId:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
+    const upload=await this.db.query(
+      `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256
+       FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+       WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
+    if(!upload.rowCount) throw new NotFoundException('Upload not found.');
+    if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) return this.getUpload(userId,uploadId);
+    const parts=await this.db.query(
+      `SELECT part_number,byte_size,checksum_sha256,storage_key FROM media_upload_parts
+       WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
+    if(!parts.rowCount) throw new ConflictException('No upload parts have been received.');
+    for(let i=0;i<parts.rows.length;i++) if(Number(parts.rows[i].part_number)!==i) throw new ConflictException('Upload parts are incomplete.');
+    const buffers:Buffer[]=[];
+    let total=0;
+    for(const part of parts.rows) {
+      const bytes=await this.storage.read(String(part.storage_key));
+      if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
+        throw new ConflictException('A stored upload part failed integrity verification.');
+      }
+      total+=bytes.length;
+      if(total>Number(upload.rows[0].size_bytes)||total>MAX_UPLOAD_BYTES) throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
+      buffers.push(bytes);
+    }
+    if(total!==Number(upload.rows[0].size_bytes)) throw new ConflictException('Received parts do not match the declared file size.');
+    const complete=Buffer.concat(buffers,total);
+    if(createHash('sha256').update(complete).digest('hex')!==String(upload.rows[0].checksum_sha256).toLowerCase()) {
+      throw new BadRequestException('Final file checksum mismatch.');
+    }
+    const result=await this.receiveUpload(userId,uploadId,complete);
+    await this.db.query(`DELETE FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
+    return result;
+  }
+
   async receiveUpload(userId:string,uploadId:string,bytes:Buffer) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_UPLOAD_BYTES) throw new BadRequestException('Invalid upload body size.');
