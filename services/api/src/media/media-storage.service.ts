@@ -56,7 +56,7 @@ export class LocalMediaStorage extends MediaStorage {
     catch { throw new ServiceUnavailableException('Media content is unavailable.'); }
   }
 
-  async openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: ReadStream; sizeBytes: number }> {
+  async openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }> {
     const target = await this.locate(storageKey, expectedSize);
     const info = await stat(target);
     return { stream: createReadStream(target), sizeBytes: info.size };
