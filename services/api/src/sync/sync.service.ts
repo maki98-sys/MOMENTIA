@@ -57,11 +57,6 @@ export class SyncService {
              WHERE user_id=$1 AND operation_id=$2`,
             [userId, operation.operationId, JSON.stringify(created)],
           );
-          await client.query(
-            `INSERT INTO sync_change_log(user_id,entity_type,entity_id,change_type,payload)
-             VALUES($1,$2,$3,'upsert',$4::jsonb)`,
-            [userId, created.entityType, created.id, JSON.stringify(created)],
-          );
           return { operationId: operation.operationId, state: 'succeeded', result: created };
         });
         results.push(result);
