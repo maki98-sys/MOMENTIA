@@ -213,13 +213,15 @@ export class AudioService {
   async removeQueueItem(userId: string, sessionId: string, itemId: string) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
     await this.assertAudioEntitlement(this.db,userId);
-    const r = await this.db.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
-      JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
-      WHERE q.id=$1 AND q.session_id=$2 AND a.id=q.session_id AND a.host_user_id=$3
-      AND q.state IN ('queued','current') RETURNING q.id`, [itemId,sessionId,userId]);
-    if (!r.rowCount) throw new NotFoundException('Queue item not found.');
-    await this.db.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
-    return { removed: true };
+    return this.db.transaction(async client => {
+      const r = await client.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
+        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
+        WHERE q.id=$1 AND q.session_id=$2 AND a.id=q.session_id AND a.host_user_id=$3
+        AND q.state IN ('queued','current') RETURNING q.id`, [itemId,sessionId,userId]);
+      if (!r.rowCount) throw new NotFoundException('Queue item not found.');
+      await client.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
+      return { removed: true };
+    });
   }
 
   async updatePlayback(userId: string, sessionId: string, input: { action?: unknown; positionMs?: unknown; currentItemId?: unknown; expectedVersion?: unknown }) {
@@ -286,6 +288,7 @@ export class AudioService {
       if (!allowed.rowCount) throw new NotFoundException('Queue item or active participant not found.');
       const r = await client.query(`INSERT INTO audio_votes(queue_item_id,user_id,vote) VALUES($1,$2,$3)
         ON CONFLICT(queue_item_id,user_id) DO UPDATE SET vote=EXCLUDED.vote RETURNING queue_item_id,vote`, [itemId,userId,value]);
+      await client.query(`UPDATE audio_sessions SET server_version=server_version+1,updated_at=now() WHERE id=$1`, [sessionId]);
       return r.rows[0];
     });
   }
