@@ -16,7 +16,7 @@ export abstract class MediaWorkerStorage {
 
 function validateKey(storageKey: string): void {
   if (!storageKey || storageKey.startsWith('/') || storageKey.includes('..') ||
-      storageKey.includes('\\') || storageKey.includes('\\0')) throw new Error('Unsafe storage key');
+      storageKey.includes('\\') || storageKey.includes('\0')) throw new Error('Unsafe storage key');
 }
 
 export class LocalMediaWorkerStorage extends MediaWorkerStorage {
