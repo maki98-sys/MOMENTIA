@@ -509,6 +509,7 @@ export class SyncService {
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId]);
       await client.query(`DELETE FROM sync_snapshot_sessions WHERE expires_at <= now() OR created_at < now()-interval '24 hours'`);
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
       throw new BadRequestException('Snapshot input must be an object.');
@@ -527,9 +528,9 @@ export class SyncService {
     let frozenData: Record<string, unknown[]> | null = null;
     let frozenCursor: string | null = null;
     if (snapshotId) {
-      const saved = await this.db.query(
-        `SELECT sections,data,cursor::text AS cursor,expires_at FROM sync_snapshot_sessions
-         WHERE id=$1 AND user_id=$2 AND expires_at>now()`,
+      const saved = await client.query(
+        `SELECT sections,data,cursor::text AS cursor,expires_at,created_at FROM sync_snapshot_sessions
+         WHERE id=$1 AND user_id=$2 AND expires_at>now() FOR UPDATE`,
         [snapshotId,userId],
       );
       if (!saved.rowCount) throw new BadRequestException('Snapshot session not found or expired.');
@@ -752,16 +753,25 @@ export class SyncService {
       const saved = await client.query(
         `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
          VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
-         RETURNING id`,
+         RETURNING id,created_at`,
         [userId,requested,JSON.stringify(data),cursorValue],
       );
       activeSnapshotId = String(saved.rows[0].id);
-    } else {
-      const saved = await this.db.query(
-        `SELECT created_at AS snapshot_at FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2`,
-        [snapshotId,userId],
+      snapshotAt = saved.rows[0].created_at;
+      const excess = await client.query(
+        `SELECT id FROM sync_snapshot_sessions WHERE user_id=$1 AND id<>$2
+         ORDER BY created_at DESC OFFSET 2`,
+        [userId,activeSnapshotId],
       );
-      snapshotAt = saved.rows[0]?.snapshot_at ?? null;
+      if (excess.rowCount) await client.query(
+        `DELETE FROM sync_snapshot_sessions WHERE user_id=$1 AND id=ANY($2::uuid[])`,
+        [userId,excess.rows.map(row => row.id)],
+      );
+    } else {
+      snapshotAt = (await client.query(
+        `SELECT created_at FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2`,
+        [snapshotId,userId],
+      )).rows[0]?.created_at ?? null;
     }
     for (const section of requested) {
       const rows = data[section] ?? [];
