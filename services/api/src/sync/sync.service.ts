@@ -543,7 +543,7 @@ export class SyncService {
     }
     const snapshotId = value.snapshotId;
     if (snapshotId !== undefined && (typeof snapshotId !== 'string' || !UUID.test(snapshotId))) throw new BadRequestException('snapshotId must be a UUID.');
-    const allowed = ['profile','relationships','spaces','posts','comments','reactions','timeline','albums','notifications','notificationPreferences','devices','rsvps','coupleJournal','coupleKeyEnvelopes','media'];
+    const allowed = ['profile','relationships','blocks','spaces','posts','comments','reactions','timeline','albums','notifications','notificationPreferences','devices','rsvps','coupleJournal','coupleKeyEnvelopes','media'];
     let requested = value.sections === undefined ? allowed
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
@@ -709,6 +709,16 @@ export class SyncService {
          FROM user_relationships WHERE requester_id=$1 OR target_id=$1
          ORDER BY created_at DESC,id`, [userId]);
       data.relationships = r.rows;
+    }
+    if (has('blocks')) {
+      const r = await client.query(
+        `SELECT blocker_id,blocked_id,created_at
+         FROM user_blocks
+         WHERE blocker_id=$1 OR blocked_id=$1
+         ORDER BY created_at DESC,blocker_id,blocked_id`,
+        [userId],
+      );
+      data.blocks = r.rows;
     }
     if (has('reactions')) {
       const r = await client.query(
