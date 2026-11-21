@@ -231,4 +231,75 @@ export class NotificationsService {
     if (!updated.rowCount) throw new NotFoundException('Processing delivery not found.');
     return updated.rows[0];
   }
+
+  async dispatchPushBatch(limit = 50) {
+    const deliveries = await this.claimPushDeliveries(limit);
+    let delivered = 0;
+    let failed = 0;
+    for (const item of deliveries) {
+      try {
+        if (item.platform !== 'ios' && item.platform !== 'android') {
+          throw new Error('UNSUPPORTED_PUSH_PLATFORM');
+        }
+        const { decryptPushToken } = await import('./push-token-crypto');
+        const token = decryptPushToken(String(item.push_token_encrypted));
+        if (!/^(ExponentPushToken|ExpoPushToken)\\[.+\\]$/.test(token)) {
+          throw new Error('INVALID_EXPO_PUSH_TOKEN');
+        }
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'gzip, deflate' },
+          body: JSON.stringify({
+            to: token,
+            title: this.notificationTitle(String(item.category)),
+            body: this.notificationBody(item.payload),
+            data: { notificationId: item.notification_id, category: item.category },
+            sound: 'default',
+            priority: 'high',
+          }),
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!response.ok) throw new Error(`EXPO_HTTP_${response.status}`);
+        const body = await response.json() as { data?: { status?: string; id?: string; message?: string; details?: { error?: string } } };
+        if (body.data?.status !== 'ok') {
+          const providerError = body.data?.details?.error || body.data?.message || 'EXPO_TICKET_ERROR';
+          if (providerError === 'DeviceNotRegistered') {
+            await this.db.query(`UPDATE devices SET push_token_encrypted=NULL WHERE id=$1`, [item.device_id]);
+          }
+          throw new Error(providerError);
+        }
+        await this.completePushDelivery(String(item.id), { delivered: true, providerMessageId: body.data.id });
+        delivered++;
+      } catch (error) {
+        const code = error instanceof Error ? error.message.slice(0, 120) : 'PUSH_DELIVERY_FAILED';
+        try {
+          await this.completePushDelivery(String(item.id), { delivered: false, errorCode: code });
+        } catch {
+          failed++;
+          continue;
+        }
+        failed++;
+      }
+    }
+    return { claimed: deliveries.length, delivered, failed };
+  }
+
+  private notificationTitle(category: string) {
+    const titles: Record<string, string> = {
+      'social.follow_request': 'Nueva solicitud de seguimiento',
+      'social.follow_accepted': 'Solicitud aceptada',
+      'social.comment': 'Nuevo comentario',
+      'social.reaction': 'Nueva reacción',
+    };
+    return titles[category] ?? 'Tienes una nueva notificación';
+  }
+
+  private notificationBody(payload: unknown) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 'Abre MOMENTIA para ver los detalles.';
+    const value = payload as Record<string, unknown>;
+    if (typeof value.message === 'string' && value.message.length <= 180) return value.message;
+    if (typeof value.actorName === 'string' && value.actorName.length <= 80) return value.actorName;
+    return 'Abre MOMENTIA para ver los detalles.';
+  }
+
 }
