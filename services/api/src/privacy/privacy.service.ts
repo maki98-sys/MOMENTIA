@@ -263,6 +263,29 @@ export class PrivacyService {
       await client.query(`DELETE FROM notifications WHERE user_id=$1`, [request.user_id]);
       await client.query(`DELETE FROM idempotency_records WHERE actor_id=$1`, [request.user_id]);
 
+      // A deleted account must not remain an active Social Audio host or listener.
+      // End hosted sessions before membership and identity anonymization.
+      const hostedSessions = await client.query(
+        `UPDATE audio_sessions
+         SET state='ended',playback_state='ended',position_ms=0,
+             current_item_id=NULL,server_version=server_version+1,updated_at=now()
+         WHERE host_user_id=$1 AND state IN ('created','playing','paused')
+         RETURNING id`,
+        [request.user_id],
+      );
+      if (hostedSessions.rowCount) {
+        await client.query(
+          `UPDATE audio_queue_items SET state='played'
+           WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+          [hostedSessions.rows.map((row: {id:string})=>row.id)],
+        );
+      }
+      await client.query(
+        `UPDATE audio_participants SET left_at=COALESCE(left_at,now())
+         WHERE user_id=$1 AND left_at IS NULL`,
+        [request.user_id],
+      );
+
       // Transfer owned spaces to an active member where possible. Couple spaces retain
       // both active memberships to preserve the two-party invariant and encrypted history.
       const ownedSpaces = await client.query(
