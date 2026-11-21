@@ -482,6 +482,8 @@ export class SyncService {
   }
 
   async snapshot(userId: string, input?: unknown) {
+    return this.db.transaction(async client => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
     const value = input && typeof input === 'object' && !Array.isArray(input)
       ? input as Record<string, unknown> : {};
     if (Object.keys(value).some(key => !['sections','limit'].includes(key))) {
@@ -497,7 +499,7 @@ export class SyncService {
     const has = (section: string) => requested.includes(section);
 
     if (has('spaces')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT s.id,s.type,s.owner_id,s.name,s.visibility,s.status,s.settings,s.created_at,s.updated_at,
                 m.role,m.state,m.joined_at,
                 CASE WHEN s.type='EVENT' THEN jsonb_build_object(
@@ -516,7 +518,7 @@ export class SyncService {
       data.spaces = r.rows;
     }
     if (has('posts')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.status,p.created_at,p.published_at,p.updated_at
          FROM posts p
          WHERE p.status='published' AND (
@@ -531,7 +533,7 @@ export class SyncService {
       data.posts = r.rows;
     }
     if (has('comments')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT c.id,c.post_id,c.author_id,c.body,c.status,c.created_at
          FROM post_comments c JOIN posts p ON p.id=c.post_id
          WHERE c.status='visible' AND p.status='published' AND (
@@ -546,7 +548,7 @@ export class SyncService {
       data.comments = r.rows;
     }
     if (has('timeline')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at
          FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id
          JOIN spaces s ON s.id=t.space_id
@@ -557,7 +559,7 @@ export class SyncService {
       data.timeline = r.rows;
     }
     if (has('albums')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT a.id AS album_id,a.space_id,a.name,a.description,a.visibility,
                 i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
          FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
@@ -569,13 +571,13 @@ export class SyncService {
       data.albums = r.rows;
     }
     if (has('notifications')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT id,category,payload,read_at,created_at FROM notifications
          WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2`, [userId,limit]);
       data.notifications = r.rows;
     }
     if (has('rsvps')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT r.id,r.space_id,r.response,r.guest_count,r.note,r.responded_at
          FROM event_rsvps r JOIN space_memberships m ON m.space_id=r.space_id AND m.user_id=r.user_id
          WHERE r.user_id=$1 AND m.state='active'
@@ -583,7 +585,7 @@ export class SyncService {
       data.rsvps = r.rows;
     }
     if (has('coupleJournal')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT j.id,j.space_id,j.author_id,encode(j.ciphertext,'base64') AS ciphertext,
                 encode(j.nonce,'base64') AS nonce,j.encryption_version,j.created_at,j.updated_at
          FROM couple_journal_entries j
@@ -594,7 +596,7 @@ export class SyncService {
       data.coupleJournal = r.rows;
     }
     if (has('media')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT a.id,a.mime_type_detected,a.size_bytes,a.width,a.height,a.checksum_sha256,
                 a.status,a.created_at,a.processing_completed_at
          FROM media_assets a WHERE a.owner_id=$1 AND a.status <> 'deleted'
@@ -602,7 +604,7 @@ export class SyncService {
       data.media = r.rows;
     }
     if (has('profile')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT u.id AS user_id,p.display_name,p.bio,p.avatar_media_id,p.visibility,p.preferences,
                 p.created_at,p.updated_at
          FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id
@@ -610,14 +612,14 @@ export class SyncService {
       data.profile = r.rows;
     }
     if (has('relationships')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT id,requester_id,target_id,state,created_at,updated_at
          FROM user_relationships WHERE requester_id=$1 OR target_id=$1
          ORDER BY updated_at DESC,id LIMIT $2`, [userId,limit]);
       data.relationships = r.rows;
     }
     if (has('reactions')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT r.id,r.target_type,r.target_id,r.reaction_type,r.created_at
          FROM content_reactions r
          WHERE r.user_id=$1 AND (
@@ -638,19 +640,19 @@ export class SyncService {
       data.reactions = r.rows;
     }
     if (has('notificationPreferences')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT category,in_app_enabled,push_enabled,updated_at
          FROM notification_preferences WHERE user_id=$1 ORDER BY category LIMIT $2`, [userId,limit]);
       data.notificationPreferences = r.rows;
     }
     if (has('devices')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT id,platform,last_seen_at,revoked_at,created_at
          FROM devices WHERE user_id=$1 ORDER BY created_at DESC,id LIMIT $2`, [userId,limit]);
       data.devices = r.rows;
     }
     if (has('coupleKeyEnvelopes')) {
-      const r = await this.db.query(
+      const r = await client.query(
         `SELECT e.id,e.space_id,e.key_version,e.algorithm,
                 encode(e.encrypted_key,'base64') AS encrypted_key,
                 encode(e.nonce,'base64') AS nonce,e.created_at,e.updated_at
@@ -661,9 +663,17 @@ export class SyncService {
          ORDER BY e.space_id,e.key_version DESC LIMIT $2`, [userId,limit]);
       data.coupleKeyEnvelopes = r.rows;
     }
-    const cursor = await this.db.query(
+    const cursor = await client.query(
       `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
-    return { data, limit, sections: requested, cursor: cursor.rows[0].cursor, generatedAt: new Date().toISOString() };
+    const watermark = await client.query(`SELECT transaction_timestamp() AS snapshot_at`);
+    return {
+      data, limit, sections: requested,
+      cursor: cursor.rows[0].cursor,
+      snapshotAt: watermark.rows[0].snapshot_at,
+      consistency: 'repeatable_read',
+      generatedAt: new Date().toISOString(),
+    };
+    });
   }
 
   async saveCheckpoint(userId:string,input:unknown) {
