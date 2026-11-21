@@ -105,8 +105,21 @@ export class PrivacyService {
 
   async claimDueDeletionRequests(workerId: string, limit = 10) {
     if (!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
-    const batch = Math.min(Math.max(Number(limit) || 10, 1), 25);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      throw new BadRequestException('Deletion batch limit must be an integer between 1 and 50.');
+    }
+    const batch = Math.min(limit, 25);
     return this.db.transaction(async client => {
+      // A worker may disappear while holding its final lease. Such requests
+      // must become terminal failures instead of remaining pending forever.
+      await client.query(
+        `UPDATE account_deletion_requests
+         SET status='failed',failed_at=now(),processing_started_at=NULL,
+             processing_worker_id=NULL,last_error_code='MAX_ATTEMPTS_LEASE_EXPIRED'
+         WHERE status='pending' AND processing_attempts>=8
+           AND processing_started_at IS NOT NULL
+           AND processing_started_at<now()-interval '15 minutes'`,
+      );
       const claimed = await client.query(
         `WITH candidates AS (
            SELECT id FROM account_deletion_requests
