@@ -171,18 +171,63 @@ export class MediaService {
     return r.rows;
   }
 
+
+  private async findViewableAsset(userId:string,assetId:string) {
+    const result=await this.db.query(
+      `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.mime_type_detected,
+              a.original_filename,a.size_bytes,a.width,a.height,a.created_at,
+              a.processing_completed_at,a.moderation_scan_status
+       FROM media_assets a
+       WHERE a.id=$1 AND a.status='ready'
+         AND (
+           a.owner_id=$2
+           OR (
+             NOT EXISTS (SELECT 1 FROM user_blocks b
+               WHERE (b.blocker_id=$2 AND b.blocked_id=a.owner_id)
+                  OR (b.blocker_id=a.owner_id AND b.blocked_id=$2))
+             AND (
+               EXISTS (
+                 SELECT 1 FROM posts p
+                 WHERE p.media_asset_id=a.id AND p.status='published'
+                   AND NOT EXISTS (SELECT 1 FROM user_blocks b
+                     WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id)
+                        OR (b.blocker_id=p.author_id AND b.blocked_id=$2))
+                   AND (p.author_id=$2 OR p.audience='public'
+                     OR (p.audience='followers' AND EXISTS (
+                       SELECT 1 FROM user_relationships ur
+                       WHERE ur.requester_id=$2 AND ur.target_id=p.author_id AND ur.state='accepted'))
+                     OR (p.audience='space' AND EXISTS (
+                       SELECT 1 FROM space_memberships sm
+                       WHERE sm.space_id=p.space_id AND sm.user_id=$2 AND sm.state='active')))
+               )
+               OR EXISTS (
+                 SELECT 1 FROM space_album_items i
+                 JOIN space_albums al ON al.id=i.album_id
+                 JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
+                 WHERE i.media_asset_id=a.id AND i.status='active'
+                   AND (al.visibility='members' OR sm.role IN ('owner','admin','moderator'))
+               )
+               OR EXISTS (
+                 SELECT 1 FROM timeline_entries te
+                 JOIN space_memberships sm ON sm.space_id=te.space_id AND sm.user_id=$2 AND sm.state='active'
+                 WHERE te.media_asset_id=a.id
+               )
+             )
+           )
+         )
+       LIMIT 1`,[assetId,userId]);
+    if(!result.rowCount) throw new NotFoundException('Media asset not found.');
+    return result.rows[0] as Record<string,unknown>;
+  }
+
   async getAssetContent(userId:string,assetId:string,variantType?:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
     if(variantType!==undefined&&!['original','thumbnail','preview','display','video_poster'].includes(variantType)) throw new BadRequestException('Unsupported media variant.');
-    const asset=await this.db.query(
-      `SELECT id,status,owner_id,storage_key_original,mime_type_detected,original_filename,size_bytes
-       FROM media_assets WHERE id=$1 AND owner_id=$2`,[assetId,userId]);
-    if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
-    if(asset.rows[0].status!=='ready') throw new ConflictException('Media is not ready for delivery.');
-    let storageKey=String(asset.rows[0].storage_key_original);
-    let mimeType=String(asset.rows[0].mime_type_detected);
-    let filename=String(asset.rows[0].original_filename??'media');
-    let sizeBytes=Number(asset.rows[0].size_bytes);
+    const asset=await this.findViewableAsset(userId,assetId);
+    let storageKey=String(asset.storage_key_original);
+    let mimeType=String(asset.mime_type_detected);
+    let filename=String(asset.original_filename??'media');
+    let sizeBytes=Number(asset.size_bytes);
     if(variantType&&variantType!=='original') {
       const variant=await this.db.query(
         `SELECT storage_key,mime_type,size_bytes FROM media_variants
@@ -203,15 +248,11 @@ export class MediaService {
 
   async getAsset(userId:string,assetId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
-    const asset=await this.db.query(
-      `SELECT id,status,mime_type_detected,size_bytes,width,height,created_at,processing_completed_at,
-              moderation_scan_status
-       FROM media_assets WHERE id=$1 AND owner_id=$2`,[assetId,userId]);
-    if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
+    const asset=await this.findViewableAsset(userId,assetId);
     const variants=await this.db.query(
       `SELECT variant_type,mime_type,size_bytes,width,height,created_at
        FROM media_variants WHERE media_asset_id=$1 ORDER BY variant_type`,[assetId]);
-    return {...asset.rows[0],variants:variants.rows};
+    return {...asset,variants:variants.rows};
   }
 
   async deleteAsset(userId:string,assetId:string) {
