@@ -611,6 +611,8 @@ export class SyncService {
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$1 AND b.blocked_id=c.author_id) OR (b.blocker_id=c.author_id AND b.blocked_id=$1))
          ORDER BY c.created_at DESC,c.id`, [userId]);
       data.comments = r.rows;
     }
