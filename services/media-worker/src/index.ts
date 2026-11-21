@@ -131,7 +131,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const source=safePath(job.storage_key_original);
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
   const target=safePath(storageKey);
-  await mkdir(dirname(target),{recursive:true});
+  await storage.ensureParent(storageKey);
   await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
   const meta=await sharp(target).metadata();
   const info=await stat(target);
