@@ -2,13 +2,16 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
+import { MediaProcessingController } from './media-processing.controller';
+import { MediaProcessingService } from './media-processing.service';
 import { LocalMediaStorage, MediaStorage, RoutedMediaStorage, S3MediaStorage } from './media-storage.service';
 
 @Module({
   imports:[AuthModule],
-  controllers:[MediaController],
+  controllers:[MediaController,MediaProcessingController],
   providers:[
     MediaService,
+    MediaProcessingService,
     LocalMediaStorage,
     S3MediaStorage,
     {
