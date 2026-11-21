@@ -37,21 +37,21 @@ describe('DeviceSessionService', () => {
   it('revokes a device and its sessions in one transaction', async () => {
     query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'device-1' }] })
       .mockResolvedValueOnce({ rowCount: 2, rows: [] });
-    await expect(service.revokeDevice('user-1', 'device-1')).resolves.toEqual({ revoked: true });
+    await expect(service.revokeDevice('user-1', 'device-1')).resolves.toEqual({ revoked: true, revokedSessions: 2, cancelledPushDeliveries: 3 });
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(4);
     expect(query.mock.calls[1][0]).toContain('UPDATE auth_sessions');
   });
 
   it('does not revoke a device owned by another user', async () => {
     query.mockResolvedValue({ rowCount: 0, rows: [] });
-    await expect(service.revokeDevice('user-1', 'foreign-device')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.revokeDevice('user-1', '11111111-1111-4111-8111-111111111111')).rejects.toBeInstanceOf(NotFoundException);
     expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('revokes only a session belonging to the authenticated user', async () => {
     query.mockResolvedValue({ rowCount: 0, rows: [] });
-    await expect(service.revokeSession('user-1', 'foreign-session')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.revokeSession('user-1', '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(query.mock.calls[0][0]).toContain('WHERE id=$1 AND user_id=$2');
   });
 
@@ -59,5 +59,6 @@ describe('DeviceSessionService', () => {
     query.mockResolvedValue({ rowCount: 3, rows: [{ id: '1' }, { id: '2' }, { id: '3' }] });
     await expect(service.revokeAllSessions('user-1')).resolves.toEqual({ revokedCount: 3 });
     expect(query.mock.calls[0][0]).toContain('WHERE user_id=$1 AND revoked_at IS NULL');
+    expect(query).toHaveBeenCalledTimes(4);
   });
 });
