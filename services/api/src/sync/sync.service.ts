@@ -77,10 +77,10 @@ export class SyncService {
       } catch (error) {
         const code = this.errorCode(error);
         await this.db.query(
-          `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type,state,error_code,completed_at)
-           VALUES($1,$2,$3,'rejected',$4,now())
+          `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type,request_hash,state,error_code,completed_at)
+           VALUES($1,$2,$3,$4,'rejected',$5,now())
            ON CONFLICT(user_id,operation_id) DO NOTHING`,
-          [userId, operation.operationId, operation.type, code],
+          [userId, operation.operationId, operation.type, requestHash, code],
         );
         results.push({ operationId: operation.operationId, state: 'rejected', errorCode: code });
       }
