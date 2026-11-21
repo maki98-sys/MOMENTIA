@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from './auth.types';
 import { OidcBearerGuard } from './oidc-bearer.guard';
@@ -12,6 +12,15 @@ export class AuthIdentityController {
     private readonly identities: OidcIdentityService,
     private readonly verifier: OidcTokenVerifier,
   ) {}
+
+
+  @Get()
+  list(@Req() req: Request & AuthenticatedRequest) {
+    if (!req.userId || !req.sessionId) {
+      throw new BadRequestException('An authenticated MOMENTIA session is required.');
+    }
+    return this.identities.listAuthenticatedIdentities(req.userId);
+  }
 
   @Post('link')
   async link(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
