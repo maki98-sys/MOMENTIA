@@ -46,7 +46,13 @@ export class BillingService {
                               WHERE va.owner_id=$1 AND va.status<>'deleted'),0)
                 )::bigint used_bytes,
                 count(*)::int asset_count,
-                COALESCE(sum(a.size_bytes) FILTER (WHERE a.status IN ('pending','quarantined','processing')),0)::bigint pending_bytes,
+                (
+                  COALESCE(sum(a.size_bytes) FILTER (WHERE a.status IN ('pending','quarantined','processing')),0)
+                  + COALESCE((SELECT sum(v.size_bytes)
+                              FROM media_variants v
+                              JOIN media_assets va ON va.id=v.media_asset_id
+                              WHERE va.owner_id=$1 AND va.status IN ('pending','quarantined','processing')),0)
+                )::bigint pending_bytes,
                 (
                   COALESCE(sum(a.size_bytes) FILTER (WHERE a.status='ready'),0)
                   + COALESCE((SELECT sum(v.size_bytes)
