@@ -7,8 +7,6 @@ LANGUAGE plpgsql AS $$
 DECLARE
   blocker uuid;
   blocked uuid;
-  viewer uuid;
-  author uuid;
 BEGIN
   IF TG_OP='DELETE' THEN
     blocker:=OLD.blocker_id;
