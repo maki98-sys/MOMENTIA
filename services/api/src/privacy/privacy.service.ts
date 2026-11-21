@@ -22,7 +22,7 @@ export class PrivacyService {
       ['notifications', `SELECT id,category,payload,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at`],
       ['reports', `SELECT id,target_type,target_id,reason,details,status,created_at,resolved_at FROM user_reports WHERE reporter_id=$1 ORDER BY created_at`],
       ['media', `SELECT id,mime_type_detected,size_bytes,width,height,checksum_sha256,status,created_at,deleted_at FROM media_assets WHERE owner_id=$1 ORDER BY created_at`],
-      ['mediaVariants', `SELECT v.media_asset_id,v.variant_key,v.mime_type,v.size_bytes,v.width,v.height,v.created_at
+      ['mediaVariants', `SELECT v.media_asset_id,v.variant_type,v.mime_type,v.size_bytes,v.width,v.height,v.created_at
        FROM media_variants v JOIN media_assets a ON a.id=v.media_asset_id
        WHERE a.owner_id=$1 ORDER BY v.created_at`],
       ['ownedSpaces', `SELECT id,type,name,visibility,status,created_at,updated_at FROM spaces WHERE owner_id=$1 ORDER BY created_at`],
