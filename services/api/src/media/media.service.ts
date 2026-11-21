@@ -61,8 +61,13 @@ export class MediaService {
                     us.created_at DESC LIMIT 1
          ) s ON s.plan_id=p.id
          LEFT JOIN LATERAL (
-           SELECT COALESCE(sum(a.size_bytes),0)::bigint used_bytes
-           FROM media_assets a WHERE a.owner_id=$1 AND a.status<>'deleted'
+           SELECT (
+             COALESCE((SELECT sum(a.size_bytes) FROM media_assets a
+                       WHERE a.owner_id=$1 AND a.status<>'deleted'),0)
+             + COALESCE((SELECT sum(v.size_bytes)
+                         FROM media_variants v JOIN media_assets a ON a.id=v.media_asset_id
+                         WHERE a.owner_id=$1 AND a.status<>'deleted'),0)
+           )::bigint used_bytes
          ) usage ON true
          WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
         [userId],
