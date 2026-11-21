@@ -7,7 +7,7 @@ export class AccountDeletionWorkerController {
   constructor(private readonly privacy: PrivacyService) {}
 
   private authorize(token?: string) {
-    const expected = process.env.NOTIFICATION_WORKER_TOKEN ?? '';
+    const expected = process.env.MEDIA_WORKER_TOKEN ?? '';
     if (!expected || !token) throw new UnauthorizedException();
     const supplied = Buffer.from(token);
     const configured = Buffer.from(expected);
