@@ -56,6 +56,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
 
   afterEach(async () => {
     if (spaceId) await pool.query('DELETE FROM spaces WHERE id=$1', [spaceId]);
+    await pool.query('DELETE FROM sync_change_log WHERE user_id=ANY($1::uuid[])', [[viewerId, ownerId, authorId]]);
     for (const id of [viewerId, ownerId, authorId]) {
       if (id) await pool.query('DELETE FROM users WHERE id=$1', [id]);
     }
