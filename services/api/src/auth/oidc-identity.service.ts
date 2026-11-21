@@ -57,6 +57,14 @@ export class OidcIdentityService {
       const userId = String(userResult.rows[0]?.id ?? '');
       if (!userId) throw new Error('User provisioning did not return an account ID.');
 
+      const localPart=email.split('@')[0].replace(/[._+-]+/g,' ').trim();
+      const displayName=(localPart||'Nuevo usuario').slice(0,80);
+      await client.query(
+        `INSERT INTO user_profiles(user_id,display_name,visibility)
+         VALUES($1,$2,'private') ON CONFLICT(user_id) DO NOTHING`,
+        [userId,displayName],
+      );
+
       await client.query(
         `INSERT INTO auth_identities (user_id, provider, provider_subject)
          VALUES ($1, $2, $3)`,
