@@ -1,4 +1,5 @@
-import { Injectable, UnauthorizedException, ConfigService } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { DatabaseService } from '../database/database.service';
@@ -97,14 +98,14 @@ export class SessionTokenService {
       }
       const session = await client.query(
         `SELECT s.id,s.user_id,s.device_id,s.expires_at,u.status,
-                d.revoked_at device_revoked_at
+                d.id device_id_found,d.revoked_at device_revoked_at
          FROM auth_sessions s JOIN users u ON u.id=s.user_id
          LEFT JOIN devices d ON d.id=s.device_id
          WHERE s.id=$1 AND s.family_id=$2 FOR UPDATE OF s,u`,
         [row.session_id,row.family_id],
       );
       if (!session.rowCount || session.rows[0].status!=='active' ||
-          session.rows[0].device_revoked_at || session.rows[0].expires_at <= new Date()) {
+          (session.rows[0].device_id && (!session.rows[0].device_id_found || session.rows[0].device_revoked_at)) || session.rows[0].expires_at <= new Date()) {
         throw new UnauthorizedException('Session is no longer active.');
       }
       const consumed = await client.query(
@@ -136,6 +137,8 @@ export class SessionTokenService {
 
   async verifyAccessToken(token: string): Promise<{ userId: string; sessionId: string }> {
     if (!token.startsWith('mta_')) throw new UnauthorizedException('Invalid MOMENTIA access token.');
+    let userId: string;
+    let sessionId: string;
     try {
       const { payload } = await jwtVerify(token.slice(4),this.secret,{
         issuer:TOKEN_ISSUER,audience:TOKEN_AUDIENCE,algorithms:['HS256'],
@@ -145,19 +148,20 @@ export class SessionTokenService {
       if (typeof payload.sub!=='string'||typeof payload.sid!=='string'||payload.typ!=='access') {
         throw new UnauthorizedException('Invalid MOMENTIA access token.');
       }
-      const active=await this.db.query(
-        `SELECT s.user_id FROM auth_sessions s JOIN users u ON u.id=s.user_id
-         LEFT JOIN devices d ON d.id=s.device_id
-         WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL
-           AND s.expires_at>now() AND u.status='active'
-           AND (s.device_id IS NULL OR (d.id IS NOT NULL AND d.revoked_at IS NULL))`,
-        [payload.sid,payload.sub],
-      );
-      if (!active.rowCount) throw new UnauthorizedException('MOMENTIA session is revoked or expired.');
-      return { userId:String(active.rows[0].user_id),sessionId:String(payload.sid) };
+      userId=payload.sub;
+      sessionId=payload.sid;
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('MOMENTIA access token is invalid or expired.');
     }
-  }
-}
+    const active=await this.db.query(
+      `SELECT s.user_id FROM auth_sessions s JOIN users u ON u.id=s.user_id
+       LEFT JOIN devices d ON d.id=s.device_id
+       WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL
+         AND s.expires_at>now() AND u.status='active'
+         AND (s.device_id IS NULL OR (d.id IS NOT NULL AND d.revoked_at IS NULL))`,
+      [sessionId,userId],
+    );
+    if (!active.rowCount) throw new UnauthorizedException('MOMENTIA session is revoked or expired.');
+    return { userId:String(active.rows[0].user_id),sessionId };
+  }}
