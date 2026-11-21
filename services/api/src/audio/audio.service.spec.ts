@@ -11,15 +11,17 @@ describe('AudioService', () => {
   beforeEach(() => { query.mockReset(); transaction.mockReset(); });
 
   it('rejects heartbeat for a participant who is not active', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    query.mockResolvedValueOnce({ rows: [{ enabled: true }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
     await expect(service.heartbeat('user-1', '11111111-1111-4111-8111-111111111111'))
       .rejects.toBeInstanceOf(NotFoundException);
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('refreshes heartbeat only for an active participant', async () => {
     const heartbeatAt = new Date('2026-11-18T04:00:00.000Z');
-    query.mockResolvedValueOnce({ rows: [{ session_id: '11111111-1111-4111-8111-111111111111', last_heartbeat_at: heartbeatAt }], rowCount: 1 });
+    query.mockResolvedValueOnce({ rows: [{ enabled: true }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ session_id: '11111111-1111-4111-8111-111111111111', last_heartbeat_at: heartbeatAt }], rowCount: 1 });
     await expect(service.heartbeat('user-1', '11111111-1111-4111-8111-111111111111'))
       .resolves.toEqual({ sessionId: '11111111-1111-4111-8111-111111111111', heartbeatAt });
   });
@@ -36,6 +38,7 @@ describe('AudioService', () => {
   });
 
   it('requires a host-controlled playback action', async () => {
+    query.mockResolvedValueOnce({ rows: [{ enabled: true }], rowCount: 1 });
     transaction.mockImplementation(async (operation: (client: { query: jest.Mock }) => Promise<unknown>) =>
       operation({ query: jest.fn().mockResolvedValueOnce({ rows: [{ id: 's', host_user_id: 'another-user', server_version: 1 }], rowCount: 1 }) }),
     );
