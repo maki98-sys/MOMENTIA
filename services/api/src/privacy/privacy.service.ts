@@ -287,17 +287,16 @@ export class PrivacyService {
       );
       // Remove authored social content while retaining shared spaces and moderation audit records.
       await client.query(
-        `UPDATE posts SET status='removed',body=NULL,updated_at=now()
+        `UPDATE posts SET status='removed',body='[contenido eliminado]',updated_at=now()
          WHERE author_id=$1 AND status<>'removed'`,[request.user_id]);
       await client.query(
-        `UPDATE post_comments SET status='removed',body=NULL
+        `UPDATE post_comments SET status='removed',body='[contenido eliminado]'
          WHERE author_id=$1 AND status<>'removed'`,[request.user_id]);
       await client.query(
         `DELETE FROM content_reactions WHERE user_id=$1`,[request.user_id]);
       await client.query(
-        `DELETE FROM timeline_entries WHERE user_id=$1
-          OR post_id IN (SELECT id FROM posts WHERE author_id=$1)
-          OR comment_id IN (SELECT id FROM post_comments WHERE author_id=$1)`,
+        `DELETE FROM timeline_entries
+         WHERE post_id IN (SELECT id FROM posts WHERE author_id=$1)`,
         [request.user_id]);
       await client.query(
         `DELETE FROM couple_journal_entries WHERE author_id=$1`,[request.user_id]);
