@@ -182,7 +182,7 @@ export class NotificationsService {
            ORDER BY o.next_attempt_at,o.created_at
            LIMIT $1 FOR UPDATE OF o SKIP LOCKED
          )
-         UPDATE notification_outbox o SET status='processing',attempts=o.attempts+1
+         UPDATE notification_outbox o SET status='processing',attempts=o.attempts+1,processing_started_at=now()
          FROM candidates c WHERE o.id=c.id
          RETURNING o.id,o.notification_id,o.user_id,o.device_id,o.attempts`,
         [batchSize],
@@ -212,7 +212,7 @@ export class NotificationsService {
     if (result.delivered) {
       const updated = await this.db.query(
         `UPDATE notification_outbox SET status='delivered',provider_message_id=$2,
-           delivered_at=now(),last_error_code=NULL
+           delivered_at=now(),last_error_code=NULL,processing_started_at=NULL
          WHERE id=$1 AND status='processing' RETURNING id,status,delivered_at`,
         [outboxId,result.providerMessageId?.slice(0,255) ?? null],
       );
@@ -223,7 +223,7 @@ export class NotificationsService {
     const updated = await this.db.query(
       `UPDATE notification_outbox SET
          status=CASE WHEN attempts>=8 THEN 'cancelled' ELSE 'failed' END,
-         last_error_code=$2,
+         last_error_code=$2,processing_started_at=NULL,
          next_attempt_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
        WHERE id=$1 AND status='processing'
        RETURNING id,status,attempts,next_attempt_at`,
@@ -242,10 +242,10 @@ export class NotificationsService {
     const result = await this.db.query(
       `UPDATE notification_outbox
        SET status=CASE WHEN attempts>=8 THEN 'cancelled' ELSE 'failed' END,
-           last_error_code='DELIVERY_LEASE_EXPIRED',
+           processing_started_at=NULL,last_error_code='DELIVERY_LEASE_EXPIRED',
            next_attempt_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
        WHERE channel='push' AND status='processing'
-         AND updated_at < now()-make_interval(secs=>$1)
+         AND processing_started_at < now()-make_interval(secs=>$1)
        RETURNING id,status,attempts`,
       [seconds],
     );
