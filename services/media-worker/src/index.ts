@@ -129,7 +129,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
 }
 
 async function makeVideoPoster(job: Job): Promise<Variant[]> {
-  const source=safePath(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original);
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
   const target=safePath(storageKey);
   await storage.ensureParent(storageKey);
