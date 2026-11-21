@@ -819,7 +819,7 @@ export class SyncService {
          ORDER BY e.space_id,e.key_version DESC`, [userId]);
       data.coupleKeyEnvelopes = r.rows;
     }
-    let cursorValue = frozenCursor;
+    let cursorValue: string | null = frozenCursor;
     let snapshotAt: unknown = null;
     let activeSnapshotId: string | null = snapshotId ?? null;
     if (!frozenData) {
