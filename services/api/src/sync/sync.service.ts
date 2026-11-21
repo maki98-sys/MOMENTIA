@@ -60,7 +60,7 @@ export class SyncService {
               [userId, operation.operationId],
             );
             const row = previous.rows[0];
-            if (row.operation_type !== operation.type || (row.request_hash && row.request_hash !== requestHash)) return { operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' };
+            if (row.operation_type !== operation.type || !row.request_hash || row.request_hash !== requestHash) return { operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' };
             if (row.state === 'succeeded') return { operationId: operation.operationId, state: 'succeeded', result: row.result, replayed: true };
             if (row.state === 'rejected') return { operationId: operation.operationId, state: 'rejected', errorCode: row.error_code, replayed: true };
             return { operationId: operation.operationId, state: 'processing' };
@@ -97,7 +97,21 @@ export class SyncService {
            ON CONFLICT(user_id,operation_id) DO NOTHING`,
           [userId, operation.operationId, operation.type, requestHash, code],
         );
-        results.push({ operationId: operation.operationId, state: 'rejected', errorCode: code });
+        const persisted = await this.db.query(
+          `SELECT operation_type,state,result,error_code,request_hash
+           FROM sync_operation_receipts WHERE user_id=$1 AND operation_id=$2`,
+          [userId,operation.operationId],
+        );
+        const row = persisted.rows[0];
+        if (!row || row.operation_type !== operation.type || !row.request_hash || row.request_hash !== requestHash) {
+          results.push({ operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' });
+        } else if (row.state === 'succeeded') {
+          results.push({ operationId: operation.operationId, state: 'succeeded', result: row.result, replayed: true });
+        } else if (row.state === 'rejected') {
+          results.push({ operationId: operation.operationId, state: 'rejected', errorCode: row.error_code, replayed: true });
+        } else {
+          results.push({ operationId: operation.operationId, state: 'processing' });
+        }
       }
     }
     return { accepted: results.filter(r => r.state === 'succeeded').length, rejected: results.filter(r => r.state === 'rejected').length, results };
