@@ -14,7 +14,9 @@ export class NotificationsService {
   private decodeCursor(value?: string): NotificationCursor | null {
     if (value === undefined) return null;
     try {
+      if (value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('Invalid cursor encoding.');
       const decoded = Buffer.from(value, 'base64url').toString('utf8');
+      if (Buffer.from(decoded).toString('base64url') !== value) throw new Error('Non-canonical cursor.');
       const parsed = JSON.parse(decoded) as Record<string, unknown>;
       if (
         typeof parsed.createdAt !== 'string' ||
@@ -31,7 +33,10 @@ export class NotificationsService {
   }
 
   async list(userId: string, cursor?: string, limit = 30, unreadOnly = false) {
-    const pageSize = Math.min(Math.max(Number(limit) || 30, 1), 100);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new BadRequestException('limit must be an integer between 1 and 100.');
+    }
+    const pageSize = limit;
     const decoded = this.decodeCursor(cursor);
     const result = await this.db.query(
       `SELECT id, category, payload, read_at, created_at
@@ -130,6 +135,7 @@ export class NotificationsService {
           `INSERT INTO notification_outbox(notification_id,user_id,device_id,channel)
            SELECT $1,$2,d.id,'push' FROM devices d
            WHERE d.user_id=$2 AND d.revoked_at IS NULL
+             AND d.push_token_encrypted IS NOT NULL
            ON CONFLICT(notification_id,device_id,channel) DO NOTHING`,
           [notification.id,userId],
         );
