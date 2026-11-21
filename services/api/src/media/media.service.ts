@@ -115,24 +115,38 @@ export class MediaService {
       return {uploadId,partNumber,received:true,duplicate:true};
     }
     await this.storage.put(key,bytes);
+    let keepStoredPart=false;
     try {
-      await this.db.transaction(async client=>{
+      const inserted=await this.db.transaction(async client=>{
         const locked=await client.query(
           `SELECT state FROM media_uploads WHERE id=$1 AND uploader_id=$2 FOR UPDATE`,[uploadId,userId]);
         if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) throw new ConflictException('Upload is no longer accepting parts.');
-        await client.query(
+        const saved=await client.query(
           `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key)
-           VALUES($1,$2,$3,$4,$5)`,[uploadId,partNumber,bytes.length,checksum,key]);
+           VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(upload_id,part_number) DO NOTHING
+           RETURNING part_number`,[uploadId,partNumber,bytes.length,checksum,key]);
+        if(!saved.rowCount) {
+          const winner=await client.query(
+            `SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
+             WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
+          if(!winner.rowCount||Number(winner.rows[0].byte_size)!==bytes.length||String(winner.rows[0].checksum_sha256)!==checksum) {
+            throw new ConflictException('Part number already contains different data.');
+          }
+          keepStoredPart=String(winner.rows[0].storage_key)===key;
+        } else keepStoredPart=true;
         await client.query(
           `UPDATE media_uploads SET state='uploading',
              bytes_received=(SELECT COALESCE(sum(byte_size),0) FROM media_upload_parts WHERE upload_id=$1),
              updated_at=now() WHERE id=$1`,[uploadId]);
+        return !saved.rowCount;
       });
+      if(!keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
+      return {uploadId,partNumber,received:true,duplicate:inserted};
     } catch(error) {
-      await this.storage.remove(key).catch(()=>undefined);
+      if(!keepStoredPart) await this.storage.remove(key).catch(()=>undefined);
       throw error;
     }
-    return {uploadId,partNumber,received:true,duplicate:false};
   }
 
   private async enqueueUploadPartCleanup(uploadId:string) {
@@ -181,7 +195,7 @@ export class MediaService {
     return result;
   }
 
-  async receiveUpload(userId:string,uploadId:string,bytes:Buffer) {
+  async receiveUpload(userId:string,uploadId:string,bytes:Buffer,assembling=false) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_UPLOAD_BYTES) throw new BadRequestException('Invalid upload body size.');
     const found=await this.db.query(
@@ -191,7 +205,7 @@ export class MediaService {
     if (!found.rowCount) throw new NotFoundException('Upload not found.');
     const row=found.rows[0];
     if (row.state === 'uploaded' || row.state === 'processing' || row.state === 'completed') return this.getUpload(userId,uploadId);
-    if (row.state !== 'created' && row.state !== 'uploading') throw new ConflictException('Upload is not accepting content.');
+    if (!['created','uploading',...(assembling?['assembling']:[])].includes(String(row.state))) throw new ConflictException('Upload is not accepting content.');
     if (Number(row.size_bytes) !== bytes.length) throw new BadRequestException('Uploaded byte count does not match the declared size.');
     const checksum=createHash('sha256').update(bytes).digest('hex');
     if (checksum !== String(row.checksum_sha256).trim().toLowerCase()) throw new BadRequestException('SHA-256 checksum mismatch.');
@@ -204,8 +218,9 @@ export class MediaService {
       await this.db.transaction(async client=>{
         const updated=await client.query(
           `UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
-           WHERE id=$2 AND uploader_id=$3 AND state IN ('created','uploading')`,
-          [bytes.length,uploadId,userId]);
+           WHERE id=$2 AND uploader_id=$3
+             AND (($4::boolean AND state='assembling') OR (NOT $4::boolean AND state IN ('created','uploading')))`,
+          [bytes.length,uploadId,userId,assembling]);
         if (!updated.rowCount) throw new ConflictException('Upload state changed while receiving content.');
         await client.query(
           `UPDATE media_assets SET status='quarantined',mime_type_detected=$1 WHERE id=$2 AND owner_id=$3`,
