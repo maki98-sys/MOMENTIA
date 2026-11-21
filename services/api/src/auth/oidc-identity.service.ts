@@ -75,6 +75,40 @@ export class OidcIdentityService {
     });
   }
 
+
+  async linkAuthenticatedIdentity(userId: string, principal: OidcPrincipal): Promise<{ linked: true }> {
+    if (!principal.issuer || !principal.subject || principal.subject.length > 512) {
+      throw new UnauthorizedException('The external identity proof is invalid.');
+    }
+    return this.database.transaction(async (client) => {
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`identity-link:${principal.issuer}:${principal.subject}`],
+      );
+      const owner = await client.query(
+        `SELECT user_id FROM auth_identities
+         WHERE provider=$1 AND provider_subject=$2
+         LIMIT 1 FOR UPDATE`,
+        [principal.issuer, principal.subject],
+      );
+      if (owner.rowCount) {
+        if (String(owner.rows[0].user_id) === userId) return { linked: true };
+        throw new ConflictException('This external identity is already linked to another MOMENTIA account.');
+      }
+      const account = await client.query(
+        `SELECT id FROM users WHERE id=$1 AND status='active' FOR UPDATE`,
+        [userId],
+      );
+      if (!account.rowCount) throw new ForbiddenException('The MOMENTIA account is not active.');
+      await client.query(
+        `INSERT INTO auth_identities(user_id,provider,provider_subject)
+         VALUES($1,$2,$3)`,
+        [userId, principal.issuer, principal.subject],
+      );
+      return { linked: true };
+    });
+  }
+
   private async findIdentity(
     client: PoolClient,
     issuer: string,
