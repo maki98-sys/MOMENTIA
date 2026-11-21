@@ -30,4 +30,22 @@ export class AuthIdentityController {
     const principal = await this.verifier.verifyAccessToken(token);
     return this.identities.linkAuthenticatedIdentity(req.userId, principal);
   }
+  @Post('unlink')
+  async unlink(@Req() req: Request & AuthenticatedRequest, @Body() body: unknown) {
+    if (!req.userId || !req.sessionId) {
+      throw new BadRequestException('An authenticated MOMENTIA session is required to unlink an identity.');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body as Record<string, unknown>).some(key => key !== 'identityToken') ||
+        typeof (body as Record<string, unknown>).identityToken !== 'string') {
+      throw new BadRequestException('A fresh identityToken proving control of the identity is required.');
+    }
+    const token = (body as { identityToken: string }).identityToken;
+    if (token.length < 20 || token.length > 16384) {
+      throw new BadRequestException('The external identity token has an invalid length.');
+    }
+    const principal = await this.verifier.verifyAccessToken(token);
+    return this.identities.unlinkAuthenticatedIdentity(req.userId, principal);
+  }
+
 }
