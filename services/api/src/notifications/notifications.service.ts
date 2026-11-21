@@ -34,18 +34,26 @@ export class NotificationsService {
     const decoded = this.decodeCursor(cursor);
     const result = await this.db.query(
       `SELECT id, category, payload, read_at, created_at
-       FROM notifications
-       WHERE user_id = $1
-         AND ($2::timestamptz IS NULL OR (created_at, id) < ($2::timestamptz, $3::uuid))
-         AND ($4::boolean = false OR read_at IS NULL)
-       ORDER BY created_at DESC, id DESC
+       FROM notifications n
+       WHERE n.user_id = $1
+         AND ($2::timestamptz IS NULL OR (n.created_at, n.id) < ($2::timestamptz, $3::uuid))
+         AND ($4::boolean = false OR n.read_at IS NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM notification_preferences np
+           WHERE np.user_id=n.user_id AND np.category=n.category AND np.in_app_enabled=false
+         )
+       ORDER BY n.created_at DESC, n.id DESC
        LIMIT $5`,
       [userId, decoded?.createdAt ?? null, decoded?.id ?? null, unreadOnly, pageSize],
     );
 
     const unread = await this.db.query(
       `SELECT count(*)::int AS count FROM notifications
-       WHERE user_id = $1 AND read_at IS NULL`,
+       WHERE user_id = $1 AND read_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM notification_preferences np
+           WHERE np.user_id=notifications.user_id AND np.category=notifications.category AND np.in_app_enabled=false
+         )`,
       [userId],
     );
     const last = result.rows[result.rows.length - 1] as Record<string, unknown> | undefined;
