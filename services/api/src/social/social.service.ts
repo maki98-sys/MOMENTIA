@@ -125,8 +125,8 @@ export class SocialService {
         if (!media.rowCount) throw new NotFoundException('Media asset not found.');
       }
       if (v.spaceId) {
-        const member = await client.query(`SELECT 1 FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[v.spaceId,userId]);
-        if (!member.rowCount) throw new NotFoundException('Space not found.');
+        const member = await client.query(`SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[v.spaceId,userId]);
+        if (!member.rowCount || member.rows[0].role==='guest') throw new NotFoundException('Space not found.');
       }
       const result = await client.query(
         `INSERT INTO posts(author_id,body,media_asset_id,audience,space_id,status,published_at)
@@ -179,6 +179,7 @@ export class SocialService {
   async addComment(userId: string, postId: string, body: unknown) {
     if(typeof body!=='string'||!body.trim()||body.length>3000) throw new BadRequestException('Comment must contain 1 to 3000 characters.');
     await this.assertCanView(userId,postId);
+    await this.assertCanInteract(userId,postId);
     const r=await this.db.query(`INSERT INTO post_comments(post_id,author_id,body) VALUES($1,$2,$3)
       RETURNING id,post_id,author_id,body,created_at`,[postId,userId,body.trim()]);
     return r.rows[0];
@@ -187,6 +188,7 @@ export class SocialService {
   async react(userId: string, postId: string, reaction: unknown) {
     if(!['like','love','laugh','wow','support'].includes(String(reaction))) throw new BadRequestException('Invalid reaction.');
     await this.assertCanView(userId,postId);
+    await this.assertCanInteract(userId,postId);
     const r=await this.db.query(`INSERT INTO content_reactions(target_type,target_id,user_id,reaction_type)
       VALUES('post',$1,$2,$3) ON CONFLICT(target_type,target_id,user_id)
       DO UPDATE SET reaction_type=EXCLUDED.reaction_type
@@ -198,6 +200,17 @@ export class SocialService {
     await this.assertCanView(userId,postId);
     await this.db.query(`DELETE FROM content_reactions WHERE target_type='post' AND target_id=$1 AND user_id=$2`,[postId,userId]);
     return { removed:true };
+  }
+
+  private async assertCanInteract(userId: string, postId: string) {
+    const result=await this.db.query(`SELECT p.audience,p.space_id,sm.role
+      FROM posts p LEFT JOIN space_memberships sm
+        ON sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'
+      WHERE p.id=$2`,[userId,postId]);
+    if(!result.rowCount) throw new NotFoundException('Post not found.');
+    if(result.rows[0].audience==='space' && result.rows[0].role==='guest') {
+      throw new NotFoundException('Post not found.');
+    }
   }
 
   private async assertCanView(userId: string, postId: string) {
