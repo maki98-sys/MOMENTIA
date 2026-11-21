@@ -134,7 +134,7 @@ export class SessionTokenService {
     };
   }
 
-  async verifyAccessToken(token: string): Promise<string> {
+  async verifyAccessToken(token: string): Promise<{ userId: string; sessionId: string }> {
     if (!token.startsWith('mta_')) throw new UnauthorizedException('Invalid MOMENTIA access token.');
     try {
       const { payload } = await jwtVerify(token.slice(4),this.secret,{
@@ -154,7 +154,7 @@ export class SessionTokenService {
         [payload.sid,payload.sub],
       );
       if (!active.rowCount) throw new UnauthorizedException('MOMENTIA session is revoked or expired.');
-      return String(active.rows[0].user_id);
+      return { userId:String(active.rows[0].user_id),sessionId:String(payload.sid) };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('MOMENTIA access token is invalid or expired.');
