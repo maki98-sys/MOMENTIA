@@ -1,4 +1,4 @@
-import { Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { BillingWebhookService } from './billing-webhook.service';
@@ -24,5 +24,17 @@ export class BillingWebhookWorkerController {
   recover(@Headers('x-worker-token') token?:string) {
     this.authorize(token);
     return this.webhooks.recoverStale(300);
+  }
+
+  @Get('dead-letter')
+  deadLetter(@Headers('x-worker-token') token?:string,@Query('limit') limit?:string) {
+    this.authorize(token);
+    return this.webhooks.listDeadLetter(Number(limit)||50);
+  }
+
+  @Post(':eventId/retry')
+  retry(@Headers('x-worker-token') token?:string,@Param('eventId') eventId?:string) {
+    this.authorize(token);
+    return this.webhooks.retryDeadLetter(String(eventId??''));
   }
 }
