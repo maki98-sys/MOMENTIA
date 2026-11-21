@@ -199,6 +199,9 @@ export class MediaService {
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
         [assetId,asset.rows[0].storage_key_original,...variants.rows.map(v=>v.storage_key)]);
       await client.query(
+        `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
+         WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,[assetId]);
+      await client.query(
         `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,[assetId]);
       await client.query(
         `UPDATE media_uploads SET state='cancelled',updated_at=now()
