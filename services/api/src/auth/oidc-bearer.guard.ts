@@ -22,10 +22,9 @@ export class OidcBearerGuard implements CanActivate {
     if (!match) throw new UnauthorizedException('A bearer access token is required.');
 
     if (match[1].startsWith('mta_')) {
-      const userId = await this.sessions.verifyAccessToken(match[1]);
-      request.userId = userId;
-      const tokenPayload = JSON.parse(Buffer.from(match[1].slice(4).split('.')[1], 'base64url').toString('utf8')) as { sid?: string };
-      request.sessionId = tokenPayload.sid;
+      const session = await this.sessions.verifyAccessToken(match[1]);
+      request.userId = session.userId;
+      request.sessionId = session.sessionId;
       return true;
     }
     const principal = await this.verifier.verifyAccessToken(match[1]);
