@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { createReadStream } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { dirname, join, resolve } from 'node:path';
+import { LocalMediaWorkerStorage } from './storage';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
 const WORKER_TOKEN = required('MEDIA_WORKER_TOKEN');
 const MAINTENANCE_TOKEN = process.env.NOTIFICATION_WORKER_TOKEN;
 const WORKER_ID = process.env.MEDIA_WORKER_ID ?? `media-worker-${process.pid}`;
-const STORAGE_DIR = resolve(process.env.MEDIA_STORAGE_DIR ?? '/var/lib/momentia/media');
+const storage = new LocalMediaWorkerStorage();
 const POLL_MS = Math.min(Math.max(Number(process.env.MEDIA_WORKER_POLL_MS) || 1500, 250), 30000);
 const BATCH_SIZE = Math.min(Math.max(Number(process.env.MEDIA_WORKER_BATCH_SIZE) || 5, 1), 20);
 
@@ -39,14 +39,7 @@ function required(key: string): string {
   return value;
 }
 
-function safePath(storageKey: string): string {
-  if(!storageKey || storageKey.includes('..') || storageKey.startsWith('/') || storageKey.includes('\\')) {
-    throw new Error('Unsafe storage key');
-  }
-  const target=resolve(join(STORAGE_DIR,storageKey));
-  if(!target.startsWith(STORAGE_DIR + '/')) throw new Error('Storage path escapes configured root');
-  return target;
-}
+function safePath(storageKey: string): string { return storage.pathFor(storageKey); }
 
 async function api<T>(path: string, method='POST', body?: unknown, token=WORKER_TOKEN): Promise<T> {
   const response=await fetch(API_URL+path,{
@@ -119,7 +112,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
   for(const definition of definitions) {
     const storageKey=`variants/${job.media_asset_id}/${definition.type}.webp`;
     const target=safePath(storageKey);
-    await mkdir(dirname(target),{recursive:true});
+    await storage.ensureParent(storageKey);
     const output=await sharp(source,{failOn:'error'})
       .rotate()
       .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
@@ -188,7 +181,7 @@ async function deliverJob(job: Job): Promise<void> {
 
 async function processDeletion(deletion: {id:string;storage_key:string}): Promise<boolean> {
   try {
-    await rm(safePath(deletion.storage_key),{force:true});
+    await storage.remove(deletion.storage_key);
     await api(`/internal/media-processing/deletions/${deletion.id}/complete`,'POST',{
       workerId:WORKER_ID,success:true,
     });
