@@ -55,14 +55,24 @@ export class SyncService {
           );
           if (!receipt.rowCount) {
             const previous = await client.query(
-              `SELECT operation_type,state,result,error_code,request_hash FROM sync_operation_receipts
-               WHERE user_id=$1 AND operation_id=$2`,
+              `SELECT operation_type,state,result,error_code,request_hash,created_at FROM sync_operation_receipts
+               WHERE user_id=$1 AND operation_id=$2 FOR UPDATE`,
               [userId, operation.operationId],
             );
             const row = previous.rows[0];
             if (row.operation_type !== operation.type || !row.request_hash || row.request_hash !== requestHash) return { operationId: operation.operationId, state: 'rejected', errorCode: 'IDEMPOTENCY_KEY_REUSED' };
             if (row.state === 'succeeded') return { operationId: operation.operationId, state: 'succeeded', result: row.result, replayed: true };
             if (row.state === 'rejected') return { operationId: operation.operationId, state: 'rejected', errorCode: row.error_code, replayed: true };
+            const processingAgeMs = Date.now() - new Date(row.created_at).getTime();
+            if (row.state === 'processing' && processingAgeMs > 10 * 60 * 1000) {
+              await client.query(
+                `UPDATE sync_operation_receipts
+                 SET state='rejected',error_code='SYNC_OPERATION_INTERRUPTED',completed_at=now()
+                 WHERE user_id=$1 AND operation_id=$2 AND state='processing'`,
+                [userId,operation.operationId],
+              );
+              return { operationId: operation.operationId, state: 'rejected', errorCode: 'SYNC_OPERATION_INTERRUPTED', replayed: true };
+            }
             return { operationId: operation.operationId, state: 'processing' };
           }
 
