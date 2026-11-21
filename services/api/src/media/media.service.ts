@@ -224,9 +224,10 @@ export class MediaService {
       if(asset.rows[0].status==='deleted') return {deleted:true,alreadyDeleted:true};
       const variants=await client.query(
         `SELECT storage_key FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
+      const deletionValues=[`($1,$2)`,...variants.rows.map((_,i)=>`($1,${i+3})`)].join(',');
       await client.query(
         `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-         VALUES($1,$2),${variants.rows.map((_,i)=>'($1,$'+(i+3)+')').join(',')}
+         VALUES ${deletionValues}
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
         [assetId,asset.rows[0].storage_key_original,...variants.rows.map(v=>v.storage_key)]);
       await client.query(
