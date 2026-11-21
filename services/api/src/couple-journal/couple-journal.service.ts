@@ -12,6 +12,19 @@ export class CoupleJournalService {
   return b;
  }
  private async assertCouple(client:any,spaceId:string,userId:string){
+  const entitlement=await client.query(
+   `SELECT COALESCE(p.features->>'couple_journal','true')::boolean AS enabled
+    FROM subscription_plans p
+    LEFT JOIN LATERAL (
+      SELECT us.plan_id FROM user_subscriptions us
+      WHERE us.user_id=$1 AND us.status IN ('trialing','active','past_due')
+        AND (us.current_period_end IS NULL OR us.current_period_end>now())
+      ORDER BY CASE us.status WHEN 'active' THEN 0 WHEN 'trialing' THEN 1 ELSE 2 END,
+               us.created_at DESC LIMIT 1
+    ) s ON s.plan_id=p.id
+    WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
+   [userId]);
+  if(!entitlement.rowCount || entitlement.rows[0].enabled!==true) throw new ConflictException('Couple journal is not included in your current plan.');
   const r=await client.query(
    `SELECT s.id FROM spaces s
     JOIN space_memberships mine ON mine.space_id=s.id AND mine.user_id=$2 AND mine.state='active'
