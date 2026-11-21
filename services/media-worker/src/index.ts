@@ -86,7 +86,7 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
       else if(response.includes('ERROR')) finish(new Error('ClamAV scan failed'));
     });
     socket.on('connect',()=>{
-      socket.write('zINSTREAM\\0');
+      socket.write('zINSTREAM\0');
       const stream=createReadStream(path,{highWaterMark:64*1024});
       stream.on('data',chunk=>{
         const header=Buffer.alloc(4);header.writeUInt32BE(chunk.length,0);
