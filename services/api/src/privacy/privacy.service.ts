@@ -65,6 +65,80 @@ export class PrivacyService {
     });
   }
 
+
+  async claimDueDeletionRequests(workerId: string, limit = 10) {
+    if (!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
+    const batch = Math.min(Math.max(Number(limit) || 10, 1), 25);
+    return this.db.transaction(async client => {
+      const claimed = await client.query(
+        `WITH candidates AS (
+           SELECT id FROM account_deletion_requests
+           WHERE status='pending' AND scheduled_for<=now()
+             AND processing_attempts<8
+             AND (processing_started_at IS NULL OR processing_started_at<now()-interval '15 minutes')
+           ORDER BY scheduled_for,requested_at
+           LIMIT $1 FOR UPDATE SKIP LOCKED
+         )
+         UPDATE account_deletion_requests r
+         SET processing_started_at=now(),processing_worker_id=$2,
+             processing_attempts=r.processing_attempts+1,last_error_code=NULL
+         FROM candidates c WHERE r.id=c.id
+         RETURNING r.id,r.user_id,r.requested_at,r.scheduled_for,r.processing_attempts`,
+        [batch,workerId],
+      );
+      return claimed.rows;
+    });
+  }
+
+  async completeDeletionRequest(workerId: string, requestId: string, input: unknown) {
+    if (!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+      throw new BadRequestException('Invalid deletion request id.');
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Worker result is required.');
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).some(key => !['success','errorCode','purged'].includes(key)) ||
+        typeof value.success !== 'boolean' ||
+        (value.success && value.purged !== true) ||
+        (value.errorCode !== undefined && (typeof value.errorCode !== 'string' || value.errorCode.length > 120))) {
+      throw new BadRequestException('A successful deletion must confirm purged=true.');
+    }
+    return this.db.transaction(async client => {
+      const locked = await client.query(
+        `SELECT id,user_id,processing_attempts FROM account_deletion_requests
+         WHERE id=$1 AND status='pending' AND processing_worker_id=$2
+           AND processing_started_at IS NOT NULL AND scheduled_for<=now()
+         FOR UPDATE`, [requestId,workerId]);
+      if (!locked.rowCount) throw new NotFoundException('Deletion request not found or not owned by this worker.');
+      const request = locked.rows[0];
+      if (!value.success) {
+        const updated = await client.query(
+          `UPDATE account_deletion_requests
+           SET processing_started_at=NULL,processing_worker_id=NULL,
+               last_error_code=$3
+           WHERE id=$1 AND processing_worker_id=$2
+           RETURNING id,status,processing_attempts,last_error_code`,
+          [requestId,workerId,String(value.errorCode ?? 'ACCOUNT_PURGE_FAILED').slice(0,120)]);
+        return { ...updated.rows[0], retryable: Number(request.processing_attempts) < 8 };
+      }
+      await client.query(
+        `UPDATE users SET status='deleted',deleted_at=now(),deletion_requested_at=NULL,
+           email_normalized=NULL,phone_e164=NULL,updated_at=now()
+         WHERE id=$1 AND status='deletion_pending'`, [request.user_id]);
+      const completed = await client.query(
+        `UPDATE account_deletion_requests
+         SET status='completed',completed_at=now(),processing_started_at=NULL,
+             processing_worker_id=NULL,last_error_code=NULL
+         WHERE id=$1 AND processing_worker_id=$2
+         RETURNING id,status,completed_at`, [requestId,workerId]);
+      await client.query(
+        `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+         VALUES($1,$1,'account.deletion_completed','account',$1,jsonb_build_object('requestId',$2))`,
+        [request.user_id,requestId]);
+      return completed.rows[0];
+    });
+  }
+
   async getDeletionStatus(userId: string) {
     const result = await this.db.query(
       `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at
