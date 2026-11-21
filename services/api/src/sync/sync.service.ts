@@ -558,7 +558,7 @@ export class SyncService {
          LEFT JOIN circle_details c ON c.space_id=s.id
          LEFT JOIN couple_details p ON p.space_id=s.id
          WHERE m.user_id=$1 AND m.state='active'
-         ORDER BY s.updated_at DESC,s.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['spaces'] ?? 0]);
+         ORDER BY s.created_at DESC,s.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['spaces'] ?? 0]);
       data.spaces = page('spaces', r.rows);
     }
     if (has('posts')) {
@@ -573,7 +573,7 @@ export class SyncService {
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
-         ORDER BY p.updated_at DESC,p.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['posts'] ?? 0]);
+         ORDER BY p.created_at DESC,p.id LIMIT $2 OFFSET $3`, [userId,limit,offsets['posts'] ?? 0]);
       data.posts = page('posts', r.rows);
     }
     if (has('comments')) {
@@ -659,7 +659,7 @@ export class SyncService {
       const r = await client.query(
         `SELECT id,requester_id,target_id,state,created_at,updated_at
          FROM user_relationships WHERE requester_id=$1 OR target_id=$1
-         ORDER BY updated_at DESC,id LIMIT $2 OFFSET $3`, [userId,limit,offsets['relationships'] ?? 0]);
+         ORDER BY created_at DESC,id LIMIT $2 OFFSET $3`, [userId,limit,offsets['relationships'] ?? 0]);
       data.relationships = page('relationships', r.rows);
     }
     if (has('reactions')) {
