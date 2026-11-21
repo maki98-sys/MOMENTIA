@@ -7,6 +7,11 @@ export const environmentSchema = Joi.object({
   DATABASE_SSL: Joi.boolean().truthy('true').falsy('false').default(false),
   DATABASE_POOL_MAX: Joi.number().integer().min(1).max(50).default(10),
   CORS_ORIGINS: Joi.string().allow('').default(''),
+  MOMENTIA_MODERATOR_USER_IDS: Joi.string().allow('').default('').custom((value, helpers) => {
+    const ids = value.split(',').map((entry: string) => entry.trim()).filter(Boolean);
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return ids.every((id: string) => uuid.test(id)) ? value : helpers.error('any.invalid');
+  }),
   MEDIA_WORKER_TOKEN: Joi.string().min(32),
   NOTIFICATION_WORKER_TOKEN: Joi.string().min(32),
   PUSH_TOKEN_ENCRYPTION_KEY: Joi.string().base64().custom((value, helpers) => Buffer.from(value, 'base64').length === 32 ? value : helpers.error('any.invalid')),
