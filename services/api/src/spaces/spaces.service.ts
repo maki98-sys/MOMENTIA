@@ -195,6 +195,37 @@ export class SpacesService {
     });
   }
 
+
+  async archiveEndedEvents(graceHours = 24) {
+    const grace = Math.min(Math.max(Number(graceHours) || 24, 1), 168);
+    return this.database.transaction(async client => {
+      const candidates = await client.query(
+        `WITH ended AS (
+           SELECT s.id FROM spaces s
+           JOIN event_details ed ON ed.space_id=s.id
+           WHERE s.type='EVENT' AND s.status='active'
+             AND ed.ends_at IS NOT NULL
+             AND ed.ends_at < now()-($1::int * interval '1 hour')
+           ORDER BY ed.ends_at
+           LIMIT 100
+           FOR UPDATE OF s SKIP LOCKED
+         )
+         UPDATE spaces s SET status='archived',updated_at=now()
+         FROM ended e WHERE s.id=e.id
+         RETURNING s.id,s.owner_id,s.status`,
+        [grace],
+      );
+      for (const event of candidates.rows) {
+        await client.query(
+          `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+           VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3))`,
+          [event.id,event.owner_id,grace],
+        );
+      }
+      return { archived: candidates.rowCount ?? 0, eventIds: candidates.rows.map(row => row.id) };
+    });
+  }
+
   async getMine(userId: string, spaceId: string) {
     const result = await this.database.query(
       `SELECT s.id, s.type, s.name, s.visibility, s.status, s.owner_id,
