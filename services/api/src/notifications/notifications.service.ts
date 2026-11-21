@@ -167,4 +167,68 @@ export class NotificationsService {
     );
     return result.rows[0];
   }
+
+  async claimPushDeliveries(limit = 50) {
+    const batchSize = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    return this.db.transaction(async client => {
+      const claimed = await client.query(
+        `WITH candidates AS (
+           SELECT o.id FROM notification_outbox o
+           JOIN devices d ON d.id=o.device_id AND d.revoked_at IS NULL
+           WHERE o.channel='push' AND o.status IN ('pending','failed')
+             AND o.next_attempt_at<=now() AND o.attempts<8
+             AND d.push_token_encrypted IS NOT NULL
+           ORDER BY o.next_attempt_at,o.created_at
+           FOR UPDATE OF o SKIP LOCKED LIMIT $1
+         )
+         UPDATE notification_outbox o SET status='processing',attempts=o.attempts+1
+         FROM candidates c WHERE o.id=c.id
+         RETURNING o.id,o.notification_id,o.user_id,o.device_id,o.attempts`,
+        [batchSize],
+      );
+      if (!claimed.rowCount) return [];
+      const ids = claimed.rows.map(row => row.id);
+      const details = await client.query(
+        `SELECT o.id,o.notification_id,o.user_id,o.device_id,o.attempts,
+                d.platform,d.push_token_encrypted,n.category,n.payload
+         FROM notification_outbox o
+         JOIN devices d ON d.id=o.device_id
+         JOIN notifications n ON n.id=o.notification_id
+         WHERE o.id=ANY($1::uuid[])
+         ORDER BY o.created_at,o.id`,[ids],
+      );
+      return details.rows;
+    });
+  }
+
+  async completePushDelivery(
+    outboxId: string,
+    result: { delivered: true; providerMessageId?: string } | { delivered: false; errorCode: string },
+  ) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(outboxId)) {
+      throw new BadRequestException('outboxId must be a UUID.');
+    }
+    if (result.delivered) {
+      const updated = await this.db.query(
+        `UPDATE notification_outbox SET status='delivered',provider_message_id=$2,
+           delivered_at=now(),last_error_code=NULL
+         WHERE id=$1 AND status='processing' RETURNING id,status,delivered_at`,
+        [outboxId,result.providerMessageId?.slice(0,255) ?? null],
+      );
+      if (!updated.rowCount) throw new NotFoundException('Processing delivery not found.');
+      return updated.rows[0];
+    }
+    if (!result.errorCode || result.errorCode.length > 120) throw new BadRequestException('A valid delivery error code is required.');
+    const updated = await this.db.query(
+      `UPDATE notification_outbox SET
+         status=CASE WHEN attempts>=8 THEN 'cancelled' ELSE 'failed' END,
+         last_error_code=$2,
+         next_attempt_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+       WHERE id=$1 AND status='processing'
+       RETURNING id,status,attempts,next_attempt_at`,
+      [outboxId,result.errorCode],
+    );
+    if (!updated.rowCount) throw new NotFoundException('Processing delivery not found.');
+    return updated.rows[0];
+  }
 }
