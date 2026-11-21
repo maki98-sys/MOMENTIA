@@ -204,13 +204,15 @@ export class PrivacyService {
       if (!value.success) {
         const updated = await client.query(
           `UPDATE account_deletion_requests
-           SET processing_started_at=NULL,processing_worker_id=NULL,
+           SET status=CASE WHEN processing_attempts>=8 THEN 'failed' ELSE 'pending' END,
+               failed_at=CASE WHEN processing_attempts>=8 THEN now() ELSE NULL END,
+               processing_started_at=NULL,processing_worker_id=NULL,
                last_error_code=$3,
                scheduled_for=CASE WHEN processing_attempts<8
                  THEN now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(processing_attempts,7))::integer))
                  ELSE scheduled_for END
            WHERE id=$1 AND processing_worker_id=$2
-           RETURNING id,status,processing_attempts,last_error_code`,
+           RETURNING id,status,processing_attempts,last_error_code,failed_at`,
           [requestId,workerId,String(value.errorCode ?? 'ACCOUNT_PURGE_FAILED').slice(0,120)]);
         return { ...updated.rows[0], retryable: Number(request.processing_attempts) < 8 };
       }
@@ -326,12 +328,13 @@ export class PrivacyService {
     return this.db.transaction(async client => {
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
-      if (!account.rowCount || account.rows[0].status!=='deletion_pending') {
+      if (!account.rowCount || !['deletion_pending','active'].includes(account.rows[0].status)) {
         throw new ConflictException('There is no cancellable deletion request.');
       }
       const request = await client.query(
         `UPDATE account_deletion_requests SET status='cancelled',cancelled_at=now()
-         WHERE user_id=$1 AND status='pending' AND scheduled_for>now()
+         WHERE user_id=$1 AND status IN ('pending','failed')
+           AND (status='failed' OR scheduled_for>now())
          RETURNING id`,[userId]);
       if (!request.rowCount) throw new ConflictException('The deletion request can no longer be cancelled.');
       await client.query(
