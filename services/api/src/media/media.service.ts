@@ -123,7 +123,10 @@ export class MediaService {
         await client.query(
           `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key)
            VALUES($1,$2,$3,$4,$5)`,[uploadId,partNumber,bytes.length,checksum,key]);
-        await client.query(`UPDATE media_uploads SET state='uploading',updated_at=now() WHERE id=$1`,[uploadId]);
+        await client.query(
+          `UPDATE media_uploads SET state='uploading',
+             bytes_received=(SELECT COALESCE(sum(byte_size),0) FROM media_upload_parts WHERE upload_id=$1),
+             updated_at=now() WHERE id=$1`,[uploadId]);
       });
     } catch(error) {
       await this.storage.remove(key).catch(()=>undefined);
@@ -248,8 +251,15 @@ export class MediaService {
   async getUpload(userId:string,uploadId:string) {
     const r=await this.db.query(
       `SELECT u.id,u.state,u.bytes_received,u.last_error_code,u.created_at,u.updated_at,
-              a.id media_asset_id,a.status asset_status,a.size_bytes,a.mime_type_detected
+              a.id media_asset_id,a.status asset_status,a.size_bytes,a.mime_type_detected,
+              COALESCE(parts.received_parts,'[]'::jsonb) received_parts
        FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'partNumber',p.part_number,'sizeBytes',p.byte_size,'checksumSha256',p.checksum_sha256
+         ) ORDER BY p.part_number) received_parts
+         FROM media_upload_parts p WHERE p.upload_id=u.id
+       ) parts ON true
        WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
     if(!r.rowCount) throw new NotFoundException('Upload not found.');
     return r.rows[0];
