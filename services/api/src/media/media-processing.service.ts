@@ -166,7 +166,12 @@ export class MediaProcessingService {
          RETURNING id,media_asset_id,storage_key`,
         [batch],
       );
-      const uploadIds=expired.rows.map(row=>row.id);
+      const expiredAssetIds=expired.rows.map(row=>row.media_asset_id);
+      const expiredUploads=expiredAssetIds.length ? await client.query(
+        `SELECT id FROM media_uploads WHERE media_asset_id=ANY($1::uuid[]) AND state='cancelled' AND last_error_code='UPLOAD_EXPIRED'`,
+        [expiredAssetIds],
+      ) : {rows:[]};
+      const uploadIds=expiredUploads.rows.map(row=>row.id);
       let removedParts=0;
       if(uploadIds.length) {
         const parts=await client.query(
