@@ -8,12 +8,18 @@ describe('environmentSchema', () => {
   });
 
   it('applies safe development defaults', () => {
-    const result = environmentSchema.validate({ DATABASE_URL: database });
+    const result = environmentSchema.validate({ DATABASE_URL: database, MOMENTIA_SESSION_SECRET: 's'.repeat(32) });
     expect(result.error).toBeUndefined();
     expect(result.value.NODE_ENV).toBe('development');
     expect(result.value.PORT).toBe(3000);
     expect(result.value.DATABASE_POOL_MAX).toBe(10);
     expect(result.value.DATABASE_SSL).toBe(false);
+    expect(result.value.MOMENTIA_SESSION_SECRET).toBe('s'.repeat(32));
+  });
+
+  it('requires a strong session secret', () => {
+    expect(environmentSchema.validate({ DATABASE_URL: database }).error).toBeDefined();
+    expect(environmentSchema.validate({ DATABASE_URL: database, MOMENTIA_SESSION_SECRET: 'short' }).error).toBeDefined();
   });
 
   it('rejects unsupported runtime environments', () => {
