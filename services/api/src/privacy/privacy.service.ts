@@ -30,6 +30,19 @@ export class PrivacyService {
       ['coupleJournalEntries', `SELECT id,space_id,encode(ciphertext,'base64') ciphertext_base64,encode(nonce,'base64') nonce_base64,encryption_version,key_version,created_at,updated_at,deleted_at FROM couple_journal_entries WHERE author_id=$1 ORDER BY created_at`],
       ['coupleKeyEnvelopes', `SELECT space_id,key_version,algorithm,encode(encrypted_key,'base64') encrypted_key_base64,encode(nonce,'base64') nonce_base64,created_at,updated_at FROM couple_space_key_envelopes WHERE user_id=$1 ORDER BY space_id,key_version`],
       ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at,failed_at,last_error_code FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
+      ['authIdentities', `SELECT provider,created_at FROM auth_identities WHERE user_id=$1 ORDER BY created_at`],
+      ['notificationPreferences', `SELECT category,in_app_enabled,push_enabled,updated_at FROM notification_preferences WHERE user_id=$1 ORDER BY category`],
+      ['spacesJoined', `SELECT s.id,s.type,s.owner_id,s.name,s.visibility,s.status,s.settings,m.role,m.state,m.joined_at,m.left_at FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.user_id=$1 ORDER BY s.created_at`],
+      ['albumsCreated', `SELECT id,space_id,name,description,visibility,event_starts_at,event_ends_at,created_at,updated_at FROM space_albums WHERE created_by=$1 ORDER BY created_at`],
+      ['albumItemsAdded', `SELECT i.id,i.album_id,i.media_asset_id,i.caption,i.occurred_at,i.status,i.created_at FROM space_album_items i WHERE i.added_by=$1 ORDER BY i.created_at`],
+      ['timelineEntries', `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id WHERE m.user_id=$1 ORDER BY t.occurred_at`],
+      ['audioSessionsHosted', `SELECT id,space_id,state,source_provider,provider_context_id,current_item_id,position_ms,playback_state,scheduled_at,server_version,created_at,updated_at FROM audio_sessions WHERE host_user_id=$1 ORDER BY created_at`],
+      ['audioParticipations', `SELECT p.id,p.session_id,p.device_id,p.role,p.joined_at,p.last_heartbeat_at,p.left_at FROM audio_participants p WHERE p.user_id=$1 ORDER BY p.joined_at`],
+      ['audioQueueItemsAdded', `SELECT q.id,q.session_id,q.provider_track_reference,q.position,q.state,q.created_at FROM audio_queue_items q WHERE q.added_by=$1 ORDER BY q.created_at`],
+      ['audioVotes', `SELECT v.queue_item_id,v.vote,v.created_at FROM audio_votes v WHERE v.user_id=$1 ORDER BY v.created_at`],
+      ['joinRequests', `SELECT id,space_id,status,created_at,reviewed_at FROM space_join_requests WHERE user_id=$1 ORDER BY created_at`],
+      ['moderationReports', `SELECT id,target_type,target_id,reason,details,status,created_at,resolved_at FROM user_reports WHERE reporter_id=$1 ORDER BY created_at`],
+      ['storageUsageEvents', `SELECT event_type,bytes_delta,idempotency_key,metadata,created_at FROM storage_usage_events WHERE user_id=$1 ORDER BY created_at`],
     ];
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
