@@ -22,6 +22,9 @@ export class PrivacyService {
       ['notifications', `SELECT id,category,payload,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at`],
       ['reports', `SELECT id,target_type,target_id,reason,details,status,created_at,resolved_at FROM user_reports WHERE reporter_id=$1 ORDER BY created_at`],
       ['media', `SELECT id,mime_type_detected,size_bytes,width,height,checksum_sha256,status,created_at,deleted_at FROM media_assets WHERE owner_id=$1 ORDER BY created_at`],
+      ['mediaVariants', `SELECT v.media_asset_id,v.variant_key,v.mime_type,v.size_bytes,v.width,v.height,v.created_at
+       FROM media_variants v JOIN media_assets a ON a.id=v.media_asset_id
+       WHERE a.owner_id=$1 ORDER BY v.created_at`],
       ['ownedSpaces', `SELECT id,type,name,visibility,status,created_at,updated_at FROM spaces WHERE owner_id=$1 ORDER BY created_at`],
       ['spaceInvitationsCreated', `SELECT id,space_id,role,expires_at,max_uses,uses,approval_required,revoked_at,created_at FROM space_invitations WHERE created_by=$1 ORDER BY created_at`],
       ['coupleInvitationsSent', `SELECT id,invitee_user_id,expires_at,accepted_at,revoked_at,created_at FROM couple_space_invitations WHERE inviter_user_id=$1 ORDER BY created_at`],
@@ -33,6 +36,16 @@ export class PrivacyService {
       ['authIdentities', `SELECT provider,created_at FROM auth_identities WHERE user_id=$1 ORDER BY created_at`],
       ['notificationPreferences', `SELECT category,in_app_enabled,push_enabled,updated_at FROM notification_preferences WHERE user_id=$1 ORDER BY category`],
       ['spacesJoined', `SELECT s.id,s.type,s.owner_id,s.name,s.visibility,s.status,s.settings,m.role,m.state,m.joined_at,m.left_at FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.user_id=$1 ORDER BY s.created_at`],
+      ['spaceSubtypeDetails', `SELECT s.id AS space_id,s.type,
+        CASE WHEN s.type='EVENT' THEN jsonb_build_object('startsAt',e.starts_at,'endsAt',e.ends_at,'timezone',e.timezone,'moderationMode',e.moderation_mode,'downloadPolicy',e.download_policy)
+             WHEN s.type='CIRCLE' THEN jsonb_build_object('description',c.description,'joinPolicy',c.join_policy)
+             WHEN s.type='COUPLE' THEN jsonb_build_object('anniversaryDate',p.anniversary_date,'settings',p.settings)
+             ELSE '{}'::jsonb END AS details
+       FROM spaces s JOIN space_memberships m ON m.space_id=s.id
+       LEFT JOIN event_details e ON e.space_id=s.id
+       LEFT JOIN circle_details c ON c.space_id=s.id
+       LEFT JOIN couple_details p ON p.space_id=s.id
+       WHERE m.user_id=$1 ORDER BY s.created_at`],
       ['albumsCreated', `SELECT id,space_id,name,description,visibility,event_starts_at,event_ends_at,created_at,updated_at FROM space_albums WHERE created_by=$1 ORDER BY created_at`],
       ['albumItemsAdded', `SELECT i.id,i.album_id,i.media_asset_id,i.caption,i.occurred_at,i.status,i.created_at FROM space_album_items i WHERE i.added_by=$1 ORDER BY i.created_at`],
       ['timelineEntries', `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id WHERE m.user_id=$1 ORDER BY t.occurred_at`],
