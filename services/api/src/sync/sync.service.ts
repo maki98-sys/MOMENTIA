@@ -508,7 +508,7 @@ export class SyncService {
 
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
       throw new BadRequestException('Snapshot input must be an object.');
     }
@@ -580,7 +580,7 @@ export class SyncService {
          LEFT JOIN couple_details p ON p.space_id=s.id
          WHERE m.user_id=$1 AND m.state='active'
          ORDER BY s.created_at DESC,s.id`, [userId]);
-      data.spaces = page('spaces', r.rows);
+      data.spaces = r.rows;
     }
     if (has('posts')) {
       const r = await client.query(
@@ -595,7 +595,7 @@ export class SyncService {
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
          ORDER BY p.created_at DESC,p.id`, [userId]);
-      data.posts = page('posts', r.rows);
+      data.posts = r.rows;
     }
     if (has('comments')) {
       const r = await client.query(
@@ -610,7 +610,7 @@ export class SyncService {
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
          ORDER BY c.created_at DESC,c.id`, [userId]);
-      data.comments = page('comments', r.rows);
+      data.comments = r.rows;
     }
     if (has('timeline')) {
       const r = await client.query(
@@ -621,7 +621,7 @@ export class SyncService {
            AND (t.post_id IS NULL OR EXISTS(SELECT 1 FROM posts p WHERE p.id=t.post_id AND p.status='published'))
            AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
          ORDER BY t.occurred_at DESC,t.id`, [userId]);
-      data.timeline = page('timeline', r.rows);
+      data.timeline = r.rows;
     }
     if (has('albums')) {
       const r = await client.query(
@@ -633,13 +633,13 @@ export class SyncService {
          WHERE m.user_id=$1 AND m.state='active'
            AND (a.visibility='members' OR m.role IN ('owner','admin','moderator'))
          ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id`, [userId]);
-      data.albums = page('albums', r.rows);
+      data.albums = r.rows;
     }
     if (has('notifications')) {
       const r = await client.query(
         `SELECT id,category,payload,read_at,created_at FROM notifications
          WHERE user_id=$1 ORDER BY created_at DESC,id`, [userId]);
-      data.notifications = page('notifications', r.rows);
+      data.notifications = r.rows;
     }
     if (has('rsvps')) {
       const r = await client.query(
@@ -647,7 +647,7 @@ export class SyncService {
          FROM event_rsvps r JOIN space_memberships m ON m.space_id=r.space_id AND m.user_id=r.user_id
          WHERE r.user_id=$1 AND m.state='active'
          ORDER BY r.responded_at DESC,r.id`, [userId]);
-      data.rsvps = page('rsvps', r.rows);
+      data.rsvps = r.rows;
     }
     if (has('coupleJournal')) {
       const r = await client.query(
@@ -658,7 +658,7 @@ export class SyncService {
          JOIN spaces s ON s.id=j.space_id AND s.type='COUPLE' AND s.status='active'
          WHERE m.state='active' AND j.deleted_at IS NULL
          ORDER BY j.created_at DESC,j.id`, [userId]);
-      data.coupleJournal = page('coupleJournal', r.rows);
+      data.coupleJournal = r.rows;
     }
     if (has('media')) {
       const r = await client.query(
@@ -666,7 +666,7 @@ export class SyncService {
                 a.status,a.created_at,a.processing_completed_at
          FROM media_assets a WHERE a.owner_id=$1 AND a.status <> 'deleted'
          ORDER BY a.created_at DESC,a.id`, [userId]);
-      data.media = page('media', r.rows);
+      data.media = r.rows;
     }
     if (has('profile')) {
       const r = await client.query(
@@ -681,7 +681,7 @@ export class SyncService {
         `SELECT id,requester_id,target_id,state,created_at,updated_at
          FROM user_relationships WHERE requester_id=$1 OR target_id=$1
          ORDER BY created_at DESC,id`, [userId]);
-      data.relationships = page('relationships', r.rows);
+      data.relationships = r.rows;
     }
     if (has('reactions')) {
       const r = await client.query(
@@ -711,19 +711,19 @@ export class SyncService {
                  (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
                  (b.blocker_id=p.author_id AND b.blocked_id=$1)))
          ) ORDER BY r.created_at DESC,r.id`, [userId]);
-      data.reactions = page('reactions', r.rows);
+      data.reactions = r.rows;
     }
     if (has('notificationPreferences')) {
       const r = await client.query(
         `SELECT category,in_app_enabled,push_enabled,updated_at
          FROM notification_preferences WHERE user_id=$1 ORDER BY category`, [userId]);
-      data.notificationPreferences = page('notificationPreferences', r.rows);
+      data.notificationPreferences = r.rows;
     }
     if (has('devices')) {
       const r = await client.query(
         `SELECT id,platform,last_seen_at,revoked_at,created_at
          FROM devices WHERE user_id=$1 ORDER BY created_at DESC,id`, [userId]);
-      data.devices = page('devices', r.rows);
+      data.devices = r.rows;
     }
     if (has('coupleKeyEnvelopes')) {
       const r = await client.query(
@@ -735,14 +735,14 @@ export class SyncService {
          JOIN spaces s ON s.id=e.space_id AND s.type='COUPLE' AND s.status='active'
          WHERE e.user_id=$1 AND m.state='active'
          ORDER BY e.space_id,e.key_version DESC`, [userId]);
-      data.coupleKeyEnvelopes = page('coupleKeyEnvelopes', r.rows);
+      data.coupleKeyEnvelopes = r.rows;
     }
     let cursorValue = frozenCursor;
     let snapshotAt: unknown = null;
     let activeSnapshotId = snapshotId ?? null;
     if (!frozenData) {
       const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
-      if (totalRows > 25000) throw new BadRequestException('Snapshot exceeds the maximum materialized record count; request fewer sections.');
+      if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 32 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
       const cursor = await client.query(
         `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
       cursorValue = String(cursor.rows[0].cursor);
