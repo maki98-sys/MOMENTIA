@@ -361,6 +361,42 @@ export class PrivacyService {
         [request.user_id]);
       await client.query(
         `DELETE FROM couple_journal_entries WHERE author_id=$1`,[request.user_id]);
+      // Stop all Social Audio activity before the account becomes a non-authenticating tombstone.
+      // This also covers retained COUPLE spaces and sessions in spaces transferred to another owner.
+      const hostedAudio = await client.query(
+        `SELECT id FROM audio_sessions
+         WHERE host_user_id=$1 AND state IN ('created','playing','paused')
+         FOR UPDATE`,
+        [request.user_id],
+      );
+      if (hostedAudio.rowCount) {
+        const sessionIds = hostedAudio.rows.map((row: {id:string}) => row.id);
+        await client.query(
+          `UPDATE audio_participants SET left_at=COALESCE(left_at,now())
+           WHERE session_id=ANY($1::uuid[]) AND left_at IS NULL`,
+          [sessionIds],
+        );
+        await client.query(
+          `UPDATE audio_queue_items SET state='played'
+           WHERE session_id=ANY($1::uuid[]) AND state IN ('queued','current')`,
+          [sessionIds],
+        );
+        await client.query(
+          `UPDATE audio_sessions SET state='ended',playback_state='ended',position_ms=0,
+             current_item_id=NULL,server_version=server_version+1,updated_at=now()
+           WHERE id=ANY($1::uuid[])`,
+          [sessionIds],
+        );
+      }
+      await client.query(
+        `UPDATE audio_participants SET left_at=COALESCE(left_at,now())
+         WHERE user_id=$1 AND left_at IS NULL`,
+        [request.user_id],
+      );
+      await client.query(
+        `DELETE FROM audio_votes WHERE user_id=$1`,
+        [request.user_id],
+      );
       await client.query(
         `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
          WHERE user_id=$1 AND revoked_at IS NULL`, [request.user_id]);
