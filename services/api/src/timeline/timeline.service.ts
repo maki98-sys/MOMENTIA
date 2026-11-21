@@ -46,8 +46,9 @@ export class TimelineService {
     const occurredAt=v.occurredAt??new Date().toISOString();
     if(typeof occurredAt!=='string'||Number.isNaN(Date.parse(occurredAt))) throw new BadRequestException('occurredAt must be a valid ISO date-time.');
     return this.db.transaction(async client=>{
-      const member=await client.query(`SELECT 1 FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
+      const member=await client.query(`SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
       if(!member.rowCount) throw new NotFoundException('Space not found.');
+      if(member.rows[0].role==='guest') throw new NotFoundException('Space not found.');
       if(hasPost) {
         const post=await client.query(`SELECT id FROM posts WHERE id=$1 AND space_id=$2 AND status='published'`,[v.postId,spaceId]);
         if(!post.rowCount) throw new NotFoundException('Published post in this space not found.');
