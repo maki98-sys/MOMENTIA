@@ -8,6 +8,8 @@ export const environmentSchema = Joi.object({
   DATABASE_POOL_MAX: Joi.number().integer().min(1).max(50).default(10),
   CORS_ORIGINS: Joi.string().allow('').default(''),
   MEDIA_WORKER_TOKEN: Joi.string().min(32),
+  NOTIFICATION_WORKER_TOKEN: Joi.string().min(32),
+  PUSH_TOKEN_ENCRYPTION_KEY: Joi.string().base64().custom((value, helpers) => Buffer.from(value, 'base64').length === 32 ? value : helpers.error('any.invalid')),
   AUDIO_REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }),
   OIDC_ISSUER: Joi.string().uri({ scheme: ['https'] }),
   OIDC_AUDIENCE: Joi.string().min(1),
