@@ -163,36 +163,55 @@ export class MediaService {
 
   async completeResumableUpload(userId:string,uploadId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
-    const upload=await this.db.query(
-      `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256
-       FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
-       WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
-    if(!upload.rowCount) throw new NotFoundException('Upload not found.');
-    if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) { await this.enqueueUploadPartCleanup(uploadId); return this.getUpload(userId,uploadId); }
-    const parts=await this.db.query(
-      `SELECT part_number,byte_size,checksum_sha256,storage_key FROM media_upload_parts
-       WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
-    if(!parts.rowCount) throw new ConflictException('No upload parts have been received.');
-    for(let i=0;i<parts.rows.length;i++) if(Number(parts.rows[i].part_number)!==i) throw new ConflictException('Upload parts are incomplete.');
-    const buffers:Buffer[]=[];
-    let total=0;
-    for(const part of parts.rows) {
-      const bytes=await this.storage.read(String(part.storage_key));
-      if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
-        throw new ConflictException('A stored upload part failed integrity verification.');
+    const prepared=await this.db.transaction(async client=>{
+      const upload=await client.query(
+        `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256
+         FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+         WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
+      if(!upload.rowCount) throw new NotFoundException('Upload not found.');
+      if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) return {alreadyComplete:true,upload:upload.rows[0],parts:[]};
+      if(upload.rows[0].state==='assembling') throw new ConflictException('Upload assembly is already in progress.');
+      if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not available for assembly.');
+      await client.query(`UPDATE media_uploads SET state='assembling',updated_at=now() WHERE id=$1`,[uploadId]);
+      const parts=await client.query(
+        `SELECT part_number,byte_size,checksum_sha256,storage_key FROM media_upload_parts
+         WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
+      return {alreadyComplete:false,upload:upload.rows[0],parts:parts.rows};
+    });
+    if(prepared.alreadyComplete) {
+      await this.enqueueUploadPartCleanup(uploadId);
+      return this.getUpload(userId,uploadId);
+    }
+    try {
+      const parts=prepared.parts;
+      if(!parts.length) throw new ConflictException('No upload parts have been received.');
+      for(let i=0;i<parts.length;i++) if(Number(parts[i].part_number)!==i) throw new ConflictException('Upload parts are incomplete.');
+      const buffers:Buffer[]=[];
+      let total=0;
+      for(const part of parts) {
+        const bytes=await this.storage.read(String(part.storage_key));
+        if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
+          throw new ConflictException('A stored upload part failed integrity verification.');
+        }
+        total+=bytes.length;
+        if(total>Number(prepared.upload.size_bytes)||total>MAX_UPLOAD_BYTES) throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
+        buffers.push(bytes);
       }
-      total+=bytes.length;
-      if(total>Number(upload.rows[0].size_bytes)||total>MAX_UPLOAD_BYTES) throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
-      buffers.push(bytes);
+      if(total!==Number(prepared.upload.size_bytes)) throw new ConflictException('Received parts do not match the declared file size.');
+      const complete=Buffer.concat(buffers,total);
+      if(createHash('sha256').update(complete).digest('hex')!==String(prepared.upload.checksum_sha256).toLowerCase()) {
+        throw new BadRequestException('Final file checksum mismatch.');
+      }
+      const result=await this.receiveUpload(userId,uploadId,complete,true);
+      await this.enqueueUploadPartCleanup(uploadId);
+      return result;
+    } catch(error) {
+      await this.db.query(
+        `UPDATE media_uploads SET state='uploading',updated_at=now()
+         WHERE id=$1 AND uploader_id=$2 AND state='assembling'`,[uploadId,userId],
+      ).catch(()=>undefined);
+      throw error;
     }
-    if(total!==Number(upload.rows[0].size_bytes)) throw new ConflictException('Received parts do not match the declared file size.');
-    const complete=Buffer.concat(buffers,total);
-    if(createHash('sha256').update(complete).digest('hex')!==String(upload.rows[0].checksum_sha256).toLowerCase()) {
-      throw new BadRequestException('Final file checksum mismatch.');
-    }
-    const result=await this.receiveUpload(userId,uploadId,complete);
-    await this.enqueueUploadPartCleanup(uploadId);
-    return result;
   }
 
   async receiveUpload(userId:string,uploadId:string,bytes:Buffer,assembling=false) {
