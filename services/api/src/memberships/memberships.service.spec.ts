@@ -29,23 +29,26 @@ describe('MembershipsService', () => {
   });
 
   it('allows only the owner to grant admin role', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.changeRole('admin-1', 's1', 'u2', 'admin')).rejects.toBeInstanceOf(NotFoundException);
-    expect(query.mock.calls[0][0]).toContain("owner.role = 'owner'");
+    expect(clientQuery.mock.calls[0][0]).toContain("owner.role='owner'");
   });
 
   it('prevents admins from changing another admin role', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.changeRole('admin-1', 's1', 'admin-2', 'member')).rejects.toBeInstanceOf(NotFoundException);
-    expect(query.mock.calls[0][0]).toContain("target.role <> 'admin' OR EXISTS");
-    expect(query.mock.calls[0][0]).toContain("owner.role = 'owner'");
+    expect(clientQuery.mock.calls[0][0]).toContain("target.role<>'admin'");
+    expect(clientQuery.mock.calls[0][0]).toContain("owner.role='owner'");
   });
 
   it('prevents moderators from removing another moderator', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.remove('mod-1', 's1', 'mod-2')).rejects.toBeInstanceOf(NotFoundException);
-    expect(query.mock.calls[0][0]).toContain("target.role <> 'moderator' OR EXISTS");
-    expect(query.mock.calls[0][0]).toContain("admin_or_owner.role IN ('owner','admin')");
+    expect(clientQuery.mock.calls[0][0]).toContain("target.role <> 'moderator' OR EXISTS");
+    expect(clientQuery.mock.calls[0][0]).toContain("admin_or_owner.role IN ('owner','admin')");
   });
 
   it('prevents removing oneself through the moderation endpoint', async () => {
@@ -84,15 +87,17 @@ describe('MembershipsService', () => {
   });
 
   it('prevents owner self-removal through leave', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.leave('owner-1', 's1')).rejects.toBeInstanceOf(BadRequestException);
-    expect(query.mock.calls[0][0]).toContain("role <> 'owner'");
+    expect(clientQuery.mock.calls[0][0]).toContain("role <> 'owner'");
   });
 
   it('scopes member removal to an authorized active moderator', async () => {
-    query.mockResolvedValueOnce({ rows: [{ user_id: 'u2', state: 'removed' }], rowCount: 1 });
+    const clientQuery=jest.fn().mockResolvedValueOnce({rows:[{user_id:'u2',state:'removed'}],rowCount:1}).mockResolvedValueOnce({rows:[],rowCount:0}).mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.remove('mod-1', 's1', 'u2')).resolves.toMatchObject({ state: 'removed' });
-    expect(query.mock.calls[0][0]).toContain("actor.role IN ('owner','admin','moderator')");
-    expect(query.mock.calls[0][1]).toEqual(['mod-1', 's1', 'u2']);
+    expect(clientQuery.mock.calls[0][0]).toContain("actor.role IN ('owner','admin','moderator')");
+    expect(clientQuery.mock.calls[0][1]).toEqual(['mod-1', 's1', 'u2']);
   });
 });
