@@ -9,6 +9,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export class SyncService {
   constructor(private readonly db: DatabaseService) {}
 
+  private canonicalJson(value: unknown): string {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(item => this.canonicalJson(item)).join(',')}]`;
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${this.canonicalJson(record[key])}`).join(',')}}`;
+  }
+
+  private requestFingerprint(operation: SyncOperation): string {
+    return createHash('sha256')
+      .update(this.canonicalJson({ type: operation.type, payload: operation.payload }))
+      .digest('hex');
+  }
+
   private parseOperations(input: unknown): SyncOperation[] {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Sync payload is required.');
     const operations = (input as Record<string, unknown>).operations;
@@ -18,9 +31,11 @@ export class SyncService {
     return operations.map((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
+      if (Object.keys(value).some(key => !['operationId','type','payload'].includes(key))) throw new BadRequestException('Unsupported sync operation fields.');
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
       if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove', 'event.rsvp.set', 'event.rsvp.remove', 'couple.journal.create', 'couple.journal.update', 'couple.journal.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
+      if (Buffer.byteLength(JSON.stringify(value.payload)) > 64000) throw new BadRequestException('Sync operation payload exceeds 64 KB.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
   }
@@ -29,7 +44,7 @@ export class SyncService {
     const operations = this.parseOperations(input);
     const results = [];
     for (const operation of operations) {
-      const requestHash = createHash('sha256').update(JSON.stringify({ type: operation.type, payload: operation.payload })).digest('hex');
+      const requestHash = this.requestFingerprint(operation);
       try {
         const result = await this.db.transaction(async client => {
           const receipt = await client.query(
