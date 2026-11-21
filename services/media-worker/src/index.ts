@@ -210,9 +210,9 @@ async function runScheduledTask(name:string,intervalMs:number,path:string,body:u
   if(!MAINTENANCE_TOKEN) return;
   const now=Date.now();
   if(now-(maintenanceLastRun[name]??0)<intervalMs) return;
-  maintenanceLastRun[name]=now;
   try {
     await api(path,'POST',body,MAINTENANCE_TOKEN);
+    maintenanceLastRun[name]=now;
   } catch(error) {
     process.stderr.write(`scheduled task ${name} failed: ${String(error)}\\n`);
   }
