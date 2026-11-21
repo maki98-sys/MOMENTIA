@@ -41,6 +41,13 @@ export class SyncController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.sync.pull(req.userId!, cursor, Number(limit) || 200);
+    if (limit !== undefined && !/^\\d{1,4}$/.test(limit)) {
+      throw new BadRequestException('limit must be a positive integer.');
+    }
+    const parsedLimit = limit === undefined ? 200 : Number(limit);
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 500) {
+      throw new BadRequestException('limit must be between 1 and 500.');
+    }
+    return this.sync.pull(req.userId!, cursor, parsedLimit);
   }
 }
