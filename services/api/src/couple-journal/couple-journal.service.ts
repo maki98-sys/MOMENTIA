@@ -56,6 +56,38 @@ export class CoupleJournalService {
    return r.rows[0];
   });
  }
+ async update(spaceId:string,entryId:string,userId:string,input:unknown){
+  if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Encrypted journal payload is required.');
+  const v=input as Record<string,unknown>;
+  if(Object.keys(v).some(k=>!['ciphertext','nonce','encryptionVersion','keyVersion'].includes(k))) throw new BadRequestException('Unsupported journal fields.');
+  const ciphertext=this.decode(v.ciphertext,1,65536,'ciphertext');
+  const nonce=this.decode(v.nonce,12,24,'nonce');
+  if(v.encryptionVersion!==undefined&&v.encryptionVersion!==1) throw new BadRequestException('Unsupported encryption version.');
+  const keyVersion=v.keyVersion===undefined?1:Number(v.keyVersion);
+  if(!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new BadRequestException('Invalid journal key version.');
+  return this.db.transaction(async client=>{
+   await this.assertCouple(client,spaceId,userId);
+   const envelopes=await client.query(
+    `SELECT count(DISTINCT e.user_id)::int total
+     FROM couple_space_key_envelopes e
+     JOIN space_memberships m ON m.space_id=e.space_id AND m.user_id=e.user_id AND m.state='active'
+     WHERE e.space_id=$1 AND e.key_version=$2`,[spaceId,keyVersion]);
+   if(Number(envelopes.rows[0].total)!==2) throw new ConflictException('Both partners must have the same journal key version before updating entries.');
+   const result=await client.query(
+    `UPDATE couple_journal_entries
+     SET ciphertext=$4,nonce=$5,encryption_version=1,key_version=$6,updated_at=now()
+     WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
+     RETURNING id,author_id,key_version,created_at,updated_at`,
+    [entryId,spaceId,userId,ciphertext,nonce,keyVersion]);
+   if(!result.rowCount) throw new NotFoundException('Journal entry not found.');
+   await client.query(
+    `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+     VALUES($1,$2,'couple.journal_entry.updated','couple_journal_entry',$3,$4::jsonb)`,
+    [spaceId,userId,entryId,JSON.stringify({keyVersion})]);
+   return result.rows[0];
+  });
+ }
+
  async remove(spaceId:string,entryId:string,userId:string){
   return this.db.transaction(async client=>{
    await this.assertCouple(client,spaceId,userId);
