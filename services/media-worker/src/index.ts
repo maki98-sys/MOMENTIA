@@ -291,7 +291,7 @@ async function tick(): Promise<void> {
 
   // Process ordinary user-requested deletions independently of account purges.
   for(let batch=0;batch<100;batch++) {
-    const deletions=await api<Array<{id:string;storage_key:string}>>('/internal/media-processing/deletions/claim','POST',{
+    const deletions=await api<Array<{id:string;storage_key:string;storage_provider:'local'|'s3'}>>('/internal/media-processing/deletions/claim','POST',{
       workerId:WORKER_ID,limit:50,
     });
     if(!deletions?.length) break;
