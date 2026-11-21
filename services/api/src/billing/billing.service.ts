@@ -7,7 +7,7 @@ export class BillingService {
 
   async listPlans() {
     const result = await this.db.query(
-      `SELECT code,display_name,money.monthly_price_minor,currency,
+      `SELECT code,display_name,monthly_price_minor,currency,
               storage_quota_bytes,max_upload_bytes,features
        FROM subscription_plans
        WHERE is_public=true
@@ -45,6 +45,20 @@ export class BillingService {
        )`,
       [userId],
     );
-    return result.rows[0] ?? null;
+    if (!result.rowCount) return null;
+    const row = result.rows[0];
+    const quota = BigInt(row.storage_quota_bytes);
+    const used = BigInt(row.used_bytes);
+    const remaining = quota > used ? quota - used : 0n;
+    return {
+      ...row,
+      storage_quota_bytes: quota.toString(),
+      used_bytes: used.toString(),
+      remaining_bytes: remaining.toString(),
+      storage_usage_percent: quota > 0n
+        ? Math.min(100, Number((used * 10000n) / quota) / 100)
+        : 0,
+      features: row.features ?? {},
+    };
   }
 }
