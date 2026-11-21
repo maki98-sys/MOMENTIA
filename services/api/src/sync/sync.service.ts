@@ -380,7 +380,7 @@ export class SyncService {
     return bytes;
   }
 
-  private async assertCoupleJournalWrite(client: any, userId: string, spaceId: unknown, keyVersion: number) {
+  private async assertCoupleJournalWrite(client: any, userId: string, spaceId: unknown, keyVersion: number | null) {
     if (typeof spaceId!=='string' || !UUID.test(spaceId)) throw new Error('INVALID_SPACE_ID');
     if (!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new Error('INVALID_KEY_VERSION');
     const space=await client.query(
@@ -390,6 +390,7 @@ export class SyncService {
          AND (SELECT count(*) FROM space_memberships m WHERE m.space_id=s.id AND m.state='active')=2
        FOR SHARE OF s,mine`,[spaceId,userId]);
     if(!space.rowCount) throw new Error('COUPLE_SPACE_ACCESS_DENIED');
+    if (keyVersion===null) return;
     const envelopes=await client.query(
       `SELECT count(DISTINCT e.user_id)::int total
        FROM couple_space_key_envelopes e
@@ -435,7 +436,7 @@ export class SyncService {
   private async removeCoupleJournalEntry(client:any,userId:string,payload:Record<string,unknown>) {
     if(Object.keys(payload).some(k=>!['spaceId','entryId'].includes(k))) throw new Error('INVALID_PAYLOAD');
     if(typeof payload.entryId!=='string'||!UUID.test(payload.entryId)) throw new Error('INVALID_ENTRY_ID');
-    await this.assertCoupleJournalWrite(client,userId,payload.spaceId,1);
+    await this.assertCoupleJournalWrite(client,userId,payload.spaceId,null);
     const result=await client.query(
       `UPDATE couple_journal_entries SET deleted_at=now(),updated_at=now()
        WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
