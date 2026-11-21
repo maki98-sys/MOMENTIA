@@ -39,6 +39,29 @@ export class MediaProcessingController {
     return this.processing.complete(workerId,jobId,result);
   }
 
+  @Post('deletions/claim')
+  claimDeletions(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
+    this.authorize(token);
+    if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker claim body is required.');
+    const value=body as Record<string,unknown>;
+    if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
+    return this.processing.claimDeletions(value.workerId,Number(value.limit)||50);
+  }
+
+  @Post('deletions/:deletionId/complete')
+  completeDeletion(
+    @Headers('x-worker-token') token: string | undefined,
+    @Param('deletionId') deletionId: string,
+    @Body() body: unknown,
+  ) {
+    this.authorize(token);
+    if(!body||typeof body!=='object'||Array.isArray(body)) throw new UnauthorizedException('Worker result is required.');
+    const value=body as Record<string,unknown>;
+    if(typeof value.workerId!=='string') throw new UnauthorizedException('workerId is required.');
+    const {workerId,...result}=value;
+    return this.processing.completeDeletion(workerId,deletionId,result);
+  }
+
   @Post('leases/recover')
   recover(@Headers('x-worker-token') token: string | undefined, @Body() body: unknown) {
     this.authorize(token);
