@@ -101,4 +101,22 @@ export class BillingWebhookService {
       WHERE processing_status='processing' AND processing_started_at<now()-($1 * interval '1 second') RETURNING id,processing_status`,[n]);
     return {recovered:r.rowCount??0};
   }
+
+  async listDeadLetter(limit=50) {
+    const size=Math.min(Math.max(Number(limit)||50,1),100);
+    const r=await this.db.query(`SELECT id,provider,provider_event_id,event_type,processing_error,attempts,received_at,updated_at
+      FROM billing_webhook_events WHERE processing_status='dead_letter'
+      ORDER BY updated_at DESC,id DESC LIMIT $1`,[size]);
+    return {items:r.rows};
+  }
+
+  async retryDeadLetter(eventId:string) {
+    if(!UUID.test(eventId)) throw new BadRequestException('eventId must be a UUID.');
+    const r=await this.db.query(`UPDATE billing_webhook_events SET processing_status='received',
+      attempts=0,processing_error=NULL,processing_started_at=NULL,next_attempt_at=now(),updated_at=now()
+      WHERE id=$1 AND processing_status='dead_letter'
+      RETURNING id,provider,provider_event_id,event_type,processing_status`,[eventId]);
+    if(!r.rowCount) throw new BadRequestException('Dead-letter event not found or not retryable.');
+    return {retried:true,event:r.rows[0]};
+  }
 }
