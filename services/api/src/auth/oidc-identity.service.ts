@@ -115,6 +115,24 @@ export class OidcIdentityService {
   }
 
 
+
+  async listAuthenticatedIdentities(userId: string) {
+    const result = await this.database.query(
+      `SELECT provider,created_at
+       FROM auth_identities
+       WHERE user_id=$1
+       ORDER BY created_at,provider`,
+      [userId],
+    );
+    return {
+      identities: result.rows.map((row: Record<string, unknown>) => ({
+        provider: String(row.provider),
+        linkedAt: row.created_at,
+      })),
+      canUnlink: result.rowCount > 1,
+    };
+  }
+
   async unlinkAuthenticatedIdentity(userId: string, principal: OidcPrincipal): Promise<{ unlinked: true }> {
     return this.database.transaction(async (client) => {
       await client.query(
