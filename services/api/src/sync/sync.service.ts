@@ -18,7 +18,7 @@ export class SyncService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
-      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
+      if (!['post.create', 'timeline.add', 'comment.create', 'comment.update', 'comment.remove', 'reaction.set', 'reaction.remove', 'album.item.add', 'album.item.remove', 'event.rsvp.set', 'event.rsvp.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
@@ -58,7 +58,9 @@ export class SyncService {
           else if (operation.type === 'reaction.set') created = await this.setReaction(client, userId, operation.payload);
           else if (operation.type === 'reaction.remove') created = await this.removeReaction(client, userId, operation.payload);
           else if (operation.type === 'album.item.add') created = await this.addAlbumItem(client, userId, operation.payload);
-          else created = await this.removeAlbumItem(client, userId, operation.payload);
+          else if (operation.type === 'album.item.remove') created = await this.removeAlbumItem(client, userId, operation.payload);
+          else if (operation.type === 'event.rsvp.set') created = await this.setEventRsvp(client, userId, operation.payload);
+          else created = await this.removeEventRsvp(client, userId, operation.payload);
           await client.query(
             `UPDATE sync_operation_receipts SET state='succeeded',result=$3::jsonb,completed_at=now()
              WHERE user_id=$1 AND operation_id=$2`,
@@ -322,6 +324,48 @@ export class SyncService {
       `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
        VALUES($1,$2,'album.item_removed','album_item',$3)`,[spaceId,userId,itemId]);
     return { entityType:'album_item',id:itemId,removed:true };
+  }
+
+
+  private async setEventRsvp(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['spaceId','response','guestCount','note'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const { spaceId } = payload;
+    const response = String(payload.response ?? '');
+    const guestCount = payload.guestCount ?? 0;
+    const note = payload.note ?? null;
+    if (typeof spaceId !== 'string' || !UUID.test(spaceId)) throw new Error('INVALID_SPACE_ID');
+    if (!['going','interested','declined'].includes(response)) throw new Error('INVALID_RSVP_RESPONSE');
+    if (!Number.isInteger(guestCount) || Number(guestCount)<0 || Number(guestCount)>20) throw new Error('INVALID_GUEST_COUNT');
+    if (note !== null && (typeof note !== 'string' || note.length>500)) throw new Error('INVALID_RSVP_NOTE');
+    const event = await client.query(
+      `SELECT s.id,e.starts_at FROM spaces s
+       JOIN event_details e ON e.space_id=s.id
+       JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
+       WHERE s.id=$1 AND s.type='EVENT' AND s.status='active'
+       FOR SHARE OF s,sm`,[spaceId,userId]);
+    if (!event.rowCount) throw new Error('EVENT_NOT_FOUND_OR_NOT_MEMBER');
+    if (new Date(event.rows[0].starts_at).getTime() < Date.now()) throw new Error('EVENT_ALREADY_STARTED');
+    const result = await client.query(
+      `INSERT INTO event_rsvps(space_id,user_id,response,guest_count,note,responded_at)
+       VALUES($1,$2,$3,$4,$5,now())
+       ON CONFLICT(space_id,user_id) DO UPDATE SET
+         response=EXCLUDED.response,guest_count=EXCLUDED.guest_count,
+         note=EXCLUDED.note,responded_at=now()
+       RETURNING id,space_id,user_id,response,guest_count,note,responded_at`,
+      [spaceId,userId,response,guestCount,note]);
+    return { entityType:'event_rsvp', ...result.rows[0] };
+  }
+
+  private async removeEventRsvp(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => key !== 'spaceId')) throw new Error('INVALID_PAYLOAD');
+    const spaceId=payload.spaceId;
+    if (typeof spaceId!=='string'||!UUID.test(spaceId)) throw new Error('INVALID_SPACE_ID');
+    const result=await client.query(
+      `DELETE FROM event_rsvps r USING spaces s,space_memberships sm
+       WHERE r.space_id=$1 AND r.user_id=$2 AND s.id=r.space_id
+         AND s.type='EVENT' AND sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
+       RETURNING r.id,r.space_id`,[spaceId,userId]);
+    return { entityType:'event_rsvp',spaceId,removed:!!result.rowCount };
   }
 
   async pull(userId: string, cursor?: string, limit = 200) {
