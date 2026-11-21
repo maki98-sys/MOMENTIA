@@ -134,6 +134,41 @@ export class MediaProcessingService {
     });
   }
 
+
+  async cleanupExpiredUploads(limit = 100) {
+    const batch = Math.min(Math.max(Number(limit) || 100, 1), 500);
+    return this.db.transaction(async client => {
+      const expired = await client.query(
+        `WITH candidates AS (
+           SELECT u.id,u.media_asset_id,a.storage_key_original
+           FROM media_uploads u
+           JOIN media_assets a ON a.id=u.media_asset_id
+           WHERE u.state IN ('created','uploading') AND u.expires_at<=now()
+             AND a.status IN ('pending','quarantined')
+           ORDER BY u.expires_at,u.created_at
+           LIMIT $1 FOR UPDATE OF u,a SKIP LOCKED
+         ),
+         cancelled AS (
+           UPDATE media_uploads u SET state='cancelled',
+             last_error_code='UPLOAD_EXPIRED',updated_at=now()
+           FROM candidates c WHERE u.id=c.id
+           RETURNING u.id,u.media_asset_id
+         ),
+         deleted AS (
+           UPDATE media_assets a SET status='deleted',deleted_at=now()
+           FROM cancelled c WHERE a.id=c.media_asset_id
+           RETURNING a.id,a.storage_key_original
+         )
+         INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+         SELECT d.id,d.storage_key_original FROM deleted d
+         ON CONFLICT(media_asset_id,storage_key) DO NOTHING
+         RETURNING id,media_asset_id,storage_key`,
+        [batch],
+      );
+      return { expired: expired.rowCount ?? 0, storageDeletions: expired.rows };
+    });
+  }
+
   async releaseStaleLocks(staleSeconds=300) {
     const seconds=Math.min(Math.max(Number(staleSeconds)||300,60),3600);
     const result=await this.db.query(
