@@ -12,6 +12,24 @@ export class AudioService {
     if (!UUID.test(value)) throw new BadRequestException(`Invalid ${label}.`);
   }
 
+  private async assertAudioEntitlement(client: { query: (sql: string, values?: unknown[]) => Promise<any> }, userId: string) {
+    const entitlement=await client.query(
+      `SELECT COALESCE(p.features->>'social_audio','true')::boolean AS enabled
+       FROM subscription_plans p
+       LEFT JOIN LATERAL (
+         SELECT us.plan_id FROM user_subscriptions us
+         WHERE us.user_id=$1 AND us.status IN ('trialing','active','past_due')
+           AND (us.current_period_end IS NULL OR us.current_period_end>now())
+         ORDER BY CASE us.status WHEN 'active' THEN 0 WHEN 'trialing' THEN 1 ELSE 2 END,
+                  us.created_at DESC LIMIT 1
+       ) s ON s.plan_id=p.id
+       WHERE p.id=COALESCE(s.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
+      [userId],
+    );
+    if(!entitlement.rowCount) throw new ConflictException('Subscription entitlements are unavailable.');
+    if(entitlement.rows[0].enabled!==true) throw new ForbiddenException('Social Audio is not included in your current plan.');
+  }
+
   private async assertSpaceMember(client: { query: (sql: string, values?: unknown[]) => Promise<any> }, userId: string, spaceId: string) {
     const r = await client.query(`SELECT s.id, sm.role FROM spaces s JOIN space_memberships sm ON sm.space_id=s.id
       WHERE s.id=$1 AND s.status='active' AND sm.user_id=$2 AND sm.state='active'`, [spaceId, userId]);
@@ -24,6 +42,7 @@ export class AudioService {
     const provider = sourceProvider === undefined ? 'external' : String(sourceProvider);
     if (!PROVIDERS.includes(provider)) throw new BadRequestException('Unsupported audio provider.');
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       const member = await this.assertSpaceMember(client, userId, spaceId);
       if (!['owner', 'admin', 'moderator'].includes(member.role)) throw new ForbiddenException('Only space moderators can start an audio session.');
       await client.query('SELECT id FROM spaces WHERE id=$1 FOR UPDATE', [spaceId]);
