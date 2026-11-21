@@ -31,15 +31,19 @@ export class PrivacyService {
       ['coupleKeyEnvelopes', `SELECT space_id,key_version,algorithm,encode(encrypted_key,'base64') encrypted_key_base64,encode(nonce,'base64') nonce_base64,created_at,updated_at FROM couple_space_key_envelopes WHERE user_id=$1 ORDER BY space_id,key_version`],
       ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at,failed_at,last_error_code FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
     ];
-    const entries = await Promise.all(queries.map(async ([key,sql]) => {
-      const result = await this.db.query(sql,[userId]);
-      return [key,result.rows] as const;
-    }));
-    return {
-      format: 'momentia-data-export-v1',
-      exportedAt: new Date().toISOString(),
-      data: Object.fromEntries(entries),
-    };
+    return this.db.transaction(async client => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      const entries = await Promise.all(queries.map(async ([key,sql]) => {
+        const result = await client.query(sql,[userId]);
+        return [key,result.rows] as const;
+      }));
+      return {
+        format: 'momentia-data-export-v1',
+        exportedAt: new Date().toISOString(),
+        consistency: 'repeatable_read',
+        data: Object.fromEntries(entries),
+      };
+    });
   }
 
   async requestDeletion(userId: string) {
