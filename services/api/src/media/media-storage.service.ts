@@ -1,6 +1,8 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { createReadStream, ReadStream } from 'fs';
+import { createReadStream } from 'fs';
+import { Readable } from 'stream';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 
@@ -15,7 +17,7 @@ export abstract class MediaStorage {
   abstract remove(storageKey: string): Promise<void>;
   abstract locate(storageKey: string, expectedSize?: number): Promise<string>;
   abstract read(storageKey: string): Promise<Buffer>;
-  abstract openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: ReadStream; sizeBytes: number }>;
+  abstract openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }>;
 }
 
 @Injectable()
@@ -67,5 +69,59 @@ export class LocalMediaStorage extends MediaStorage {
       throw new ServiceUnavailableException('Media content is unavailable.');
     }
     return target;
+  }
+}
+
+
+@Injectable()
+export class S3MediaStorage extends MediaStorage {
+  private readonly bucket = process.env.MEDIA_S3_BUCKET!;
+  private readonly client = new S3Client({
+    region: process.env.MEDIA_S3_REGION || 'us-east-1',
+    endpoint: process.env.MEDIA_S3_ENDPOINT || undefined,
+    forcePathStyle: process.env.MEDIA_S3_FORCE_PATH_STYLE === 'true',
+    credentials: process.env.MEDIA_S3_ACCESS_KEY_ID && process.env.MEDIA_S3_SECRET_ACCESS_KEY
+      ? { accessKeyId: process.env.MEDIA_S3_ACCESS_KEY_ID, secretAccessKey: process.env.MEDIA_S3_SECRET_ACCESS_KEY }
+      : undefined,
+  });
+
+  private key(storageKey: string): string {
+    if (!storageKey || storageKey.startsWith('/') || storageKey.includes('..') || storageKey.includes('\\\\') || storageKey.includes('\\0')) {
+      throw new ServiceUnavailableException('Invalid media storage key.');
+    }
+    return storageKey;
+  }
+
+  async put(storageKey: string, bytes: Buffer): Promise<void> {
+    try { await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey), Body: bytes })); }
+    catch { throw new ServiceUnavailableException('Remote media storage is unavailable.'); }
+  }
+
+  async remove(storageKey: string): Promise<void> {
+    try { await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) })); }
+    catch { throw new ServiceUnavailableException('Remote media deletion failed.'); }
+  }
+
+  async read(storageKey: string): Promise<Buffer> {
+    try {
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) }));
+      if (!response.Body) throw new Error('Object body missing');
+      return Buffer.from(await response.Body.transformToByteArray());
+    } catch { throw new ServiceUnavailableException('Remote media content is unavailable.'); }
+  }
+
+  async openReadStream(storageKey: string, expectedSize?: number): Promise<{ stream: Readable; sizeBytes: number }> {
+    try {
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) }));
+      if (!response.Body || response.ContentLength === undefined ||
+          (expectedSize !== undefined && response.ContentLength !== expectedSize)) {
+        throw new Error('Object size mismatch or body missing');
+      }
+      return { stream: Readable.from(response.Body as AsyncIterable<Uint8Array>), sizeBytes: response.ContentLength };
+    } catch { throw new ServiceUnavailableException('Remote media content is unavailable.'); }
+  }
+
+  async locate(_storageKey: string, _expectedSize?: number): Promise<string> {
+    throw new ServiceUnavailableException('Remote objects do not have local filesystem paths.');
   }
 }
