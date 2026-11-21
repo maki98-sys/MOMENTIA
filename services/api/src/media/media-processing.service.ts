@@ -187,18 +187,23 @@ export class MediaProcessingService {
        RETURNING id`,[seconds]);
     return {released:(result.rowCount??0)+(deletions.rowCount??0)};
   }
-  async claimDeletions(workerId:string,limit=50) {
+  async claimDeletions(workerId:string,limit=50,ownerUserId?:string) {
     if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
+    if(ownerUserId!==undefined&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId)) {
+      throw new BadRequestException('Invalid media owner id.');
+    }
     const batch=Math.min(Math.max(Number(limit)||50,1),100);
     const result=await this.db.query(
       `WITH picked AS (
-         SELECT id FROM media_storage_deletions
-         WHERE status IN ('pending','failed') AND available_at<=now() AND attempts<8
-         ORDER BY available_at,created_at LIMIT $1 FOR UPDATE SKIP LOCKED
+         SELECT d.id FROM media_storage_deletions d
+         JOIN media_assets a ON a.id=d.media_asset_id
+         WHERE d.status IN ('pending','failed') AND d.available_at<=now() AND d.attempts<8
+           AND ($3::uuid IS NULL OR a.owner_id=$3)
+         ORDER BY d.available_at,d.created_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
        )
        UPDATE media_storage_deletions d SET status='processing',attempts=d.attempts+1,locked_at=now(),locked_by=$2
        FROM picked p WHERE d.id=p.id
-       RETURNING d.id,d.media_asset_id,d.storage_key,d.attempts`,[batch,workerId]);
+       RETURNING d.id,d.media_asset_id,d.storage_key,d.attempts`,[batch,workerId,ownerUserId??null]);
     return result.rows;
   }
 
