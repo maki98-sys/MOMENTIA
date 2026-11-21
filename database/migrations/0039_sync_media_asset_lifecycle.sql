@@ -43,4 +43,8 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+INSERT INTO public.schema_migrations(version)
+VALUES ('0039_sync_media_asset_lifecycle')
+ON CONFLICT(version) DO NOTHING;
 COMMIT;
