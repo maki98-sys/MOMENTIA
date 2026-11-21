@@ -503,7 +503,7 @@ export class SyncService {
     }
     const offsets: Record<string, number> = {};
     for (const [section, offset] of Object.entries(rawOffsets as Record<string, unknown>)) {
-      if (!allowed.includes(section) || !Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > 1000000000) {
+      if (!allowed.includes(section) || !Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > 10000000) {
         throw new BadRequestException('Invalid snapshot section offset.');
       }
       offsets[section] = Number(offset);
