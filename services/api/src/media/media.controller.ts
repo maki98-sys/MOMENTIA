@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { createReadStream } from 'fs';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
@@ -37,6 +38,28 @@ export class MediaController {
  get(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string){return this.media.getUpload(req.userId!,id);}
  @Get('assets/:assetId')
  getAsset(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string){return this.media.getAsset(req.userId!,id);}
+ @Get('assets/:assetId/content')
+ async getAssetContent(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string,@Res({passthrough:true}) response:Response) {
+  const file=await this.media.getAssetContent(req.userId!,id,'original');
+  response.setHeader('Cache-Control','private, max-age=60');
+  response.setHeader('X-Content-Type-Options','nosniff');
+  return new StreamableFile(createReadStream(file.path),{
+   type:file.mimeType,
+   disposition:`inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+   length:file.sizeBytes,
+  });
+ }
+ @Get('assets/:assetId/variants/:variantType/content')
+ async getAssetVariant(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string,@Param('variantType') variantType:string,@Res({passthrough:true}) response:Response) {
+  const file=await this.media.getAssetContent(req.userId!,id,variantType);
+  response.setHeader('Cache-Control','private, max-age=300');
+  response.setHeader('X-Content-Type-Options','nosniff');
+  return new StreamableFile(createReadStream(file.path),{
+   type:file.mimeType,
+   disposition:`inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+   length:file.sizeBytes,
+  });
+ }
  @Delete('assets/:assetId')
  deleteAsset(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string){return this.media.deleteAsset(req.userId!,id);}
 }
