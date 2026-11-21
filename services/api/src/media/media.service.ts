@@ -332,8 +332,13 @@ export class MediaService {
       sizeBytes=Number(variant.rows[0].size_bytes);
       filename=variantType+'.'+(mimeType==='image/webp'?'webp':'jpg');
     }
-    const target=await this.storage.locate(storageKey,sizeBytes);
-    return {path:target,mimeType,filename,sizeBytes};
+    return {storageKey,mimeType,filename,sizeBytes};
+  }
+
+  async openAssetContent(userId:string,assetId:string,variantType?:string) {
+    const asset=await this.getAssetContent(userId,assetId,variantType);
+    const stored=await this.storage.openReadStream(asset.storageKey,asset.sizeBytes);
+    return {stream:stored.stream,mimeType:asset.mimeType,filename:asset.filename,sizeBytes:stored.sizeBytes};
   }
 
   async getAsset(userId:string,assetId:string) {
