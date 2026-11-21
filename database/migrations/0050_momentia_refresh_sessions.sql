@@ -8,12 +8,14 @@ ALTER TABLE auth_sessions
 
 UPDATE auth_sessions SET family_id=gen_random_uuid() WHERE family_id IS NULL;
 ALTER TABLE auth_sessions ALTER COLUMN family_id SET NOT NULL;
+ALTER TABLE auth_sessions ADD CONSTRAINT auth_sessions_family_id_uq UNIQUE(family_id);
 CREATE INDEX auth_sessions_family_active_idx ON auth_sessions(family_id) WHERE revoked_at IS NULL;
 
 CREATE TABLE auth_session_refresh_tokens (
   token_hash char(64) PRIMARY KEY,
-  session_id uuid NOT NULL REFERENCES auth_sessions(id) ON DELETE CASCADE,
+  session_id uuid NOT NULL,
   family_id uuid NOT NULL,
+  FOREIGN KEY(session_id,family_id) REFERENCES auth_sessions(id,family_id) ON DELETE CASCADE,
   expires_at timestamptz NOT NULL,
   consumed_at timestamptz,
   replaced_by_hash char(64),
