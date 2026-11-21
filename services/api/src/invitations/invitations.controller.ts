@@ -24,6 +24,15 @@ export class InvitationsController {
     return this.invitations.revoke(request.userId!, spaceId, invitationId);
   }
 
+
+  @Post('invitations/preview')
+  preview(@Body() body: unknown) {
+    const token = body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>).token : undefined;
+    if (typeof token !== 'string') return this.invitations.preview('');
+    return this.invitations.preview(token);
+  }
+
   @Post('invitations/accept')
   accept(@Req() request: Request & AuthenticatedRequest, @Body() body: unknown) {
     const token = body && typeof body === 'object' && !Array.isArray(body)
