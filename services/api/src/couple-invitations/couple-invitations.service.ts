@@ -108,6 +108,25 @@ export class CoupleInvitationsService {
          WHERE s.type='COUPLE' AND s.status='active' AND sm.user_id=ANY($1::uuid[]) AND sm.state='active'
          LIMIT 1 FOR UPDATE OF s`,[[invite.inviter_user_id,userId]]);
       if(occupied.rowCount) throw new BadRequestException('One of these accounts already belongs to an active couple space.');
+      const ownerPlan=await client.query(
+        `SELECT p.features,COALESCE((p.features->>'max_spaces')::integer,5) max_spaces,
+                (SELECT count(*)::integer FROM spaces s
+                 JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
+                 WHERE s.status IN ('active','archived')) owned_spaces
+         FROM subscription_plans p
+         LEFT JOIN LATERAL (
+           SELECT us.plan_id FROM user_subscriptions us
+           WHERE us.user_id=$1 AND us.status IN ('trialing','active','past_due')
+             AND (us.current_period_end IS NULL OR us.current_period_end>now())
+           ORDER BY CASE us.status WHEN 'active' THEN 0 WHEN 'trialing' THEN 1 ELSE 2 END,
+                    us.created_at DESC LIMIT 1
+         ) sub ON sub.plan_id=p.id
+         WHERE p.id=COALESCE(sub.plan_id,(SELECT id FROM subscription_plans WHERE code='free'))`,
+        [invite.inviter_user_id]);
+      if(!ownerPlan.rowCount) throw new BadRequestException('The inviter subscription plan could not be resolved.');
+      const plan=ownerPlan.rows[0];
+      if(plan.features?.couple_journal===false) throw new ForbiddenException('Couple spaces are not included in the inviter current plan.');
+      if(Number(plan.owned_spaces)>=Number(plan.max_spaces)) throw new ForbiddenException('The inviter has reached the maximum number of spaces allowed by the current plan.');
       const created=await client.query(
         `INSERT INTO spaces(type,owner_id,name,visibility)
          VALUES('COUPLE',$1,'Nuestro espacio','private')
