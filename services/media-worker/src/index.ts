@@ -8,6 +8,7 @@ import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
 const WORKER_TOKEN = required('MEDIA_WORKER_TOKEN');
+const MAINTENANCE_TOKEN = process.env.NOTIFICATION_WORKER_TOKEN;
 const WORKER_ID = process.env.MEDIA_WORKER_ID ?? `media-worker-${process.pid}`;
 const STORAGE_DIR = resolve(process.env.MEDIA_STORAGE_DIR ?? '/var/lib/momentia/media');
 const POLL_MS = Math.min(Math.max(Number(process.env.MEDIA_WORKER_POLL_MS) || 1500, 250), 30000);
@@ -47,10 +48,10 @@ function safePath(storageKey: string): string {
   return target;
 }
 
-async function api<T>(path: string, method='POST', body?: unknown): Promise<T> {
+async function api<T>(path: string, method='POST', body?: unknown, token=WORKER_TOKEN): Promise<T> {
   const response=await fetch(API_URL+path,{
     method,
-    headers:{'content-type':'application/json','x-worker-token':WORKER_TOKEN},
+    headers:{'content-type':'application/json','x-worker-token':token},
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000),
   });
@@ -203,7 +204,31 @@ async function processDeletion(deletion: {id:string;storage_key:string}): Promis
 
 type AccountDeletion = {id:string;user_id:string;processing_attempts:number};
 
+const maintenanceLastRun: Record<string,number> = {};
+
+async function runScheduledTask(name:string,intervalMs:number,path:string,body:unknown={}):Promise<void> {
+  if(!MAINTENANCE_TOKEN) return;
+  const now=Date.now();
+  if(now-(maintenanceLastRun[name]??0)<intervalMs) return;
+  maintenanceLastRun[name]=now;
+  try {
+    await api(path,'POST',body,MAINTENANCE_TOKEN);
+  } catch(error) {
+    process.stderr.write(`scheduled task ${name} failed: ${String(error)}\\n`);
+  }
+}
+
+async function runMaintenance():Promise<void> {
+  if(!MAINTENANCE_TOKEN) return;
+  await runScheduledTask('push-dispatch',5000,'/internal/notifications/push/dispatch');
+  await runScheduledTask('push-recovery',60000,'/internal/notifications/push/recover-stale');
+  await runScheduledTask('event-reminders',60000,'/internal/events/queue-reminders');
+  await runScheduledTask('event-archive',900000,'/internal/events/archive-ended');
+  await runScheduledTask('audio-presence-cleanup',30000,'/internal/audio/cleanup-stale-participants',{staleAfterSeconds:45});
+}
+
 async function tick(): Promise<void> {
+  await runMaintenance();
   await api('/internal/media-processing/uploads/cleanup-expired','POST',{limit:100});
   const accountDeletions=await api<AccountDeletion[]>('/internal/deletions/claim','POST',{
     workerId:WORKER_ID,limit:5,
