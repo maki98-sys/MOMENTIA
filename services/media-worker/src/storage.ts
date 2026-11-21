@@ -10,6 +10,7 @@ export abstract class MediaWorkerStorage {
   abstract ensureParent(storageKey: string): Promise<string>;
   abstract materialize(storageKey: string): Promise<string>;
   abstract commit(storageKey: string, localPath: string): Promise<void>;
+  abstract release(storageKey: string): Promise<void>;
   abstract remove(storageKey: string): Promise<void>;
   abstract stat(storageKey: string): Promise<{ size: number; isFile: boolean }>;
 }
@@ -34,6 +35,7 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
   }
   async materialize(storageKey: string): Promise<string> { return this.pathFor(storageKey); }
   async commit(_storageKey: string, _localPath: string): Promise<void> {}
+  async release(_storageKey: string): Promise<void> {}
   async remove(storageKey: string): Promise<void> { await rm(this.pathFor(storageKey), { force: true }); }
   async stat(storageKey: string): Promise<{ size: number; isFile: boolean }> {
     const info = await stat(this.pathFor(storageKey));
@@ -76,6 +78,7 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
       Bucket: this.bucket, Key: storageKey, Body: createReadStream(localPath), ContentLength: info.size,
     }));
   }
+  async release(storageKey: string): Promise<void> { await rm(this.pathFor(storageKey), { force: true }); }
   async remove(storageKey: string): Promise<void> {
     validateKey(storageKey);
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }));
@@ -89,7 +92,12 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
 }
 
 export function createMediaWorkerStorage(): MediaWorkerStorage {
-  return process.env.MEDIA_STORAGE_PROVIDER === 's3'
-    ? new S3MediaWorkerStorage()
-    : new LocalMediaWorkerStorage();
+  if (process.env.MEDIA_STORAGE_PROVIDER === 's3') {
+    if (!process.env.MEDIA_S3_BUCKET) throw new Error('MEDIA_S3_BUCKET is required when MEDIA_STORAGE_PROVIDER=s3');
+    if (Boolean(process.env.MEDIA_S3_ACCESS_KEY_ID) !== Boolean(process.env.MEDIA_S3_SECRET_ACCESS_KEY)) {
+      throw new Error('Both S3 access key and secret key must be configured together');
+    }
+    return new S3MediaWorkerStorage();
+  }
+  return new LocalMediaWorkerStorage();
 }
