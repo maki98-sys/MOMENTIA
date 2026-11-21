@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { MediaService } from './media.service';
 import { DatabaseService } from '../database/database.service';
+import { MediaStorage } from './media-storage.service';
 
 describe('MediaService',()=>{
  const query=jest.fn(),transaction=jest.fn();
