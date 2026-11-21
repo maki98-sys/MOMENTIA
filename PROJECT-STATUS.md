@@ -380,3 +380,41 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - CI API #44244715376: **success** para el endpoint de transferencia y su validación.
 - La sincronización aún no es automática ni reanudable en segundo plano; el cliente lee el archivo completo para calcular el hash; no se ha probado en dispositivos físicos ni en redes intermitentes. El servidor mantiene el archivo en cuarentena y no genera variantes ni URL pública.
 - La cifra global ponderada se recalculó a **26.84% (≈27%)** con los pesos de las ocho fases. Es un indicador de avance técnico, no de disponibilidad del producto.
+
+
+## 2026-11-21 — Actualización verificada de CI, cobertura y auditoría de sincronización
+
+**Rama:** `fix/migration-0036-duplicate-index`  
+**Commit evaluado:** `302cf32c241481dd7a64e26c5eacf8b1d64105f9`  
+**PR #2:** cambios aún sin merge.
+
+### Evidencia CI
+
+- API: run [44958766152](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766152) — success.
+- Cobertura: run [44958766130](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766130) — success.
+- Base de datos: run [44958766064](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766064) — success.
+- Pruebas API: 21 suites aprobadas, 143 pruebas aprobadas (143/143). Incluye `sync-payload.validator.spec.ts`.
+- Base de datos: migraciones e idempotencia aprobadas; backup/restore smoke test: 61/61 migraciones y 65 tablas; SQLite schema smoke test y auditoría de columnas de secretos aprobados; prueba concurrente de membresía COUPLE aprobada.
+- Cobertura Jest global: statements 21.48%, branches 20.05%, functions 21.35%, lines 22.92%.
+
+### Entrega de validación de payload sync
+
+- Commit `302cf32c241481dd7a64e26c5eacf8b1d64105f9`.
+- Añadidas pruebas de envelope válido/inválido, campos adicionales, lotes 1–50, números no finitos, valores no JSON, tamaño de cadenas, arrays, cantidad de claves, claves de contaminación de prototipo, profundidad y tamaño total.
+- Las pruebas se ejecutaron en CI y pasaron.
+- Esto mejora la validación de entrada; no certifica la autorización, persistencia, orden, reintentos ni sincronización completa del cliente.
+
+### Hallazgo de seguridad pendiente — snapshots de sincronización
+
+La inspección estática de `SyncService.snapshot()` identificó un riesgo que requiere resolver antes de certificar snapshots paginados como seguros: al crear el snapshot, se materializa información autorizada y se persiste en `sync_snapshot_sessions.data`. Las páginas posteriores recuperan ese contenido congelado por `snapshotId` y `user_id`, sin volver a evaluar todos los permisos de origen. Si después de crear el snapshot se revoca una membresía o cambia una relación/bloqueo/visibilidad, el contenido materializado podría seguir disponible hasta la expiración de la sesión (30 minutos).
+
+- Estado: hallazgo de revisión estática, no explotación demostrada.
+- Severidad propuesta: alta por posible exposición de contenido privado tras revocación.
+- No se declara resuelto ni se contabiliza como seguridad aceptada.
+- Corrección requerida: invalidación fiable de snapshots ante cualquier cambio de autorización relevante o revalidación por sección/registro en cada página. Añadir pruebas de integración PostgreSQL para revocación de membresía, bloqueo, unfollow y cambio de visibilidad entre páginas.
+- También probar liberación, expiración, límite de sesiones, paginación y aislamiento entre usuarios.
+
+### Porcentajes
+
+No se modifica el avance global ni el avance ponderado de backend en esta actualización. El control de fase del 18 de noviembre necesita una revisión completa por tareas y aceptación de módulos; el CI de esta entrega solo acredita los pasos descritos arriba. La cobertura de código no se debe interpretar como porcentaje de implementación.
+
