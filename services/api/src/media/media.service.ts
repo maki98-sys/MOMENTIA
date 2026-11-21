@@ -4,7 +4,7 @@ import { mkdir, rename, rm, writeFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { DatabaseService } from '../database/database.service';
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 @Injectable()
 export class MediaService {
@@ -16,7 +16,7 @@ export class MediaService {
     if(Object.keys(v).some(k=>!['fileName','mimeType','sizeBytes','checksumSha256','capturedAt','capturedTimezone','gpsConsent'].includes(k))) throw new BadRequestException('Unsupported upload fields.');
     if(typeof v.fileName!=='string'||!v.fileName.trim()||v.fileName.length>255||/[\\/\\0]/.test(v.fileName)) throw new BadRequestException('Invalid file name.');
     if(!['image/jpeg','image/png','image/webp','image/heic','image/heif','video/mp4','video/quicktime'].includes(String(v.mimeType))) throw new BadRequestException('Unsupported declared media type.');
-    if(!Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||Number(v.sizeBytes)>MAX_UPLOAD_BYTES) throw new BadRequestException('File size must be between 1 byte and 50 MB.');
+    if(!Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||Number(v.sizeBytes)>MAX_UPLOAD_BYTES) throw new BadRequestException('File size must be between 1 byte and 200 MB.');
     if(typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) throw new BadRequestException('A SHA-256 checksum is required.');
     if(v.capturedAt!==undefined&&(typeof v.capturedAt!=='string'||Number.isNaN(Date.parse(v.capturedAt)))) throw new BadRequestException('capturedAt must be a valid ISO date-time.');
     if(v.capturedTimezone!==undefined&&(typeof v.capturedTimezone!=='string'||v.capturedTimezone.length>64)) throw new BadRequestException('Invalid captured timezone.');
@@ -116,6 +116,10 @@ export class MediaService {
         await client.query(
           `UPDATE media_assets SET status='quarantined',mime_type_detected=$1 WHERE id=$2 AND owner_id=$3`,
           [row.declared_mime_type,row.media_asset_id,userId]);
+        await client.query(
+          `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+           VALUES($1,$2,'uploaded',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+          [userId,row.media_asset_id,bytes.length,'media-upload:'+uploadId]);
       });
     } catch (error) {
       await rm(destination,{force:true}).catch(()=>undefined);
