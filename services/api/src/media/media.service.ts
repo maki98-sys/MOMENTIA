@@ -170,4 +170,45 @@ export class MediaService {
        WHERE u.uploader_id=$1 ORDER BY u.created_at DESC LIMIT $2`,[userId,n]);
     return r.rows;
   }
+  async getAsset(userId:string,assetId:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
+    const asset=await this.db.query(
+      `SELECT id,status,mime_type_detected,size_bytes,width,height,created_at,processing_completed_at,
+              moderation_scan_status
+       FROM media_assets WHERE id=$1 AND owner_id=$2`,[assetId,userId]);
+    if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
+    const variants=await this.db.query(
+      `SELECT variant_type,mime_type,size_bytes,width,height,created_at
+       FROM media_variants WHERE media_asset_id=$1 ORDER BY variant_type`,[assetId]);
+    return {...asset.rows[0],variants:variants.rows};
+  }
+
+  async deleteAsset(userId:string,assetId:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
+    return this.db.transaction(async client=>{
+      const asset=await client.query(
+        `SELECT id,status,size_bytes,storage_key_original FROM media_assets
+         WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[assetId,userId]);
+      if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
+      if(asset.rows[0].status==='deleted') return {deleted:true,alreadyDeleted:true};
+      const variants=await client.query(
+        `SELECT storage_key FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
+      await client.query(
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+         VALUES($1,$2),${variants.rows.map((_,i)=>'($1,$'+(i+3)+')').join(',')}
+         ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+        [assetId,asset.rows[0].storage_key_original,...variants.rows.map(v=>v.storage_key)]);
+      await client.query(
+        `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,[assetId]);
+      await client.query(
+        `UPDATE media_uploads SET state='cancelled',updated_at=now()
+         WHERE media_asset_id=$1 AND state NOT IN ('completed','failed','cancelled')`,[assetId]);
+      await client.query(
+        `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+         VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+        [userId,assetId,-Number(asset.rows[0].size_bytes),'media-delete:'+assetId]);
+      return {deleted:true,queuedStorageObjects:variants.rowCount+1};
+    });
+  }
+
 }
