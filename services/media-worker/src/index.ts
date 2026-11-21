@@ -221,6 +221,7 @@ async function runScheduledTask(name:string,intervalMs:number,path:string,body:u
 async function runMaintenance():Promise<void> {
   if(!MAINTENANCE_TOKEN) return;
   await runScheduledTask('push-dispatch',5000,'/internal/notifications/push/dispatch');
+  await runScheduledTask('media-lease-recovery',60000,'/internal/media-processing/leases/recover',{staleSeconds:300});
   await runScheduledTask('push-recovery',60000,'/internal/notifications/push/recover-stale');
   await runScheduledTask('event-reminders',60000,'/internal/events/queue-reminders');
   await runScheduledTask('event-archive',900000,'/internal/events/archive-ended');
