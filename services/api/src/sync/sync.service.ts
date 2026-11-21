@@ -335,16 +335,17 @@ export class SyncService {
     const note = payload.note ?? null;
     if (typeof spaceId !== 'string' || !UUID.test(spaceId)) throw new Error('INVALID_SPACE_ID');
     if (!['going','interested','declined'].includes(response)) throw new Error('INVALID_RSVP_RESPONSE');
+    if (response !== 'going' && Number(guestCount) !== 0) throw new Error('GUESTS_REQUIRE_GOING_RSVP');
     if (!Number.isInteger(guestCount) || Number(guestCount)<0 || Number(guestCount)>20) throw new Error('INVALID_GUEST_COUNT');
     if (note !== null && (typeof note !== 'string' || note.length>500)) throw new Error('INVALID_RSVP_NOTE');
     const event = await client.query(
-      `SELECT s.id,e.starts_at FROM spaces s
+      `SELECT s.id,e.ends_at FROM spaces s
        JOIN event_details e ON e.space_id=s.id
        JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
        WHERE s.id=$1 AND s.type='EVENT' AND s.status='active'
        FOR SHARE OF s,sm`,[spaceId,userId]);
     if (!event.rowCount) throw new Error('EVENT_NOT_FOUND_OR_NOT_MEMBER');
-    if (new Date(event.rows[0].starts_at).getTime() < Date.now()) throw new Error('EVENT_ALREADY_STARTED');
+    if (event.rows[0].ends_at && new Date(event.rows[0].ends_at).getTime() < Date.now()) throw new Error('EVENT_ALREADY_ENDED');
     const result = await client.query(
       `INSERT INTO event_rsvps(space_id,user_id,response,guest_count,note,responded_at)
        VALUES($1,$2,$3,$4,$5,now())
