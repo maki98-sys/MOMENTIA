@@ -107,6 +107,7 @@ export class AudioService {
           WHERE NOT EXISTS (
             SELECT 1 FROM audio_participants p
             WHERE p.session_id=a.id AND p.left_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM stale st WHERE st.session_id=p.session_id AND st.user_id=p.user_id)
           )
         ), ended AS (
           UPDATE audio_sessions a
