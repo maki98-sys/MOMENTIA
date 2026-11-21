@@ -914,9 +914,9 @@ export class SyncService {
       throw new BadRequestException('Active device not found.');
     }
     const row = result.rows[0];
-    const cursor = BigInt(row.device_cursor);
-    const oldest = BigInt(row.oldest_sequence);
-    const latest = BigInt(row.latest_sequence);
+    const cursor = BigInt(String(row.device_cursor));
+    const oldest = BigInt(String(row.oldest_sequence));
+    const latest = BigInt(String(row.latest_sequence));
     const historyExpired = oldest > 0n && cursor < oldest - 1n;
     const cursorAhead = cursor > latest;
     return {
