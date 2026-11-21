@@ -164,4 +164,5 @@ export class SessionTokenService {
     );
     if (!active.rowCount) throw new UnauthorizedException('MOMENTIA session is revoked or expired.');
     return { userId:String(active.rows[0].user_id),sessionId };
-  }}
+  }
+}
