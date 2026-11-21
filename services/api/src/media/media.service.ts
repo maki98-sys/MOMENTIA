@@ -302,7 +302,7 @@ export class MediaService {
       if(!asset.rowCount) throw new NotFoundException('Media asset not found.');
       if(asset.rows[0].status==='deleted') return {deleted:true,alreadyDeleted:true};
       const variants=await client.query(
-        `SELECT storage_key FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
+        `SELECT storage_key,size_bytes FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
       const deletionValues=[`($1,$2)`,...variants.rows.map((_,i)=>`($1,${i+3})`)].join(',');
       await client.query(
         `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
@@ -332,7 +332,7 @@ export class MediaService {
       await client.query(
         `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
          VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
-        [userId,assetId,-Number(asset.rows[0].size_bytes),'media-delete:'+assetId]);
+        [userId,assetId,-(Number(asset.rows[0].size_bytes)+variants.rows.reduce((sum,v)=>sum+Number(v.size_bytes),0)),'media-delete:'+assetId]);
       return {deleted:true,queuedStorageObjects:variants.rowCount+1};
     });
   }
