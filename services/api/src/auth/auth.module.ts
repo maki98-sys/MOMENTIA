@@ -6,9 +6,10 @@ import { DeviceSessionController } from './device-session.controller';
 import { DeviceSessionService } from './device-session.service';
 import { SessionTokenService } from './session-token.service';
 import { AuthSessionController } from './session-token.controller';
+import { AuthIdentityController } from './auth-identity.controller';
 
 @Module({
-  controllers: [DeviceSessionController, AuthSessionController],
+  controllers: [DeviceSessionController, AuthSessionController, AuthIdentityController],
   providers: [OidcTokenVerifier, OidcBearerGuard, OidcIdentityService, DeviceSessionService, SessionTokenService],
   exports: [OidcBearerGuard, OidcTokenVerifier, OidcIdentityService, DeviceSessionService, SessionTokenService],
 })
