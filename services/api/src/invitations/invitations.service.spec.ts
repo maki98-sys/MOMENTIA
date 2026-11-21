@@ -36,7 +36,7 @@ describe('InvitationsService', () => {
   it('does not reveal inaccessible spaces when creating invitations', async () => {
     const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]});
     transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) => work({query:clientQuery}));
-    await expect(service.create('user-1', 'secret', { role: 'member', expiresInDays: 7 }))
+    await expect(service.create('user-1', 'secret', { role: 'member', expiresInDays: 7, maxUses: 1 }))
       .rejects.toBeInstanceOf(NotFoundException);
   });
 
