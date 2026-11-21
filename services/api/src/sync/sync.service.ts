@@ -689,7 +689,22 @@ export class SyncService {
          FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id
          JOIN spaces s ON s.id=t.space_id
          WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
-           AND (t.post_id IS NULL OR EXISTS(SELECT 1 FROM posts p WHERE p.id=t.post_id AND p.status='published'))
+           AND (t.post_id IS NULL OR EXISTS(
+             SELECT 1 FROM posts p
+             WHERE p.id=t.post_id AND p.status='published'
+               AND (
+                 p.author_id=$1 OR p.audience='public'
+                 OR (p.audience='followers' AND EXISTS(
+                   SELECT 1 FROM user_relationships rel
+                   WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+                 OR (p.audience='space' AND EXISTS(
+                   SELECT 1 FROM space_memberships pm
+                   WHERE pm.space_id=p.space_id AND pm.user_id=$1 AND pm.state='active'))
+               )
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=p.author_id)
+                 OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+           ))
            AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
          ORDER BY t.occurred_at DESC,t.id`, [userId]);
       data.timeline = r.rows;
