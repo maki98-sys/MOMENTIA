@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException, ConfigService } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { DatabaseService } from '../database/database.service';
 
@@ -32,13 +32,13 @@ export class SessionTokenService {
       .setSubject(userId)
       .setIssuedAt()
       .setExpirationTime(`${ACCESS_TTL_SECONDS}s`)
-      .sign(this.secret);
+      .sign(this.secret).then(token => `mta_${token}`);
   }
 
   async create(userId: string, deviceId?: string, metadata?: { userAgent?: string; ipAddress?: string }) {
     const refreshToken = this.newRefreshToken();
     const refreshHash = this.hash(refreshToken);
-    const familyId = randomBytes(16).toString('hex');
+    const familyId = randomUUID();
     const session = await this.db.transaction(async client => {
       if (deviceId) {
         const device = await client.query(
@@ -90,7 +90,7 @@ export class SessionTokenService {
           `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
            WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
         );
-        throw new UnauthorizedException('Refresh token reuse detected. The session family was revoked.');
+        return { reused: true as const };
       }
       if (new Date(row.expires_at).getTime() <= Date.now()) {
         throw new UnauthorizedException('Refresh token has expired.');
@@ -121,8 +121,9 @@ export class SessionTokenService {
         `UPDATE auth_sessions SET refresh_token_hash=$1,last_used_at=now()
          WHERE id=$2`,[nextHash,row.session_id],
       );
-      return { userId:String(session.rows[0].user_id),sessionId:String(row.session_id),expiresAt:session.rows[0].expires_at };
+      return { reused: false as const,userId:String(session.rows[0].user_id),sessionId:String(row.session_id),expiresAt:session.rows[0].expires_at };
     });
+    if(result.reused) throw new UnauthorizedException('Refresh token reuse detected. The session family was revoked.');
     return {
       accessToken: await this.accessToken(result.userId,result.sessionId),
       refreshToken: nextRefreshToken,
