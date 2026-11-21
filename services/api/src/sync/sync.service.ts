@@ -18,7 +18,7 @@ export class SyncService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new BadRequestException('Invalid sync operation.');
       const value = item as Record<string, unknown>;
       if (!UUID.test(String(value.operationId ?? ''))) throw new BadRequestException('operationId must be a UUID.');
-      if (!['post.create', 'timeline.add'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
+      if (!['post.create', 'timeline.add', 'comment.create', 'reaction.set', 'reaction.remove'].includes(String(value.type))) throw new BadRequestException('Unsupported sync operation type.');
       if (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) throw new BadRequestException('Operation payload is required.');
       return { operationId: String(value.operationId), type: String(value.type), payload: value.payload as Record<string, unknown> };
     });
@@ -49,9 +49,12 @@ export class SyncService {
             return { operationId: operation.operationId, state: 'processing' };
           }
 
-          const created = operation.type === 'post.create'
-            ? await this.createPost(client, userId, operation.payload)
-            : await this.addTimelineEntry(client, userId, operation.payload);
+          let created: any;
+          if (operation.type === 'post.create') created = await this.createPost(client, userId, operation.payload);
+          else if (operation.type === 'timeline.add') created = await this.addTimelineEntry(client, userId, operation.payload);
+          else if (operation.type === 'comment.create') created = await this.createComment(client, userId, operation.payload);
+          else if (operation.type === 'reaction.set') created = await this.setReaction(client, userId, operation.payload);
+          else created = await this.removeReaction(client, userId, operation.payload);
           await client.query(
             `UPDATE sync_operation_receipts SET state='succeeded',result=$3::jsonb,completed_at=now()
              WHERE user_id=$1 AND operation_id=$2`,
@@ -72,6 +75,87 @@ export class SyncService {
       }
     }
     return { accepted: results.filter(r => r.state === 'succeeded').length, rejected: results.filter(r => r.state === 'rejected').length, results };
+  }
+
+  private async resolveInteractablePost(client: any, userId: string, targetType: string, targetId: string) {
+    if (!UUID.test(targetId)) throw new Error('INVALID_TARGET_ID');
+    const result = targetType === 'post'
+      ? await client.query(
+        `SELECT p.id,p.author_id,p.space_id,p.audience,p.status,NULL::uuid AS comment_id
+         FROM posts p WHERE p.id=$1 AND p.status='published'`, [targetId])
+      : await client.query(
+        `SELECT p.id,p.author_id,p.space_id,p.audience,p.status,c.id AS comment_id
+         FROM post_comments c JOIN posts p ON p.id=c.post_id
+         WHERE c.id=$1 AND c.status='visible' AND p.status='published'`, [targetId]);
+    if (!result.rowCount) throw new Error('TARGET_NOT_FOUND');
+    const post = result.rows[0];
+    const access = await client.query(
+      `SELECT 1 FROM posts p
+       WHERE p.id=$1 AND (
+         p.author_id=$2 OR p.audience='public'
+         OR (p.audience='followers' AND EXISTS(
+           SELECT 1 FROM user_relationships r WHERE r.requester_id=$2
+             AND r.target_id=p.author_id AND r.state='accepted'))
+         OR (p.audience='space' AND EXISTS(
+           SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id
+             AND sm.user_id=$2 AND sm.state='active'))
+       )
+       AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+         (b.blocker_id=$2 AND b.blocked_id=p.author_id) OR
+         (b.blocker_id=p.author_id AND b.blocked_id=$2))`,
+      [post.id,userId]);
+    if (!access.rowCount) throw new Error('TARGET_NOT_ACCESSIBLE');
+    if (post.audience === 'space') {
+      const role = await client.query(
+        `SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+        [post.space_id,userId]);
+      if (!role.rowCount || role.rows[0].role === 'guest') throw new Error('INTERACTION_NOT_ALLOWED');
+    }
+    return post;
+  }
+
+  private async createComment(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['postId','body'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const postId = payload.postId;
+    const body = payload.body;
+    if (typeof postId !== 'string' || !UUID.test(postId)) throw new Error('INVALID_POST_ID');
+    if (typeof body !== 'string' || !body.trim() || body.length > 3000) throw new Error('INVALID_COMMENT_BODY');
+    await this.resolveInteractablePost(client,userId,'post',postId);
+    const result = await client.query(
+      `INSERT INTO post_comments(post_id,author_id,body,status)
+       VALUES($1,$2,$3,'visible')
+       RETURNING id,post_id,author_id,body,status,created_at`,
+      [postId,userId,body.trim()]);
+    return { entityType:'comment', ...result.rows[0] };
+  }
+
+  private async setReaction(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['targetType','targetId','reactionType'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const targetType = String(payload.targetType ?? '');
+    const targetId = String(payload.targetId ?? '');
+    const reactionType = String(payload.reactionType ?? '');
+    if (!['post','comment'].includes(targetType)) throw new Error('INVALID_TARGET_TYPE');
+    if (!['like','love','laugh','wow','support'].includes(reactionType)) throw new Error('INVALID_REACTION_TYPE');
+    await this.resolveInteractablePost(client,userId,targetType,targetId);
+    const result = await client.query(
+      `INSERT INTO content_reactions(target_type,target_id,user_id,reaction_type)
+       VALUES($1,$2,$3,$4)
+       ON CONFLICT(target_type,target_id,user_id) DO UPDATE SET reaction_type=EXCLUDED.reaction_type
+       RETURNING id,target_type,target_id,user_id,reaction_type,created_at`,
+      [targetType,targetId,userId,reactionType]);
+    return { entityType:'reaction', ...result.rows[0] };
+  }
+
+  private async removeReaction(client: any, userId: string, payload: Record<string, unknown>) {
+    if (Object.keys(payload).some(key => !['targetType','targetId'].includes(key))) throw new Error('INVALID_PAYLOAD');
+    const targetType = String(payload.targetType ?? '');
+    const targetId = String(payload.targetId ?? '');
+    if (!['post','comment'].includes(targetType)) throw new Error('INVALID_TARGET_TYPE');
+    await this.resolveInteractablePost(client,userId,targetType,targetId);
+    await client.query(
+      `DELETE FROM content_reactions WHERE target_type=$1 AND target_id=$2 AND user_id=$3`,
+      [targetType,targetId,userId]);
+    return { entityType:'reaction', targetType, targetId, removed:true };
   }
 
   private async createPost(client: any, userId: string, payload: Record<string, unknown>) {
