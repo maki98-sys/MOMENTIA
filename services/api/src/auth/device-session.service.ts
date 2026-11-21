@@ -3,6 +3,10 @@ import { DatabaseService } from '../database/database.service';
 import { encryptPushToken } from '../notifications/push-token-crypto';
 
 const PLATFORMS = ['ios', 'android', 'web'] as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function assertUuid(value: string, field: string) {
+  if (!UUID_RE.test(value)) throw new BadRequestException(`${field} must be a UUID.`);
+}
 type DevicePlatform = typeof PLATFORMS[number];
 
 @Injectable()
@@ -49,6 +53,7 @@ export class DeviceSessionService {
   }
 
   async heartbeat(userId: string, deviceId: string) {
+    assertUuid(deviceId, 'deviceId');
     const result = await this.db.query(
       `UPDATE devices SET last_seen_at=now()
        WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
@@ -60,6 +65,7 @@ export class DeviceSessionService {
   }
 
   async revokeDevice(userId: string, deviceId: string) {
+    assertUuid(deviceId, 'deviceId');
     return this.db.transaction(async client => {
       const result = await client.query(
         `UPDATE devices SET revoked_at=now()
@@ -94,6 +100,7 @@ export class DeviceSessionService {
   }
 
   async revokeSession(userId: string, sessionId: string) {
+    assertUuid(sessionId, 'sessionId');
     const result = await this.db.query(
       `UPDATE auth_sessions SET revoked_at=now()
        WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL
