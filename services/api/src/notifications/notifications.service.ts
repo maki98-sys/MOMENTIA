@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { decryptPushToken } from './push-token-crypto';
 
 interface NotificationCursor {
   createdAt: string;
@@ -241,7 +242,6 @@ export class NotificationsService {
         if (item.platform !== 'ios' && item.platform !== 'android') {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
-        const { decryptPushToken } = await import('./push-token-crypto');
         const token = decryptPushToken(String(item.push_token_encrypted));
         if (!/^(ExponentPushToken|ExpoPushToken)\\[.+\\]$/.test(token)) {
           throw new Error('INVALID_EXPO_PUSH_TOKEN');
