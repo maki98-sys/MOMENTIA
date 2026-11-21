@@ -12,7 +12,7 @@ export class EventsWorkerController {
 
   @Post('archive-ended')
   archiveEnded(@Headers('x-worker-token') token?: string) {
-    const expected = this.config.get<string>('NOTIFICATION_WORKER_TOKEN');
+    const expected = this.config.get<string>('EVENTS_WORKER_TOKEN');
     if (!expected || !token) throw new UnauthorizedException();
     const supplied = Buffer.from(token);
     const configured = Buffer.from(expected);
