@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
