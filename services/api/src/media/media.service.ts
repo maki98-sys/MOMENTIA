@@ -110,7 +110,7 @@ export class MediaService {
     if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
     const key='parts/'+userId+'/'+uploadId+'/'+partNumber+'-'+checksum;
     const existing=await this.db.query(
-      `SELECT byte_size,checksum_sha256 FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
+      `SELECT byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
     if(existing.rowCount) {
       if(Number(existing.rows[0].byte_size)!==bytes.length||String(existing.rows[0].checksum_sha256)!==checksum) throw new ConflictException('Part number already contains different data.');
       return {uploadId,partNumber,received:true,duplicate:true};
@@ -161,8 +161,8 @@ export class MediaService {
   private async enqueueUploadPartCleanup(uploadId:string) {
     await this.db.transaction(async client=>{
       await client.query(
-        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-         SELECT u.media_asset_id,p.storage_key
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+         SELECT u.media_asset_id,p.storage_key,p.storage_provider
          FROM media_upload_parts p JOIN media_uploads u ON u.id=p.upload_id
          WHERE p.upload_id=$1
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,[uploadId]);
@@ -174,7 +174,7 @@ export class MediaService {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     const prepared=await this.db.transaction(async client=>{
       const upload=await client.query(
-        `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256
+        `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256,a.storage_provider
          FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
          WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
       if(!upload.rowCount) throw new NotFoundException('Upload not found.');
@@ -183,7 +183,7 @@ export class MediaService {
       if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not available for assembly.');
       await client.query(`UPDATE media_uploads SET state='assembling',updated_at=now() WHERE id=$1`,[uploadId]);
       const parts=await client.query(
-        `SELECT part_number,byte_size,checksum_sha256,storage_key FROM media_upload_parts
+        `SELECT part_number,byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts
          WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
       return {alreadyComplete:false,upload:upload.rows[0],parts:parts.rows};
     });
@@ -434,12 +434,13 @@ export class MediaService {
       if(asset.rows[0].status==='deleted') return {deleted:true,alreadyDeleted:true};
       const variants=await client.query(
         `SELECT storage_key,size_bytes,storage_provider FROM media_variants WHERE media_asset_id=$1 FOR UPDATE`,[assetId]);
-      const deletionValues=[`($1,$2)`,...variants.rows.map((_,i)=>`($1,${i+3})`)].join(',');
+      const deletionObjects=[{storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},...variants.rows];
+      const deletionValues=deletionObjects.map((_,i)=>`($1,${i*2+2},${i*2+3})`).join(',');
       await client.query(
-        `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+        `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
          VALUES ${deletionValues}
          ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
-        [assetId,asset.rows[0].storage_key_original,...variants.rows.map(v=>v.storage_key)]);
+        [assetId,...deletionObjects.flatMap(v=>[v.storage_key,v.storage_provider])]);
       await client.query(
         `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
          WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,[assetId]);
