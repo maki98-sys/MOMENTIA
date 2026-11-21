@@ -476,34 +476,57 @@ export class SyncService {
   }
 
   async pull(userId: string, cursor?: string, limit = 200) {
-    if (cursor !== undefined && !/^\d{1,18}$/.test(cursor)) throw new BadRequestException('Sync cursor must be a non-negative integer.');
+    if (cursor !== undefined && !/^\\d{1,18}$/.test(cursor)) {
+      throw new BadRequestException('Sync cursor must be a non-negative integer.');
+    }
     const requestedLimit = Number(limit);
-    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) throw new BadRequestException('Sync limit must be a positive integer.');
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+      throw new BadRequestException('Sync limit must be a positive integer.');
+    }
     const safeLimit = Math.min(requestedLimit, 500);
-    const requestedCursor=cursor ?? '0';
-    const bounds=await this.db.query(
-      `SELECT COALESCE(MIN(sequence_id),0)::text oldest_sequence,
-              COALESCE(MAX(sequence_id),0)::text latest_sequence
-       FROM sync_change_log WHERE user_id=$1`,[userId]);
-    const oldest=BigInt(bounds.rows[0].oldest_sequence);
-    const latest=BigInt(bounds.rows[0].latest_sequence);
-    const requested=BigInt(requestedCursor);
-    const cursorAhead=requested>latest;
-    const historyExpired=oldest>0n && requested<oldest-1n;
-    if(cursorAhead || historyExpired) return {
-      changes:[],nextCursor:requestedCursor,hasMore:false,resetRequired:true,
-      resetReason:cursorAhead?'cursor_ahead':'history_expired',
-      oldestCursor:oldest>0n?(oldest-1n).toString():'0',
-      serverCursor:latest.toString(),
-    };
-    const result = await this.db.query(
-      `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
-       FROM sync_change_log WHERE user_id=$1 AND sequence_id>$2::bigint
-       ORDER BY sequence_id ASC LIMIT $3`,
-      [userId,requestedCursor,safeLimit],
-    );
-    const nextCursor = result.rowCount ? String(result.rows[result.rows.length - 1].sequence_id) : requestedCursor;
-    return { changes: result.rows, nextCursor, hasMore: result.rowCount === safeLimit, resetRequired:false, serverCursor:latest.toString() };
+    const requestedCursor = cursor ?? '0';
+    return this.db.transaction(async client => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      const bounds = await client.query(
+        `SELECT COALESCE(MIN(sequence_id),0)::text AS oldest_sequence,
+                COALESCE(MAX(sequence_id),0)::text AS latest_sequence
+         FROM sync_change_log WHERE user_id=$1`,
+        [userId],
+      );
+      const oldest = BigInt(bounds.rows[0].oldest_sequence);
+      const latest = BigInt(bounds.rows[0].latest_sequence);
+      const requested = BigInt(requestedCursor);
+      const cursorAhead = requested > latest;
+      const historyExpired = oldest > 0n && requested < oldest - 1n;
+      if (cursorAhead || historyExpired) {
+        return {
+          changes: [],
+          nextCursor: requestedCursor,
+          hasMore: false,
+          resetRequired: true,
+          resetReason: cursorAhead ? 'cursor_ahead' : 'history_expired',
+          oldestCursor: oldest > 0n ? (oldest - 1n).toString() : '0',
+          serverCursor: latest.toString(),
+        };
+      }
+      const result = await client.query(
+        `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
+         FROM sync_change_log
+         WHERE user_id=$1 AND sequence_id>$2::bigint
+         ORDER BY sequence_id ASC LIMIT $3`,
+        [userId, requestedCursor, safeLimit],
+      );
+      const nextCursor = result.rowCount
+        ? String(result.rows[result.rows.length - 1].sequence_id)
+        : requestedCursor;
+      return {
+        changes: result.rows,
+        nextCursor,
+        hasMore: result.rowCount === safeLimit,
+        resetRequired: false,
+        serverCursor: latest.toString(),
+      };
+    });
   }
 
   async snapshot(userId: string, input?: unknown) {
