@@ -15,6 +15,7 @@ export class BillingWebhookService {
     const v=payload as Record<string,unknown>;
     if(typeof v.userId!=='string'||!UUID.test(v.userId)||typeof v.planCode!=='string'||!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(v.planCode)||typeof v.subscriptionId!=='string'||!v.subscriptionId.trim()||v.subscriptionId.length>255) throw new BadRequestException('Billing event subscription identity is invalid.');
     for(const k of ['periodStart','periodEnd']) if(v[k]!==undefined&&v[k]!==null&&(typeof v[k]!=='string'||!Number.isFinite(Date.parse(v[k] as string)))) throw new BadRequestException(`Invalid ${k} date.`);
+    if(v.periodStart&&v.periodEnd&&Date.parse(v.periodEnd as string)<=Date.parse(v.periodStart as string)) throw new BadRequestException('Subscription period end must be after period start.');
     if(v.customerId!==undefined&&(typeof v.customerId!=='string'||v.customerId.length>255)) throw new BadRequestException('Invalid customerId.');
     if(v.cancelAtPeriodEnd!==undefined&&typeof v.cancelAtPeriodEnd!=='boolean') throw new BadRequestException('cancelAtPeriodEnd must be boolean.');
     if(v.status!==undefined&&!['trialing','active','past_due','cancelled','expired'].includes(String(v.status))) throw new BadRequestException('Invalid subscription status.');
@@ -58,10 +59,15 @@ export class BillingWebhookService {
     if(!user.rowCount) throw new BadRequestException('Unknown subscription user.');
     const existing=await client.query(`SELECT id FROM user_subscriptions WHERE provider=$1 AND provider_subscription_id=$2 FOR UPDATE`,[provider,d.subscriptionId]);
     const params=[d.userId,plan.rows[0].id,status,provider,d.customerId??null,d.subscriptionId,d.periodStart??null,d.periodEnd??null,cancel];
+    if(['trialing','active','past_due'].includes(status)) await client.query(
+      `UPDATE user_subscriptions SET status='cancelled',cancel_at_period_end=false,updated_at=now()
+       WHERE user_id=$1 AND status IN ('trialing','active','past_due')
+         AND NOT (provider=$2 AND provider_subscription_id=$3)`,
+      [d.userId,provider,d.subscriptionId],
+    );
     if(existing.rowCount) {
       await client.query(`UPDATE user_subscriptions SET user_id=$1,plan_id=$2,status=$3,provider=$4,provider_customer_id=$5,provider_subscription_id=$6,current_period_start=$7,current_period_end=$8,cancel_at_period_end=$9,updated_at=now() WHERE id=$10`,[...params,existing.rows[0].id]);
     } else {
-      if(['trialing','active','past_due'].includes(status)) await client.query(`UPDATE user_subscriptions SET status='cancelled',cancel_at_period_end=false,updated_at=now() WHERE user_id=$1 AND status IN ('trialing','active','past_due')`,[d.userId]);
       await client.query(`INSERT INTO user_subscriptions(user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,cancel_at_period_end) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,params);
     }
     await client.query(`UPDATE billing_webhook_events SET processing_status='processed',processing_started_at=NULL,processed_at=now(),processing_error=NULL,updated_at=now() WHERE id=$1`,[e.id]);
@@ -75,14 +81,23 @@ export class BillingWebhookService {
       if(state.rows[0]?.processing_status==='ignored') ignored++; else processed++;
     } catch(err) {
       failed++;const msg=err instanceof Error?err.message:'Unknown billing webhook error';
-      await this.db.query(`UPDATE billing_webhook_events SET processing_status='failed',processing_error=$2,processing_started_at=NULL,next_attempt_at=now()+make_interval(secs=>LEAST(21600,30*(2^LEAST(attempts,9))::integer)),updated_at=now() WHERE id=$1 AND processing_status='processing'`,[e.id,msg.slice(0,1000)]);
+      await this.db.query(`UPDATE billing_webhook_events SET
+        processing_status=CASE WHEN attempts>=10 THEN 'dead_letter' ELSE 'failed' END,
+        processing_error=$2,processing_started_at=NULL,
+        next_attempt_at=now()+make_interval(secs=>LEAST(21600,30*(2^LEAST(attempts,9))::integer)),
+        updated_at=now()
+        WHERE id=$1 AND processing_status='processing'`,[e.id,msg.slice(0,1000)]);
     }
     return {claimed:events.length,processed,ignored,failed};
   }
 
   async recoverStale(seconds=300) {
     const n=Number(seconds);if(!Number.isSafeInteger(n)||n<60||n>3600) throw new BadRequestException('Timeout must be between 60 and 3600 seconds.');
-    const r=await this.db.query(`UPDATE billing_webhook_events SET processing_status='failed',processing_started_at=NULL,processing_error='PROCESSING_LEASE_EXPIRED',next_attempt_at=now(),updated_at=now() WHERE processing_status='processing' AND processing_started_at<now()-($1 * interval '1 second') RETURNING id`,[n]);
+    const r=await this.db.query(`UPDATE billing_webhook_events SET
+      processing_status=CASE WHEN attempts>=10 THEN 'dead_letter' ELSE 'failed' END,
+      processing_started_at=NULL,processing_error='PROCESSING_LEASE_EXPIRED',
+      next_attempt_at=now(),updated_at=now()
+      WHERE processing_status='processing' AND processing_started_at<now()-($1 * interval '1 second') RETURNING id,processing_status`,[n]);
     return {recovered:r.rowCount??0};
   }
 }
