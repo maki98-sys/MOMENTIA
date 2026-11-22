@@ -140,6 +140,7 @@ export class SpacesService {
       throw new BadRequestException('downloadPolicy is invalid.');
     }
     return this.database.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const access=await client.query(
         `SELECT s.id,s.name,ed.starts_at,ed.ends_at,ed.timezone,ed.moderation_mode,ed.download_policy
          FROM spaces s JOIN event_details ed ON ed.space_id=s.id
