@@ -11,7 +11,7 @@ describe('MediaProcessingService',()=>{
   const assetId='22222222-2222-4222-8222-222222222222';
   const deletionId='33333333-3333-4333-8333-333333333333';
   const variant={
-    variantType:'thumbnail',storageKey:'variants/thumb.webp',mimeType:'image/webp',
+    variantType:'thumbnail',storageKey:'variants/22222222-2222-4222-8222-222222222222/thumb.webp',mimeType:'image/webp',
     sizeBytes:2048,width:320,height:240,checksumSha256:'a'.repeat(64),
   };
 
@@ -70,6 +70,16 @@ describe('MediaProcessingService',()=>{
       .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,storageKey:'variants/../secret'}]}))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a variant key belonging to a different media asset',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,storageKey:'variants/33333333-3333-4333-8333-333333333333/thumb.webp'}]}))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(clientQuery).toHaveBeenCalledTimes(2);
   });
