@@ -219,6 +219,45 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     await expect(service.completeResumableUpload(userId, uploadId)).rejects.toMatchObject({ status: 409 });
   });
 
+  it('serializes an in-flight assembly against expiry cleanup without publishing the asset', async () => {
+    await seedUpload();
+    const part = Buffer.from(file);
+    await service.receiveUploadPart(userId, uploadId, 0, part, sha256(part));
+    await pool.query(
+      `UPDATE media_uploads SET expires_at=now()-interval '1 minute' WHERE id=$1`,
+      [uploadId],
+    );
+
+    let markReadStarted!: () => void;
+    let releaseRead!: () => void;
+    const readStarted = new Promise<void>(resolve => { markReadStarted = resolve; });
+    const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+    storage.read.mockImplementationOnce(async (key: string) => {
+      markReadStarted();
+      await readGate;
+      const value = objects.get(key);
+      if (!value) throw new Error('Object not found');
+      return Buffer.from(value);
+    });
+
+    const assembly = service.completeResumableUpload(userId, uploadId);
+    await readStarted;
+    await expect(processing.cleanupExpiredUploads(100)).resolves.toMatchObject({
+      expired: 1,
+      removedParts: 1,
+    });
+    releaseRead();
+
+    await expect(assembly).rejects.toMatchObject({ status: 409 });
+    const upload = await pool.query('SELECT state,last_error_code FROM media_uploads WHERE id=$1', [uploadId]);
+    expect(upload.rows[0]).toMatchObject({ state: 'cancelled', last_error_code: 'UPLOAD_EXPIRED' });
+    const asset = await pool.query('SELECT status FROM media_assets WHERE id=$1', [assetId]);
+    expect(asset.rows[0].status).toBe('deleted');
+    expect(objects.has(`pending/${userId}/${assetId}`)).toBe(false);
+    const jobs = await pool.query('SELECT 1 FROM media_processing_jobs WHERE media_asset_id=$1', [assetId]);
+    expect(jobs.rowCount).toBe(0);
+  });
+
   it('cancels an incomplete upload, queues fragment cleanup and refuses further parts', async () => {
     await seedUpload();
     const part = file.subarray(0, 4);
