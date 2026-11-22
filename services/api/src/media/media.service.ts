@@ -386,6 +386,7 @@ export class MediaService {
                  SELECT 1 FROM space_album_items i
                  JOIN users album_adder ON album_adder.id=i.added_by AND album_adder.status='active'
                  JOIN space_albums al ON al.id=i.album_id
+                 JOIN spaces album_space ON album_space.id=al.space_id AND album_space.status IN ('active','archived')
                  JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE i.media_asset_id=a.id AND i.status='active'
                    AND (al.visibility='members' OR sm.role IN ('owner','admin','moderator'))
