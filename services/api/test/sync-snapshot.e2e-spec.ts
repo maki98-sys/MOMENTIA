@@ -325,8 +325,10 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
 
   it('releases a snapshot and rejects continuation after release', async () => {
     const snapshot = await sync.snapshot(viewerId, { sections: ['profile'] });
-    await expect(sync.releaseSnapshot(viewerId,snapshot.snapshotId)).resolves.toEqual({released:true});
-    await expect(sync.snapshot(viewerId,{snapshotId:snapshot.snapshotId}))
+    const snapshotId = snapshot.snapshotId;
+    if (!snapshotId) throw new Error('Expected snapshot id.');
+    await expect(sync.releaseSnapshot(viewerId,snapshotId)).resolves.toEqual({released:true});
+    await expect(sync.snapshot(viewerId,{snapshotId}))
       .rejects.toThrow('Snapshot session not found or expired.');
   });
 
