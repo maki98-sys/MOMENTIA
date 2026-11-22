@@ -6,6 +6,13 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } fro
 import { lstat, mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
 import { join, resolve } from 'path';
 
+function s3EncryptionParams(): { ServerSideEncryption: 'AES256' | 'aws:kms'; SSEKMSKeyId?: string } {
+  const kmsKeyId = process.env.MEDIA_S3_SSE_KMS_KEY_ID?.trim();
+  return kmsKeyId
+    ? { ServerSideEncryption: 'aws:kms', SSEKMSKeyId: kmsKeyId }
+    : { ServerSideEncryption: 'AES256' };
+}
+
 /** Reject existing symlinks before path-based filesystem operations. This is a
  * defense-in-depth preflight check, not an atomic openat/openat2 guarantee;
  * the media root must remain writable only by trusted service identities. */
@@ -122,7 +129,7 @@ export class S3MediaStorage extends MediaStorage {
   }
 
   async put(storageKey: string, bytes: Buffer, _provider?: string): Promise<void> {
-    try { await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey), Body: bytes })); }
+    try { await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey), Body: bytes, ...s3EncryptionParams() })); }
     catch { throw new ServiceUnavailableException('Remote media storage is unavailable.'); }
   }
 
