@@ -1,7 +1,8 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { createReadStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { lstat, mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
 import { join, resolve } from 'path';
@@ -47,6 +48,7 @@ async function assertNoSymlinkPath(root: string, target: string, createParents =
  */
 export abstract class MediaStorage {
   abstract put(storageKey: string, bytes: Buffer, provider?: string): Promise<void>;
+  abstract putFile(storageKey: string, filePath: string, expectedSize: number, provider?: string): Promise<void>;
   abstract remove(storageKey: string, provider?: string): Promise<void>;
   abstract locate(storageKey: string, expectedSize?: number, provider?: string): Promise<string>;
   abstract read(storageKey: string, provider?: string): Promise<Buffer>;
@@ -72,6 +74,28 @@ export class LocalMediaStorage extends MediaStorage {
     try {
       await assertNoSymlinkPath(this.root, destination, true);
       await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 });
+      await rename(temporary, destination);
+    } catch {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw new ServiceUnavailableException('Media storage is unavailable.');
+    }
+  }
+
+  async putFile(storageKey: string, filePath: string, expectedSize: number, _provider?: string): Promise<void> {
+    const destination = this.pathFor(storageKey);
+    const temporary = destination + '.' + randomUUID() + '.tmp';
+    try {
+      const sourceInfo = await stat(filePath);
+      if (!sourceInfo.isFile() || sourceInfo.size !== expectedSize || expectedSize < 1) {
+        throw new Error('Staged upload size mismatch');
+      }
+      await assertNoSymlinkPath(this.root, destination, true);
+      await pipeline(
+        createReadStream(filePath),
+        createWriteStream(temporary, { flags: 'wx', mode: 0o600 }),
+      );
+      const copied = await stat(temporary);
+      if (copied.size !== expectedSize) throw new Error('Stored media size mismatch');
       await rename(temporary, destination);
     } catch {
       await rm(temporary, { force: true }).catch(() => undefined);
@@ -133,6 +157,24 @@ export class S3MediaStorage extends MediaStorage {
     catch { throw new ServiceUnavailableException('Remote media storage is unavailable.'); }
   }
 
+  async putFile(storageKey: string, filePath: string, expectedSize: number, _provider?: string): Promise<void> {
+    try {
+      const info = await stat(filePath);
+      if (!info.isFile() || info.size !== expectedSize || expectedSize < 1) {
+        throw new Error('Staged upload size mismatch');
+      }
+      await this.client.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: this.key(storageKey),
+        Body: createReadStream(filePath),
+        ContentLength: info.size,
+        ...s3EncryptionParams(),
+      }));
+    } catch {
+      throw new ServiceUnavailableException('Remote media storage is unavailable.');
+    }
+  }
+
   async remove(storageKey: string, _provider?: string): Promise<void> {
     try { await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(storageKey) })); }
     catch { throw new ServiceUnavailableException('Remote media deletion failed.'); }
@@ -173,6 +215,7 @@ export class RoutedMediaStorage extends MediaStorage {
     throw new ServiceUnavailableException('Unknown media storage provider.');
   }
   put(key: string, bytes: Buffer, provider?: string) { return this.select(provider).put(key,bytes); }
+  putFile(key: string, filePath: string, expectedSize: number, provider?: string) { return this.select(provider).putFile(key,filePath,expectedSize); }
   remove(key: string, provider?: string) { return this.select(provider).remove(key); }
   locate(key: string, size?: number, provider?: string) { return this.select(provider).locate(key,size); }
   read(key: string, provider?: string) { return this.select(provider).read(key); }
