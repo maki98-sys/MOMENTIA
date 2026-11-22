@@ -68,7 +68,8 @@ describe('InvitationsService', () => {
     });
     expect(clientQuery).toHaveBeenCalledTimes(7);
     expect(clientQuery.mock.calls[2][0]).toContain("u.status='active'");
-    expect(clientQuery.mock.calls[3][0]).toContain('INSERT INTO space_memberships');
+    expect(clientQuery.mock.calls[3][0]).toContain('SELECT state FROM space_memberships');
+    expect(clientQuery.mock.calls[4][0]).toContain('INSERT INTO space_memberships');
     expect(clientQuery.mock.calls[5][0]).toContain('uses = uses + 1');
     expect(clientQuery.mock.calls[6][0]).toContain('space_audit_events');
   });
