@@ -74,6 +74,9 @@ export class PrivacyService {
 
   async requestDeletion(userId: string) {
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
       if (!account.rowCount || account.rows[0].status==='deleted') {
@@ -110,6 +113,9 @@ export class PrivacyService {
     }
     const batch = Math.min(limit, 25);
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       // A worker may disappear while holding its final lease. Such requests
       // must become terminal failures instead of remaining pending forever.
       await client.query(
@@ -215,6 +221,9 @@ export class PrivacyService {
       throw new BadRequestException('A successful deletion must confirm purged=true.');
     }
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const locked = await client.query(
         `SELECT id,user_id,processing_attempts FROM account_deletion_requests
          WHERE id=$1 AND status='pending' AND processing_worker_id=$2
@@ -460,6 +469,9 @@ export class PrivacyService {
 
   async cancelDeletion(userId: string) {
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
       if (!account.rowCount || account.rows[0].status!=='deletion_pending') {
