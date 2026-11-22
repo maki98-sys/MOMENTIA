@@ -209,6 +209,7 @@ export class AudioService {
       const r = await client.query(`UPDATE audio_participants p
         SET last_heartbeat_at=now()
         FROM audio_sessions s
+        JOIN spaces sp ON sp.id=s.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=s.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE p.session_id=s.id AND p.session_id=$1 AND p.user_id=$2
           AND p.left_at IS NULL AND s.state IN ('created','playing','paused')
@@ -269,6 +270,7 @@ export class AudioService {
       await this.assertAudioEntitlement(client,userId);
       const s = await client.query(`SELECT a.id FROM audio_sessions a
         JOIN audio_participants p ON p.session_id=a.id
+        JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE a.id=$1 AND p.user_id=$2 AND p.left_at IS NULL AND a.state IN ('created','playing','paused')
         FOR UPDATE OF a`, [sessionId,userId]);
@@ -317,6 +319,7 @@ export class AudioService {
       await this.lockAuthorizationRead(client);
       await this.assertAudioEntitlement(client,userId);
       const s = await client.query(`SELECT a.id,a.host_user_id,a.state,a.server_version FROM audio_sessions a
+        JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE a.id=$1 FOR UPDATE OF a`, [sessionId,userId]);
       if (!s.rowCount) throw new NotFoundException('Audio session not found.');
@@ -367,6 +370,7 @@ export class AudioService {
       const allowed = await client.query(`SELECT 1 FROM audio_queue_items q
         JOIN audio_participants p ON p.session_id=q.session_id
         JOIN audio_sessions a ON a.id=q.session_id
+        JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
         WHERE q.id=$1 AND q.session_id=$2 AND p.user_id=$3 AND p.left_at IS NULL AND q.state='queued'`, [itemId,sessionId,userId]);
       if (!allowed.rowCount) throw new NotFoundException('Queue item or active participant not found.');
