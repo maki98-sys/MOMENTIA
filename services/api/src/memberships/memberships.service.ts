@@ -58,7 +58,7 @@ export class MembershipsService {
       if(previousRole!==String(role)) await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
          VALUES($1,$2,'membership.role_changed','membership',$3,
-           jsonb_build_object('targetUserId',$4,'previousRole',$5,'newRole',$6))`,
+           jsonb_build_object('targetUserId',$4::text,'previousRole',$5::text,'newRole',$6::text))`,
         [spaceId,actorId,targetId,targetId,previousRole,String(role)],
       );
       if(!['owner','admin','moderator'].includes(String(role))) {
@@ -116,7 +116,7 @@ export class MembershipsService {
       await this.endDepartedAudioParticipation(client,spaceId,targetId);
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,'membership.removed','membership',$3,jsonb_build_object('targetUserId',$3))`,
+         VALUES($1,$2,'membership.removed','membership',$3,jsonb_build_object('targetUserId',$3::text))`,
         [spaceId,actorId,targetId],
       );
       return result.rows[0];
