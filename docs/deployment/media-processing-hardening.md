@@ -9,7 +9,7 @@ This runbook describes the operational controls required by the API and media wo
 - FFmpeg poster extraction is restricted to `file,pipe` protocols, caps a single allocation at 64 MiB, and caps poster output at 20 MiB.
 - FFmpeg diagnostics are retained in a bounded buffer. A timeout sends SIGTERM and escalates to SIGKILL if the child does not exit.
 - ClamAV results are accepted only as complete `stream: OK` or `stream: ... FOUND` responses. Scanner errors, timeouts, and premature disconnects fail closed. An unavailable scanner leaves the asset quarantined and retries the scan with bounded backoff; it never schedules image/video variants.
-- S3 variant uploads include SHA-256 and are checked with `HeadObject` (content length and checksum) before the worker reports success. Failed verification triggers a best-effort object delete.
+- S3 variant uploads include SHA-256 and are checked with `HeadObject` (content length and checksum) before the worker reports success. Failed verification triggers a best-effort object delete. If generation of a later image derivative fails, the worker best-effort removes earlier derivatives from that incomplete batch.
 
 ## API upload streaming and temporary disk
 
