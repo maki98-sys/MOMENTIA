@@ -314,7 +314,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
 
 
   it('never exposes historical sync payloads that may outlive their authorization', async () => {
-    const postId = await createTimelinePost('public', '2026-11-21T08:00:00Z');
+    const postId = await createTimelinePost('public', '2026-11-21T08:00:00Z',ownerId);
     const pulled = await sync.pull(ownerId, '0', 100);
     const change = pulled.changes.find((row: any) => row.entity_id === postId);
     expect(change).toBeDefined();
