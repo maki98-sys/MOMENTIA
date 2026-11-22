@@ -100,7 +100,7 @@ export class CoupleInvitationsService {
       // row locks, two different pending invitations could concurrently create
       // two active couple spaces for the same user pair.
       const lockedUsers=await client.query(
-        `SELECT id FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+        `SELECT id FROM users WHERE id=ANY($1::uuid[]) AND status='active' ORDER BY id FOR UPDATE`,
         [[invite.inviter_user_id,userId]]);
       if(lockedUsers.rowCount!==2) throw new NotFoundException('An active account could not be found.');
       const occupied=await client.query(
