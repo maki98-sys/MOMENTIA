@@ -50,15 +50,17 @@ describe('SocialService',()=>{
 
  it('creates an accepted relationship for a public profile',async()=>{
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'public'}]})
    .mockResolvedValueOnce({rowCount:1,rows:[{requester_id:'u1',target_id:'u2',state:'accepted'}]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.follow('u1','u2')).resolves.toMatchObject({state:'accepted'});
-  expect(clientQuery).toHaveBeenCalledTimes(2);
-  expect(clientQuery.mock.calls[1][0]).toContain('ON CONFLICT(requester_id,target_id)');
+  expect(clientQuery).toHaveBeenCalledTimes(3);
+  expect(clientQuery.mock.calls[2][0]).toContain('ON CONFLICT(requester_id,target_id)');
  });
  it('creates a pending request for a non-public profile',async()=>{
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'followers'}]})
    .mockResolvedValueOnce({rowCount:1,rows:[{requester_id:'u1',target_id:'u2',state:'pending'}]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
@@ -70,13 +72,14 @@ describe('SocialService',()=>{
  });
  it('removes both directions of a relationship when blocking',async()=>{
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[{id:'u2'}]})
    .mockResolvedValueOnce({rowCount:1,rows:[]})
    .mockResolvedValueOnce({rowCount:2,rows:[]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.block('u1','u2')).resolves.toEqual({blocked:true});
-  expect(clientQuery).toHaveBeenCalledTimes(3);
-  expect(clientQuery.mock.calls[2][0]).toContain('DELETE FROM user_relationships');
+  expect(clientQuery).toHaveBeenCalledTimes(4);
+  expect(clientQuery.mock.calls[3][0]).toContain('DELETE FROM user_relationships');
  });
  it('rejects accepting a request that is not pending for the current user',async()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
@@ -84,7 +87,7 @@ describe('SocialService',()=>{
  });
 
  it('does not create a request for a fully private profile',async()=>{
-  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]});
+  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.follow('u1','u2')).rejects.toBeInstanceOf(NotFoundException);
   expect(clientQuery).toHaveBeenCalledTimes(1);
