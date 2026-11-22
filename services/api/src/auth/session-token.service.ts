@@ -130,7 +130,18 @@ export class SessionTokenService {
         `UPDATE auth_session_refresh_tokens SET consumed_at=now(),replaced_by_hash=$2
          WHERE token_hash=$1 AND consumed_at IS NULL RETURNING token_hash`,[oldHash,nextHash],
       );
-      if (!consumed.rowCount) throw new UnauthorizedException('Refresh token was already used.');
+      if (!consumed.rowCount) {
+        await client.query(
+          `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
+           WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
+        );
+        await client.query(
+          `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1)
+           FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
+        );
+        return { reused: true as const };
+      }
       await client.query(
         `INSERT INTO auth_session_refresh_tokens(token_hash,session_id,family_id,expires_at)
          VALUES($1,$2,$3,$4)`,
