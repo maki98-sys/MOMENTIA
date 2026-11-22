@@ -32,6 +32,7 @@ describe('CoupleInvitationsService',()=>{
   await expect(service.accept('00000000-0000-4000-8000-000000000002','a'.repeat(43))).resolves.toMatchObject({type:'COUPLE',visibility:'private'});
   expect(cq).toHaveBeenCalledTimes(9);
   expect(cq.mock.calls[1][0]).toContain('ORDER BY id FOR UPDATE');
+  expect(cq.mock.calls[1][0]).toContain("status='active'");
   expect(cq.mock.calls[3][0]).toContain('s.owner_id=$1');
   expect(cq.mock.calls[3][0]).not.toContain('JOIN space_memberships');
   expect(cq.mock.calls[6][0]).toContain("'owner','active'");
