@@ -2,12 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
 import { MediaService } from '../src/media/media.service';
+import { MediaProcessingService } from '../src/media/media-processing.service';
 import { MediaStorage } from '../src/media/media-storage.service';
 
 describe('Media resumable upload PostgreSQL lifecycle', () => {
   let pool: Pool;
   let database: DatabaseService;
   let service: MediaService;
+  let processing: MediaProcessingService;
   let userId: string;
   let otherUserId: string;
   let assetId: string;
@@ -59,6 +61,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
     database = new DatabaseService(pool);
     service = new MediaService(database, storage);
+    processing = new MediaProcessingService(database);
   });
 
   beforeEach(() => { objects.clear(); jest.clearAllMocks(); });
@@ -122,6 +125,38 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     const asset = await pool.query('SELECT status FROM media_assets WHERE id=$1', [assetId]);
     expect(asset.rows[0].status).toBe('pending');
     expect(objects.has(`pending/${userId}/${assetId}`)).toBe(false);
+  });
+
+
+  it('dead-letters a storage deletion after the twelfth failed attempt and stops reclaiming it', async () => {
+    await seedUpload();
+    const storageKey = `pending/${userId}/retry-exhaustion`;
+    await pool.query(
+      `INSERT INTO media_storage_deletions(
+         media_asset_id,storage_key,storage_provider,attempts,max_attempts,status
+       ) VALUES($1,$2,'local',11,12,'pending')`,
+      [assetId, storageKey],
+    );
+
+    const workerId = 'media-e2e-worker';
+    const [task] = await processing.claimDeletions(workerId, 10);
+    expect(task).toMatchObject({ storage_key: storageKey, attempts: 12 });
+
+    await expect(processing.completeDeletion(workerId, task.id, {
+      success: false,
+      errorCode: 'STORAGE_UNAVAILABLE',
+    })).resolves.toMatchObject({ status: 'failed' });
+
+    const persisted = await pool.query(
+      `SELECT attempts,max_attempts,dead_lettered_at,last_error_code
+       FROM media_storage_deletions WHERE id=$1`,
+      [task.id],
+    );
+    expect(persisted.rows[0].attempts).toBe(12);
+    expect(persisted.rows[0].max_attempts).toBe(12);
+    expect(persisted.rows[0].dead_lettered_at).not.toBeNull();
+    expect(persisted.rows[0].last_error_code).toBe('RETRY_EXHAUSTED:STORAGE_UNAVAILABLE');
+    await expect(processing.claimDeletions(workerId, 10)).resolves.toHaveLength(0);
   });
 
   it('cancels an incomplete upload, queues fragment cleanup and refuses further parts', async () => {
