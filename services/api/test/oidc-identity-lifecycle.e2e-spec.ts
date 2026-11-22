@@ -94,4 +94,25 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
     expect(remaining.rows).toHaveLength(1);
     expect(remaining.rows[0].provider_subject).toBe(second);
   });
+
+
+  it('serializes concurrent attempts to claim the same external identity', async () => {
+    const externalSubject = subject();
+    const attempts = await Promise.allSettled([
+      identities.linkAuthenticatedIdentity(userId,{
+        issuer:provider,subject:externalSubject,audience:['momentia-api'],
+      }),
+      identities.linkAuthenticatedIdentity(otherUserId,{
+        issuer:provider,subject:externalSubject,audience:['momentia-api'],
+      }),
+    ]);
+    expect(attempts.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(attempts.filter(result => result.status === 'rejected')).toHaveLength(1);
+    const stored = await pool.query(
+      'SELECT user_id FROM auth_identities WHERE provider=$1 AND provider_subject=$2',
+      [provider,externalSubject],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect([userId,otherUserId]).toContain(stored.rows[0].user_id);
+  });
 });
