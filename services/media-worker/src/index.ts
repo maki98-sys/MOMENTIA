@@ -220,7 +220,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       const target=safePath(storageKey);
       await storage.ensureParent(storageKey);
       try {
-        const output=await sharp(source,{failOn:'error'})
+        const output=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true})
           .rotate()
           .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
           .webp({quality:82,effort:4})
