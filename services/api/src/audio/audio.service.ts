@@ -17,6 +17,8 @@ export class AudioService {
   }
 
   private async assertAudioEntitlement(client: { query: (sql: string, values?: unknown[]) => Promise<any> }, userId: string) {
+    const account=await client.query("SELECT 1 FROM users WHERE id=$1 AND status='active'",[userId]);
+    if(!account.rowCount) throw new ForbiddenException('An active account is required for Social Audio.');
     const entitlement=await client.query(
       `SELECT COALESCE(p.features->>'social_audio','true')::boolean AS enabled
        FROM subscription_plans p
@@ -96,16 +98,16 @@ export class AudioService {
           COALESCE(v.upvotes,0)::int AS upvotes,
           COALESCE(v.downvotes,0)::int AS downvotes,
           (COALESCE(v.upvotes,0)-COALESCE(v.downvotes,0))::int AS vote_score
-        FROM audio_queue_items q
+        FROM audio_queue_items q JOIN users queue_author ON queue_author.id=q.added_by AND queue_author.status='active'
         LEFT JOIN LATERAL (
           SELECT count(*) FILTER (WHERE vote=1) AS upvotes,
                  count(*) FILTER (WHERE vote=-1) AS downvotes
-          FROM audio_votes WHERE queue_item_id=q.id
+          FROM audio_votes av JOIN users vote_user ON vote_user.id=av.user_id AND vote_user.status='active' WHERE av.queue_item_id=q.id
         ) v ON true
         WHERE q.session_id=$1 AND q.state IN ('queued','current')
         ORDER BY (COALESCE(v.upvotes,0)-COALESCE(v.downvotes,0)) DESC,
                  q.position ASC,q.created_at ASC,q.id ASC`, [session.id]),
-      executor.query(`SELECT p.user_id,p.role,p.joined_at,p.last_heartbeat_at,up.display_name FROM audio_participants p
+      executor.query(`SELECT p.user_id,p.role,p.joined_at,p.last_heartbeat_at,up.display_name FROM audio_participants p JOIN users participant_user ON participant_user.id=p.user_id AND participant_user.status='active'
         LEFT JOIN user_profiles up ON up.user_id=p.user_id WHERE p.session_id=$1 AND p.left_at IS NULL
         ORDER BY p.joined_at ASC`, [session.id]),
     ]);
