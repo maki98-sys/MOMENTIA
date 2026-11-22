@@ -17,6 +17,19 @@ describe('environmentSchema', () => {
     expect(result.value.MOMENTIA_SESSION_SECRET).toBe('s'.repeat(32));
   });
 
+  it('applies bounded defaults and rejects unsafe media staging concurrency', () => {
+    const base = {
+      DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
+    };
+    const defaults = environmentSchema.validate(base);
+    expect(defaults.error).toBeUndefined();
+    expect(defaults.value.MEDIA_UPLOAD_STAGING_MAX_CONCURRENT).toBe(4);
+    expect(defaults.value.MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT).toBe(2);
+    expect(environmentSchema.validate({ ...base, MEDIA_UPLOAD_STAGING_MAX_CONCURRENT: 33 }).error).toBeDefined();
+    expect(environmentSchema.validate({ ...base, MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT: 0 }).error).toBeDefined();
+  });
+
   it('requires a strong session secret', () => {
     expect(environmentSchema.validate({ DATABASE_URL: database }).error).toBeDefined();
     expect(environmentSchema.validate({ DATABASE_URL: database, MOMENTIA_SESSION_SECRET: 'short' }).error).toBeDefined();
