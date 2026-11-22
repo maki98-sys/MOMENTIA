@@ -128,13 +128,13 @@ export class MediaService {
       throw new BadRequestException('Part checksum mismatch.');
     }
     const upload=await this.db.query(
-      \`SELECT u.id,u.state,u.uploader_id,a.size_bytes,a.storage_provider FROM media_uploads u
-       JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2\`,[uploadId,userId]);
+      `SELECT u.id,u.state,u.uploader_id,a.size_bytes,a.storage_provider FROM media_uploads u
+       JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
     if(!upload.rowCount) throw new NotFoundException('Upload not found.');
     if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
     const key='parts/'+userId+'/'+uploadId+'/'+partNumber+'-'+checksum;
     const existing=await this.db.query(
-      \`SELECT byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2\`,[uploadId,partNumber]);
+      `SELECT byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
     if(existing.rowCount) {
       if(Number(existing.rows[0].byte_size)!==info.size||String(existing.rows[0].checksum_sha256)!==checksum) {
         throw new ConflictException('Part number already contains different data.');
@@ -148,34 +148,34 @@ export class MediaService {
     try {
       const inserted=await this.db.transaction(async client=>{
         const locked=await client.query(
-          \`SELECT u.state,a.size_bytes FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
-           WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u\`,[uploadId,userId]);
+          `SELECT u.state,a.size_bytes FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+           WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
         if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) {
           throw new ConflictException('Upload is no longer accepting parts.');
         }
         const accumulated=await client.query(
-          \`SELECT COALESCE(sum(byte_size),0)::bigint total FROM media_upload_parts WHERE upload_id=$1\`,[uploadId]);
+          `SELECT COALESCE(sum(byte_size),0)::bigint total FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
         if(BigInt(accumulated.rows[0].total)+BigInt(info.size)>BigInt(locked.rows[0].size_bytes)) {
           throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
         }
         const saved=await client.query(
-          \`INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key,storage_provider)
+          `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key,storage_provider)
            VALUES($1,$2,$3,$4,$5,$6)
            ON CONFLICT(upload_id,part_number) DO NOTHING
-           RETURNING part_number\`,[uploadId,partNumber,info.size,checksum,key,storageProvider]);
+           RETURNING part_number`,[uploadId,partNumber,info.size,checksum,key,storageProvider]);
         if(!saved.rowCount) {
           const winner=await client.query(
-            \`SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
-             WHERE upload_id=$1 AND part_number=$2\`,[uploadId,partNumber]);
+            `SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
+             WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
           if(!winner.rowCount||Number(winner.rows[0].byte_size)!==info.size||String(winner.rows[0].checksum_sha256)!==checksum) {
             throw new ConflictException('Part number already contains different data.');
           }
           keepStoredPart=String(winner.rows[0].storage_key)===key;
         } else keepStoredPart=true;
         await client.query(
-          \`UPDATE media_uploads SET state='uploading',
+          `UPDATE media_uploads SET state='uploading',
              bytes_received=(SELECT COALESCE(sum(byte_size),0) FROM media_upload_parts WHERE upload_id=$1),
-             updated_at=now() WHERE id=$1\`,[uploadId]);
+             updated_at=now() WHERE id=$1`,[uploadId]);
         return !saved.rowCount;
       });
       transactionCommitted=true;
