@@ -15,7 +15,7 @@ export const environmentSchema = Joi.object({
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return ids.every((id: string) => uuid.test(id)) ? value : helpers.error('any.invalid');
   }),
-  MEDIA_WORKER_TOKEN: Joi.string().min(32),
+  MEDIA_WORKER_TOKEN: Joi.when('NODE_ENV', {\n    is: 'production',\n    then: Joi.string().min(32).required(),\n    otherwise: Joi.string().min(32),\n  }),
   ACCOUNT_DELETION_WORKER_TOKEN: Joi.string().min(32),
   AUTH_SESSION_WORKER_TOKEN: Joi.string().min(32),
   MEDIA_STORAGE_PROVIDER: Joi.string().valid('local','s3').default('local'),
