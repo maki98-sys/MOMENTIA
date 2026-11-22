@@ -41,4 +41,19 @@ describe('NotificationsService', () => {
     await expect(service.markAllRead('user-1')).resolves.toEqual({ updated: 3 });
     expect(query.mock.calls[0][1]).toEqual(['user-1']);
   });
+  it('cancels a claimed push when the device was revoked before dispatch', async () => {
+    const transaction=jest.fn();
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[{id:'outbox-1',notification_id:'n1',user_id:'user-1',device_id:'device-1',attempts:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'outbox-1',notification_id:'n1',user_id:'user-1',device_id:'device-1',attempts:1,platform:'ios',push_token_encrypted:'encrypted',category:'social.comment',payload:{}}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    const dispatchService=new NotificationsService({query,transaction} as unknown as DatabaseService);
+    query.mockResolvedValueOnce({rows:[{revoked_at:new Date(),push_token_encrypted:'encrypted',push_enabled:true}],rowCount:1});
+    query.mockResolvedValueOnce({rows:[],rowCount:1});
+
+    await expect(dispatchService.dispatchPushBatch(1)).resolves.toEqual({claimed:1,delivered:0,failed:0});
+    expect(query.mock.calls[0][0]).toContain('d.revoked_at');
+    expect(query.mock.calls[1][0]).toContain("status='cancelled'");
+  });
+
 });
