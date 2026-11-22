@@ -155,3 +155,38 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
     }
   });
 });
+
+test('S3 adapter deletes an object when post-upload checksum verification fails', async () => {
+  await withCleanEnv(async () => {
+    const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-checksum-failure-'));
+    const originalSend = S3Client.prototype.send;
+    let deleted = false;
+    S3Client.prototype.send = async function(command) {
+      if (command instanceof PutObjectCommand) {
+        for await (const _chunk of command.input.Body) { /* consume upload stream */ }
+        return {};
+      }
+      if (command instanceof HeadObjectCommand) {
+        return { ContentLength: 7, ChecksumSHA256: 'incorrect-checksum' };
+      }
+      if (command instanceof DeleteObjectCommand) {
+        deleted = true;
+        return {};
+      }
+      throw new Error('Unexpected S3 command');
+    };
+    process.env.MEDIA_S3_BUCKET = 'momentia-test';
+    process.env.MEDIA_WORKER_TEMP_DIR = stage;
+    try {
+      const storage = new S3MediaWorkerStorage();
+      const source = join(stage, 'mismatch.bin');
+      await writeFile(source, Buffer.from('payload'));
+      const checksum = createHash('sha256').update('payload').digest('hex');
+      await assert.rejects(storage.commit('variants/asset/mismatch.bin', source, checksum), /failed size or SHA-256 verification/);
+      assert.equal(deleted, true);
+    } finally {
+      S3Client.prototype.send = originalSend;
+      await rm(stage, { recursive: true, force: true });
+    }
+  });
+});
