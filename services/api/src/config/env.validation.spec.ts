@@ -82,6 +82,25 @@ describe('environmentSchema', () => {
     }).error).toBeUndefined();
   });
 
+  it('requires notification worker and push-token encryption secrets in production', () => {
+    const base = {
+      NODE_ENV: 'production',
+      DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
+      MEDIA_WORKER_TOKEN: 'm'.repeat(32),
+    };
+    expect(environmentSchema.validate(base).error).toBeDefined();
+    expect(environmentSchema.validate({
+      ...base,
+      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
+    }).error).toBeDefined();
+    expect(environmentSchema.validate({
+      ...base,
+      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
+      PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+    }).error).toBeUndefined();
+  });
+
   it('rejects a weak media worker token when supplied', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
