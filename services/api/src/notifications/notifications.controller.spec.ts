@@ -1,3 +1,10 @@
+jest.mock('jose', () => ({
+  SignJWT: jest.fn(),
+  createRemoteJWKSet: jest.fn(),
+  jwtVerify: jest.fn(),
+  errors: {},
+}));
+
 import { BadRequestException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
