@@ -568,9 +568,9 @@ export class SyncService {
         // content through snapshot(), which revalidates every section.
         changes: result.rows.map((row:any)=>({...row,payload:null})),
         nextCursor,
-        hasMore: result.rowCount === safeLimit,
+        hasMore: result.rows.length === safeLimit,
         resetRequired: false,
-        refreshRequired: result.rowCount > 0,
+        refreshRequired: result.rows.length > 0,
         serverCursor: latest.toString(),
       };
     });
