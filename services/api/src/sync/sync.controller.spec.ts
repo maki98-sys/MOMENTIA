@@ -35,9 +35,9 @@ describe('SyncController', () => {
     }
   });
 
-  it('validates the push envelope before delegating to the authenticated user scope', () => {
+  it('validates the push envelope before delegating to the authenticated user scope', async () => {
     push.mockResolvedValueOnce({ accepted: 1 });
-    expect(controller.push(request, validEnvelope)).toEqual({ accepted: 1 });
+    await expect(controller.push(request, validEnvelope)).resolves.toEqual({ accepted: 1 });
     expect(push).toHaveBeenCalledWith(request.userId, validEnvelope);
     expect(() => controller.push(request, { ...validEnvelope, userId: 'attacker' })).toThrow(BadRequestException);
     expect(push).toHaveBeenCalledTimes(1);
