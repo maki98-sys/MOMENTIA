@@ -19,6 +19,18 @@ describe('MediaService',()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:50*1024*1024+1,checksumSha256:'a'.repeat(64)},'key')).rejects.toBeInstanceOf(BadRequestException);
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('returns HTTP 429 when resumable assembly concurrency is exhausted',async()=>{
+  let rejectPending!:(error:Error)=>void;
+  const pending=new Promise((_resolve,reject)=>{rejectPending=reject;});
+  transaction.mockImplementation(()=>pending);
+  const uploadId='123e4567-e89b-42d3-a456-426614174000';
+  const first=service.completeResumableUpload('u',uploadId).catch(()=>undefined);
+  const second=service.completeResumableUpload('u',uploadId).catch(()=>undefined);
+  expect(transaction).toHaveBeenCalledTimes(2);
+  await expect(service.completeResumableUpload('u',uploadId)).rejects.toMatchObject({status:429});
+  rejectPending(new Error('release test waiters'));
+  await Promise.all([first,second]);
+ });
  it('checks upload ownership before accepting a request body',async()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
   await expect(service.assertUploadOwner('attacker','123e4567-e89b-42d3-a456-426614174000'))
