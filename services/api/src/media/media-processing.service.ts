@@ -95,7 +95,7 @@ export class MediaProcessingService {
           if(!item||typeof item!=='object'||Array.isArray(item)) throw new BadRequestException('Invalid media variant.');
           const v=item as Record<string,unknown>;
           if(!['thumbnail','preview','display','video_poster'].includes(String(v.variantType)) ||
-             typeof v.storageKey!=='string'||!v.storageKey.startsWith('variants/')||v.storageKey.includes('..')||v.storageKey.length>500||
+             typeof v.storageKey!=='string'||!v.storageKey.startsWith(`variants/${job.media_asset_id}/`)||v.storageKey.includes('..')||v.storageKey.length>500||
              typeof v.mimeType!=='string'||!['image/jpeg','image/png','image/webp'].includes(v.mimeType)||
              !Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||!Number.isSafeInteger(v.width)||!Number.isSafeInteger(v.height)||
              Number(v.width)<1||Number(v.height)<1||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
