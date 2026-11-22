@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
+const MAX_MEDIA_VARIANT_PIXELS = 40_000_000;
+const MAX_MEDIA_VARIANT_DIMENSION = 16_384;
+const MAX_MEDIA_VARIANT_BYTES = 200 * 1024 * 1024;
+
 @Injectable()
 export class MediaProcessingService {
   constructor(private readonly db: DatabaseService) {}
@@ -98,7 +102,7 @@ export class MediaProcessingService {
              typeof v.storageKey!=='string'||!v.storageKey.startsWith(`variants/${job.media_asset_id}/`)||v.storageKey.includes('..')||v.storageKey.length>500||
              typeof v.mimeType!=='string'||!['image/jpeg','image/png','image/webp'].includes(v.mimeType)||
              !Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||!Number.isSafeInteger(v.width)||!Number.isSafeInteger(v.height)||
-             Number(v.width)<1||Number(v.height)<1||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
+             Number(v.width)<1||Number(v.height)<1||Number(v.width)>MAX_MEDIA_VARIANT_DIMENSION||Number(v.height)>MAX_MEDIA_VARIANT_DIMENSION||Number(v.width)*Number(v.height)>MAX_MEDIA_VARIANT_PIXELS||Number(v.sizeBytes)>MAX_MEDIA_VARIANT_BYTES||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
             throw new BadRequestException('Invalid generated media variant metadata.');
           }
           await client.query(
