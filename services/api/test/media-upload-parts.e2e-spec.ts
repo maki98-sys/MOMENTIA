@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
 import { MediaService } from '../src/media/media.service';
@@ -17,7 +18,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
   const objects = new Map<string, Buffer>();
   const storage = {
     put: jest.fn(async (key: string, bytes: Buffer) => { objects.set(key, Buffer.from(bytes)); }),
-    read: jest.fn(async (key: string) => {
+    putFile: jest.fn(async (key: string, filePath: string, expectedSize: number) => {\n      const value = await readFile(filePath);\n      if (value.length !== expectedSize) throw new Error('Staged object size mismatch');\n      objects.set(key, Buffer.from(value));\n    }),\n    read: jest.fn(async (key: string) => {
       const value = objects.get(key);
       if (!value) throw new Error('Object not found');
       return Buffer.from(value);
