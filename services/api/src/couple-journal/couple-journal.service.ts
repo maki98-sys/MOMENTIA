@@ -28,8 +28,19 @@ export class CoupleJournalService {
   const r=await client.query(
    `SELECT s.id FROM spaces s
     JOIN space_memberships mine ON mine.space_id=s.id AND mine.user_id=$2 AND mine.state='active'
+    JOIN users me ON me.id=mine.user_id AND me.status='active'
     WHERE s.id=$1 AND s.type='COUPLE' AND s.status='active'
-      AND (SELECT count(*) FROM space_memberships m WHERE m.space_id=s.id AND m.state='active')=2
+      AND (SELECT count(*) FROM space_memberships m
+           JOIN users member_user ON member_user.id=m.user_id AND member_user.status='active'
+           WHERE m.space_id=s.id AND m.state='active')=2
+      AND NOT EXISTS (
+        SELECT 1 FROM space_memberships other
+        JOIN users other_user ON other_user.id=other.user_id AND other_user.status='active'
+        JOIN user_blocks b ON
+          (b.blocker_id=$2 AND b.blocked_id=other.user_id)
+          OR (b.blocker_id=other.user_id AND b.blocked_id=$2)
+        WHERE other.space_id=s.id AND other.state='active' AND other.user_id<>$2
+      )
     FOR UPDATE OF s`,[spaceId,userId]);
   if(!r.rowCount) throw new NotFoundException('Couple space not found.');
  }
