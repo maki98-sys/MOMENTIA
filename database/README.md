@@ -21,26 +21,33 @@ See [SCHEMA.md](SCHEMA.md) for the table inventory, invariants and implementatio
 5. Authorize media access before issuing short-lived signed object URLs.
 6. Use timestamptz for instants and retain IANA timezone separately for calendar intent.
 
-## Verification status
+## Verification
 
-Migrations 0001–0003, deferred integrity checks, SQLite smoke tests, synthetic seeds, representative EXPLAIN queries, PostgreSQL backup/restore and the concurrent COUPLE membership test passed GitHub Actions run #35 on PostgreSQL 16, including invalid subtype and event-album scope rejection tests. Run #35 also inserted 10,000 synthetic timeline entries inside a rolled-back transaction, verified the row count, and confirmed the latest-50 query used `timeline_entries_space_time_idx` (50 rows; 0.023 ms execution in that CI run).
+The migration runner currently applies the complete ordered migration set **0001–0066** and records each applied version in `schema_migrations`. The PostgreSQL CI workflow verifies:
 
+- all migrations apply to a fresh PostgreSQL database;
+- rerunning the migration runner is idempotent;
+- the migration ledger contains the expected versions;
+- representative foreign-key, uniqueness, index and integrity checks pass;
+- representative query plans and a 10,000-row timeline smoke test run;
+- PostgreSQL backup and restore complete;
+- the local SQLite schema checks pass;
+- the concurrent COUPLE membership invariant is preserved.
 
-## Automated verification
-The GitHub Actions workflow at .github/workflows/database-check.yml starts PostgreSQL 16, applies migrations through the ledger-aware runner, verifies an idempotent second run, runs integrity/concurrency checks, loads development fixtures, checks representative query plans, restores a backup and verifies the SQLite schema.
+The latest completed database verification at the time of this update is workflow run `44969387624` on commit `0fc`, which completed successfully and included migrations through `0066_device_installation_identity`. A newer verification is running on the current PR head; check the PR checks before treating that newer head as approved.
 
+Recent database corrections:
 
-## Local SQLite
+| Migration | Purpose |
+|---|---|
+| 0036 | Rebuild the account-deletion due index consistently and keep the migration ledger idempotent |
+| 0039 | Synchronize media asset lifecycle changes |
+| 0056 | Order subscription provider events |
+| 0061 | Cast nullable sync tombstone payloads explicitly to JSONB |
+| 0062 | Fix JSONB casts for block-change tombstones |
+| 0063 | Fix JSONB casts for comment-author block tombstones |
+| 0064 | Serialize authorization-changing writes with sync snapshot reads |
+| 0065 | Include profile visibility changes in authorization serialization |
+| 0066 | Add stable device installation identity and idempotent device registration |
 
-The offline client schema is database/local/0001_local_schema.sql. It stores cached spaces, memberships, local media files, timeline entries, durable outbox operations, sync cursors and a bounded download cache. Authentication secrets must remain in platform secure storage, not SQLite.
-
-Run the standard-library smoke tests with:
-
-    python database/local/verify_schema.py
-
-The SQLite file is a local cache and sync queue, not an alternative server of record. Conflict resolution and sync execution are implemented in the offline application phase. Its automated schema smoke test also audits column names to reject token, secret, password, credential or authorization fields; authentication secrets belong in iOS Keychain / Android Keystore.
-
-
-## Additional operational tables
-
-Migration 0003 adds plans, subscriptions, idempotent payment-provider events, data export/deletion requests, configurable retention policy records, audit logs, moderation cases, media access grants and support tickets. Retention rules are deliberately not pre-populated: legal periods and actions must be approved for each market before activation.
+Passing the database workflow proves that the migration set applies and the listed database checks pass. It does **not** by itself prove that every API query, authorization rule, concurrency path, retention policy or production storage integration has been fully audited. Those backend audits and their regression tests remain tracked separately.
