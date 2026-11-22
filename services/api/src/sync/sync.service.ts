@@ -710,7 +710,7 @@ export class SyncService {
         `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at
          FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id
          JOIN spaces s ON s.id=t.space_id
-         WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
+         WHERE m.user_id=$1 AND m.state='active' AND s.status IN ('active','archived')
            AND (t.post_id IS NULL OR EXISTS(
              SELECT 1 FROM posts p JOIN users timeline_author ON timeline_author.id=p.author_id AND timeline_author.status='active'
              WHERE p.id=t.post_id AND p.status='published'
