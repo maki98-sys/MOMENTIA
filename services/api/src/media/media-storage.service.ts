@@ -1,11 +1,17 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { lstat, mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
 import { join, resolve } from 'path';
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) hash.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return hash.digest('hex');
+}
 
 function s3EncryptionParams(): { ServerSideEncryption: 'AES256' | 'aws:kms'; SSEKMSKeyId?: string } {
   const kmsKeyId = process.env.MEDIA_S3_SSE_KMS_KEY_ID?.trim();
@@ -48,7 +54,7 @@ async function assertNoSymlinkPath(root: string, target: string, createParents =
  */
 export abstract class MediaStorage {
   abstract put(storageKey: string, bytes: Buffer, provider?: string): Promise<void>;
-  abstract putFile(storageKey: string, filePath: string, expectedSize: number, provider?: string): Promise<void>;
+  abstract putFile(storageKey: string, filePath: string, expectedSize: number, checksumSha256: string, provider?: string): Promise<void>;
   abstract remove(storageKey: string, provider?: string): Promise<void>;
   abstract locate(storageKey: string, expectedSize?: number, provider?: string): Promise<string>;
   abstract read(storageKey: string, provider?: string): Promise<Buffer>;
@@ -81,7 +87,7 @@ export class LocalMediaStorage extends MediaStorage {
     }
   }
 
-  async putFile(storageKey: string, filePath: string, expectedSize: number, _provider?: string): Promise<void> {
+  async putFile(storageKey: string, filePath: string, expectedSize: number, checksumSha256: string, _provider?: string): Promise<void> {
     const destination = this.pathFor(storageKey);
     const temporary = destination + '.' + randomUUID() + '.tmp';
     try {
@@ -157,21 +163,33 @@ export class S3MediaStorage extends MediaStorage {
     catch { throw new ServiceUnavailableException('Remote media storage is unavailable.'); }
   }
 
-  async putFile(storageKey: string, filePath: string, expectedSize: number, _provider?: string): Promise<void> {
+  async putFile(storageKey: string, filePath: string, expectedSize: number, checksumSha256: string, _provider?: string): Promise<void> {
+    const key = this.key(storageKey);
+    const expected = Buffer.from(checksumSha256, 'hex').toString('base64');
     try {
       const info = await stat(filePath);
-      if (!info.isFile() || info.size !== expectedSize || expectedSize < 1) {
-        throw new Error('Staged upload size mismatch');
+      if (!info.isFile() || info.size !== expectedSize || expectedSize < 1 || !/^[a-f0-9]{64}$/i.test(checksumSha256)) {
+        throw new Error('Staged upload size or checksum is invalid');
       }
       await this.client.send(new PutObjectCommand({
         Bucket: this.bucket,
-        Key: this.key(storageKey),
+        Key: key,
         Body: createReadStream(filePath),
         ContentLength: info.size,
+        ChecksumSHA256: expected,
         ...s3EncryptionParams(),
       }));
+      const stored = await this.client.send(new HeadObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ChecksumMode: 'ENABLED',
+      }));
+      if (Number(stored.ContentLength) !== info.size || stored.ChecksumSHA256 !== expected) {
+        throw new Error('Uploaded media object failed size or SHA-256 verification');
+      }
     } catch {
-      throw new ServiceUnavailableException('Remote media storage is unavailable.');
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => undefined);
+      throw new ServiceUnavailableException('Remote media storage is unavailable or failed integrity verification.');
     }
   }
 
@@ -215,7 +233,7 @@ export class RoutedMediaStorage extends MediaStorage {
     throw new ServiceUnavailableException('Unknown media storage provider.');
   }
   put(key: string, bytes: Buffer, provider?: string) { return this.select(provider).put(key,bytes); }
-  putFile(key: string, filePath: string, expectedSize: number, provider?: string) { return this.select(provider).putFile(key,filePath,expectedSize); }
+  putFile(key: string, filePath: string, expectedSize: number, checksumSha256: string, provider?: string) { return this.select(provider).putFile(key,filePath,expectedSize,checksumSha256); }
   remove(key: string, provider?: string) { return this.select(provider).remove(key); }
   locate(key: string, size?: number, provider?: string) { return this.select(provider).locate(key,size); }
   read(key: string, provider?: string) { return this.select(provider).read(key); }
