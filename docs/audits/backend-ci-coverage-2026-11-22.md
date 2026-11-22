@@ -3,16 +3,16 @@
 ## Last completed coverage run
 
 - Workflow: `api-coverage`
-- Run ID: `44969699881`
-- Commit: `ef7ac503556bde91cf3676893a68c7d04b13f8fa`
+- Run ID: `44970052062`
+- Commit: `995d91fd926201cfade892f3b325c389200e1646`
 - Result: success
-- Unit tests: **168/168 passed**
+- Unit tests: **169/169 passed**
 - Suites: **24/24 passed**
 
 | Metric | Coverage |
 |---|---:|
 | Statements | 30.29% |
-| Branches | 28.13% |
+| Branches | 28.33% |
 | Functions | 29.24% |
 | Lines | 32.26% |
 
