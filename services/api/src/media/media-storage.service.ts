@@ -4,7 +4,7 @@ import { createReadStream } from 'fs';
 import { Readable } from 'stream';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { lstat, mkdir, rename, rm, stat, writeFile, readFile } from 'fs/promises';
-import { dirname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 
 /** Reject existing symlinks before path-based filesystem operations. This is a
  * defense-in-depth preflight check, not an atomic openat/openat2 guarantee;
