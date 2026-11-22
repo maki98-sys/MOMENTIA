@@ -144,7 +144,7 @@ export class MediaService {
       return {uploadId,partNumber,received:true,duplicate:true};
     }
     const storageProvider=String(upload.rows[0].storage_provider);
-    await this.storage.putFile(key,filePath,info.size,storageProvider);
+    await this.storage.putFile(key,filePath,info.size,checksum,storageProvider);
     let keepStoredPart=false;
     let transactionCommitted=false;
     try {
@@ -398,7 +398,7 @@ export class MediaService {
     if(!detectedMime||detectedMime!==row.declared_mime_type) {
       throw new BadRequestException('File content does not match the declared media type.');
     }
-    await this.storage.putFile(String(row.storage_key_original),filePath,info.size,String(row.storage_provider));
+    await this.storage.putFile(String(row.storage_key_original),filePath,info.size,checksum,String(row.storage_provider));
     try {
       await this.db.transaction(async client=>{
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
