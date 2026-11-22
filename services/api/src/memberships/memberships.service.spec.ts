@@ -10,19 +10,28 @@ describe('MembershipsService', () => {
   beforeEach(() => { query.mockReset(); transaction.mockReset(); });
 
   it('requires active membership before listing members', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
-    await expect(service.list('u1', 's1')).rejects.toBeInstanceOf(NotFoundException);
-    expect(query).toHaveBeenCalledTimes(1);
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.list('u1','s1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+    expect(clientQuery.mock.calls[1][0]).toContain("caller.state = 'active'");
   });
 
-  it('lists members only after verifying caller access', async () => {
-    query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', role: 'owner', display_name: 'Member', avatar_media_id: null }], rowCount: 1 });
-    await expect(service.list('u1', 's1')).resolves.toEqual([{ user_id: 'u1', role: 'owner', display_name: 'Member', avatar_media_id: null }]);
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0][1]).toEqual(['s1', 'u1']);
-    expect(query.mock.calls[0][0]).toContain('LEFT JOIN user_profiles');
-    expect(query.mock.calls[0][0]).toContain("caller.state = 'active'");
-    expect(query.mock.calls[0][0]).not.toContain('u.display_name');
+  it('lists only active, visible members after verifying caller access', async () => {
+    const expected=[{user_id:'u1',role:'owner',display_name:'Member',avatar_media_id:null}];
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:expected,rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.list('u1','s1')).resolves.toEqual(expected);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+    expect(clientQuery.mock.calls[1][1]).toEqual(['s1','u1']);
+    expect(clientQuery.mock.calls[1][0]).toContain('LEFT JOIN user_profiles');
+    expect(clientQuery.mock.calls[1][0]).toContain("caller.state = 'active'");
+    expect(clientQuery.mock.calls[1][0]).toContain("s.status IN ('active','archived')");
+    expect(clientQuery.mock.calls[1][0]).toContain('NOT EXISTS');
   });
 
   it('rejects unsupported roles before querying', async () => {
