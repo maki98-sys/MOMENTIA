@@ -70,7 +70,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     await pool.end();
   });
 
-  async function createTimelinePost(audience: 'public' | 'followers', occurredAt: string, postAuthorId = authorId) {
+  async function createTimelinePost(audience: 'public' | 'followers' | 'space', occurredAt: string, postAuthorId = authorId) {
     const postId = randomUUID();
     await pool.query(
       `INSERT INTO posts(id,author_id,space_id,body,audience,status,published_at)
