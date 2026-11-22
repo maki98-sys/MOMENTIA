@@ -71,6 +71,7 @@ describe('MediaService',()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
   await expect((service as any).findViewableAsset('viewer-1','asset-1')).rejects.toBeInstanceOf(NotFoundException);
   expect(query.mock.calls[0][0]).toContain("asset_owner.status='active'");
+  expect(query.mock.calls[0][0]).toContain("media_viewer.status='active'");
   expect(query.mock.calls[0][0]).toContain("post_author.status='active'");
   expect(query.mock.calls[0][0]).toContain("album_adder.status='active'");
   expect(query.mock.calls[0][0]).toContain('b.blocked_id=i.added_by');
