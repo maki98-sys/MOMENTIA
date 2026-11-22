@@ -569,6 +569,10 @@ export class SyncService {
       // READ COMMITTED is intentional: each section query must see permission changes
       // committed before that query, rather than reusing a transaction-wide old snapshot.
       await client.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      // Shared global lock allows concurrent snapshots but orders them against
+      // every authorization-changing write guarded by migration 0064.
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      // Keep same-user snapshot creation/continuation serialized independently.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId]);
       await client.query(`DELETE FROM sync_snapshot_sessions WHERE expires_at <= now() OR created_at < now()-interval '24 hours'`);
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
