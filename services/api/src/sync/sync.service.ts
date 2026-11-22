@@ -553,7 +553,7 @@ export class SyncService {
         };
       }
       const result = await client.query(
-        `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
+        `SELECT sequence_id,entity_type,entity_id,change_type,occurred_at
          FROM sync_change_log
          WHERE user_id=$1 AND sequence_id>$2::bigint
          ORDER BY sequence_id ASC LIMIT $3`,
@@ -563,10 +563,14 @@ export class SyncService {
         ? String(result.rows[result.rows.length - 1].sequence_id)
         : requestedCursor;
       return {
-        changes: result.rows,
+        // Change-log payloads are intentionally not exposed: permissions may have
+        // been revoked since the event was recorded. Clients refresh authorized
+        // content through snapshot(), which revalidates every section.
+        changes: result.rows.map((row:any)=>({...row,payload:null})),
         nextCursor,
         hasMore: result.rowCount === safeLimit,
         resetRequired: false,
+        refreshRequired: result.rowCount > 0,
         serverCursor: latest.toString(),
       };
     });
