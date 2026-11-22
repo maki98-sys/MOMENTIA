@@ -149,10 +149,13 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
 async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const source=await storage.materialize(job.storage_key_original);
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
-  const target=safePath(storageKey);
+  // Never let FFmpeg write directly over a previously published poster. Local
+  // storage atomically renames this staged file; S3 uploads it only after checks.
+  const temporaryKey=`${storageKey}.tmp-${job.id}`;
+  const target=safePath(temporaryKey);
   try {
     await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
-    await storage.ensureParent(storageKey);
+    await storage.ensureParent(temporaryKey);
     await runFfmpeg(['-nostdin','-y','-protocol_whitelist','file,pipe','-max_alloc','67108864','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3','-fs','20971520',target]);
     const meta=await sharp(target).metadata();
     const info=await stat(target);
@@ -164,7 +167,8 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
       sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256,
     }];
   } finally {
-    await storage.release(storageKey).catch(()=>undefined);
+    if(job.storage_provider==='s3') await storage.release(temporaryKey).catch(()=>undefined);
+    else await storage.remove(temporaryKey).catch(()=>undefined);
     await storage.release(job.storage_key_original).catch(()=>undefined);
   }
 }
