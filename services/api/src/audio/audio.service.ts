@@ -133,6 +133,24 @@ export class AudioService {
     });
   }
 
+  async isActiveParticipant(userId: string, sessionId: string, staleAfterSeconds = 45): Promise<boolean> {
+    this.id(sessionId,'session id');
+    this.id(userId,'user id');
+    const seconds=Number(staleAfterSeconds);
+    if(!Number.isSafeInteger(seconds)||seconds<15||seconds>3600) throw new BadRequestException('Invalid stale participant timeout.');
+    const result=await this.db.query(
+      `SELECT 1 FROM audio_participants p
+       JOIN audio_sessions a ON a.id=p.session_id AND a.state IN ('created','playing','paused')
+       JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
+       JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=p.user_id AND sm.state='active'
+       JOIN users u ON u.id=p.user_id AND u.status='active'
+       WHERE p.session_id=$1 AND p.user_id=$2 AND p.left_at IS NULL
+         AND p.last_heartbeat_at>=now()-($3 * interval '1 second')`,
+      [sessionId,userId,seconds],
+    );
+    return !!result.rowCount;
+  }
+
   async cleanupStaleParticipants(staleAfterSeconds = 45): Promise<string[]> {
     const seconds = Number(staleAfterSeconds);
     if (!Number.isSafeInteger(seconds) || seconds < 15 || seconds > 3600) {
