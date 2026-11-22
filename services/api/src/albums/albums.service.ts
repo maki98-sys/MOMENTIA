@@ -158,6 +158,7 @@ export class AlbumsService {
       const result=await client.query(
         `SELECT i.id,i.added_by,sm.role FROM space_album_items i
          JOIN space_albums a ON a.id=i.album_id
+         JOIN spaces s ON s.id=a.space_id AND s.status='active'
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
          WHERE i.id=$2 AND i.album_id=$3 AND a.space_id=$4 AND i.status='active' FOR UPDATE`,
         [userId,itemId,albumId,spaceId]);
