@@ -241,7 +241,7 @@ export class AudioService {
       if (role === 'host') {
         await client.query(
           `UPDATE audio_sessions
-           SET state='ended',playback_state='ended',position_ms=0,
+           SET state='ended',playback_state='ended',position_ms=0,current_item_id=NULL,
                server_version=server_version+1,updated_at=now()
            WHERE id=$1 AND state IN ('created','playing','paused')`,
           [sessionId],
