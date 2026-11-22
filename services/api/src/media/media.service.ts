@@ -358,7 +358,7 @@ export class MediaService {
       `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.storage_provider,a.mime_type_detected,
               a.original_filename,a.size_bytes,a.width,a.height,a.created_at,
               a.processing_completed_at,a.moderation_scan_status
-       FROM media_assets a
+       FROM media_assets a JOIN users asset_owner ON asset_owner.id=a.owner_id AND asset_owner.status='active'
        WHERE a.id=$1 AND a.status='ready'
          AND (
            a.owner_id=$2
@@ -368,7 +368,7 @@ export class MediaService {
                   OR (b.blocker_id=a.owner_id AND b.blocked_id=$2))
              AND (
                EXISTS (
-                 SELECT 1 FROM posts p
+                 SELECT 1 FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
                  WHERE p.media_asset_id=a.id AND p.status='published'
                    AND NOT EXISTS (SELECT 1 FROM user_blocks b
                      WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id)
@@ -383,6 +383,7 @@ export class MediaService {
                )
                OR EXISTS (
                  SELECT 1 FROM space_album_items i
+                 JOIN users album_adder ON album_adder.id=i.added_by AND album_adder.status='active'
                  JOIN space_albums al ON al.id=i.album_id
                  JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE i.media_asset_id=a.id AND i.status='active'
