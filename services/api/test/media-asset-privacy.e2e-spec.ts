@@ -60,10 +60,33 @@ describe('Media asset cross-account privacy PostgreSQL E2E', () => {
     });
   });
 
-  it('does not expose a private asset to a different active account', async () => {
+  it('allows the active owner to resolve a generated private variant', async () => {
     await seedPrivateReadyAsset();
+    await pool.query(
+      `INSERT INTO media_variants(media_asset_id,variant_type,storage_key,mime_type,size_bytes)
+       VALUES($1,'thumbnail',$2,'image/webp',24)`,
+      [assetId, `variants/${assetId}/thumbnail.webp`],
+    );
+
+    await expect(service.getAssetContent(ownerId, assetId, 'thumbnail')).resolves.toMatchObject({
+      storageKey: `variants/${assetId}/thumbnail.webp`,
+      mimeType: 'image/webp',
+      filename: 'thumbnail.webp',
+      sizeBytes: 24,
+      storageProvider: 'local',
+    });
+  });
+
+  it('does not expose a private original or generated variant to a different active account', async () => {
+    await seedPrivateReadyAsset();
+    await pool.query(
+      `INSERT INTO media_variants(media_asset_id,variant_type,storage_key,mime_type,size_bytes)
+       VALUES($1,'thumbnail',$2,'image/webp',24)`,
+      [assetId, `variants/${assetId}/thumbnail.webp`],
+    );
 
     await expect(service.getAssetContent(viewerId, assetId)).rejects.toMatchObject({ status: 404 });
+    await expect(service.getAssetContent(viewerId, assetId, 'thumbnail')).rejects.toMatchObject({ status: 404 });
   });
 
   it('does not allow a suspended owner to retrieve their previously ready asset', async () => {
