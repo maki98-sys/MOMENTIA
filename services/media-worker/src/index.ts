@@ -110,7 +110,7 @@ async function runFfmpeg(args: string[]): Promise<void> {
 }
 
 async function makeImageVariants(job: Job): Promise<Variant[]> {
-  const source=await storage.materialize(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
   try {
     await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
     const meta=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true}).metadata();
@@ -147,7 +147,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
 }
 
 async function makeVideoPoster(job: Job): Promise<Variant[]> {
-  const source=await storage.materialize(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
   // Never let FFmpeg write directly over a previously published poster. Local
   // storage atomically renames this staged file; S3 uploads it only after checks.
@@ -175,7 +175,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
 
 async function processJob(job: Job): Promise<Record<string,unknown>> {
   if(job.job_type==='inspect') {
-    const source=await storage.materialize(job.storage_key_original);
+    const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
     try {
       const info=await stat(source);
       await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
@@ -183,7 +183,7 @@ async function processJob(job: Job): Promise<Record<string,unknown>> {
     } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
   }
   if(job.job_type==='virus_scan') {
-    const source=await storage.materialize(job.storage_key_original);
+    const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
     try {
       const verdict=await clamScan(source);
       return {success:true,scanVerdict:verdict,result:{scanner:process.env.CLAMD_HOST?'clamd':'not_configured'}};
