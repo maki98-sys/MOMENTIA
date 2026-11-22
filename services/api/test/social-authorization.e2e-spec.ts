@@ -57,4 +57,31 @@ describe('Social post authorization (PostgreSQL)', () => {
     const comments = await pool.query('SELECT id FROM post_comments WHERE post_id=$1', [post.id]);
     expect(comments.rows).toHaveLength(0);
   });
+  it('returns detail and visible interaction counts for an authorized public post', async () => {
+    const post = await social.create(authorId, { body: 'Public detail fixture', audience: 'public' });
+    await social.addComment(viewerId, post.id, 'Visible detail comment');
+    await social.react(viewerId, post.id, 'like');
+    const detail = await social.getPost(viewerId, post.id);
+    expect(detail).toMatchObject({
+      id: post.id,
+      author_id: authorId,
+      body: 'Public detail fixture',
+      audience: 'public',
+      reaction_count: 1,
+      comment_count: 1,
+      my_reaction: 'like',
+    });
+  });
+
+  it('does not reveal details of another account private post', async () => {
+    const post = await social.create(authorId, { body: 'Private detail fixture', audience: 'private' });
+    await expect(social.getPost(viewerId, post.id)).rejects.toThrow('Post not found.');
+  });
+
+  it('revokes post detail access immediately after a block', async () => {
+    const post = await social.create(authorId, { body: 'Blocked detail fixture', audience: 'public' });
+    await social.block(viewerId, authorId);
+    await expect(social.getPost(viewerId, post.id)).rejects.toThrow('Post not found.');
+  });
+
 });
