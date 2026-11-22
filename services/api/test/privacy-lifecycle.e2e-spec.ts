@@ -31,6 +31,12 @@ describe('PrivacyService PostgreSQL lifecycle',()=>{
       'DELETE FROM user_audit_events WHERE actor_id=$1 OR subject_user_id=$1',
       [userId],
     );
+    await pool.query(
+      'DELETE FROM auth_session_refresh_tokens WHERE session_id IN (SELECT id FROM auth_sessions WHERE user_id=$1)',
+      [userId],
+    );
+    await pool.query('DELETE FROM auth_sessions WHERE user_id=$1',[userId]);
+    await pool.query('DELETE FROM user_profiles WHERE user_id=$1',[userId]);
     await pool.query('DELETE FROM account_deletion_requests WHERE user_id=$1',[userId]);
     await pool.query('DELETE FROM users WHERE id=$1',[userId]);
   });
