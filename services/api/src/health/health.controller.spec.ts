@@ -31,11 +31,12 @@ describe('HealthController', () => {
   it('returns service unavailable when PostgreSQL cannot be reached', async () => {
     ping.mockRejectedValueOnce(new Error('connection refused'));
 
-    await expect(controller.ready()).rejects.toBeInstanceOf(
+    const readiness = controller.ready();
+    await expect(readiness).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
     await expect(
-      controller.ready().catch((error: unknown) => {
+      readiness.catch((error: unknown) => {
         if (!(error instanceof ServiceUnavailableException)) throw error;
         return error.getResponse();
       }),
@@ -46,6 +47,6 @@ describe('HealthController', () => {
         dependencies: { postgres: 'unavailable' },
       },
     });
-    expect(ping).toHaveBeenCalledTimes(2);
+    expect(ping).toHaveBeenCalledTimes(1);
   });
 });
