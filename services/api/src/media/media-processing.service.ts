@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
+const MAX_MEDIA_VARIANT_PIXELS = 40_000_000;
+const MAX_MEDIA_VARIANT_DIMENSION = 16_384;
+const MAX_MEDIA_VARIANT_BYTES = 200 * 1024 * 1024;
+
 @Injectable()
 export class MediaProcessingService {
   constructor(private readonly db: DatabaseService) {}
@@ -76,6 +80,21 @@ export class MediaProcessingService {
       }
       if(job.job_type==='virus_scan') {
         const verdict=String(value.scanVerdict??'unavailable');
+        if(verdict==='unavailable') {
+          // A scanner outage is not a clean verdict. Keep the asset private and
+          // retry the scan with bounded backoff instead of completing the job.
+          await client.query(
+            `UPDATE media_assets SET moderation_scan_status='unavailable',
+               status=CASE WHEN status IN ('pending','processing') THEN 'quarantined' ELSE status END
+             WHERE id=$1`,[job.media_asset_id]);
+          const terminal=Number(job.attempts)>=Number(job.max_attempts);
+          await client.query(
+            `UPDATE media_processing_jobs SET status='failed',last_error_code='SCANNER_UNAVAILABLE',
+               available_at=now()+make_interval(secs=>LEAST(1800,15*(2^LEAST(attempts,7))::integer)),
+               locked_at=NULL,locked_by=NULL,updated_at=now()
+             WHERE id=$1`,[jobId]);
+          return {jobId,status:'failed',retryable:!terminal,mediaAssetId:job.media_asset_id,nextStage:'blocked'};
+        }
         await client.query(
           `UPDATE media_assets SET moderation_scan_status=$2,
              status=CASE WHEN $2='rejected' THEN 'quarantined' ELSE status END
@@ -98,7 +117,7 @@ export class MediaProcessingService {
              typeof v.storageKey!=='string'||!v.storageKey.startsWith(`variants/${job.media_asset_id}/`)||v.storageKey.includes('..')||v.storageKey.length>500||
              typeof v.mimeType!=='string'||!['image/jpeg','image/png','image/webp'].includes(v.mimeType)||
              !Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||!Number.isSafeInteger(v.width)||!Number.isSafeInteger(v.height)||
-             Number(v.width)<1||Number(v.height)<1||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
+             Number(v.width)<1||Number(v.height)<1||Number(v.width)>MAX_MEDIA_VARIANT_DIMENSION||Number(v.height)>MAX_MEDIA_VARIANT_DIMENSION||Number(v.width)*Number(v.height)>MAX_MEDIA_VARIANT_PIXELS||Number(v.sizeBytes)>MAX_MEDIA_VARIANT_BYTES||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
             throw new BadRequestException('Invalid generated media variant metadata.');
           }
           await client.query(

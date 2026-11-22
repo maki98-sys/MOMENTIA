@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
 import { MediaService } from '../src/media/media.service';
@@ -17,6 +19,11 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
   const objects = new Map<string, Buffer>();
   const storage = {
     put: jest.fn(async (key: string, bytes: Buffer) => { objects.set(key, Buffer.from(bytes)); }),
+    putFile: jest.fn(async (key: string, filePath: string, expectedSize: number, checksum: string) => {
+      const value = await readFile(filePath);
+      if (value.length !== expectedSize || sha256(value) !== checksum) throw new Error('Staged object integrity mismatch');
+      objects.set(key, Buffer.from(value));
+    }),
     read: jest.fn(async (key: string) => {
       const value = objects.get(key);
       if (!value) throw new Error('Object not found');
@@ -24,7 +31,11 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     }),
     remove: jest.fn(async (key: string) => { objects.delete(key); }),
     locate: jest.fn(),
-    openReadStream: jest.fn(),
+    openReadStream: jest.fn(async (key: string) => {
+      const value = objects.get(key);
+      if (!value) throw new Error('Object not found');
+      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };
+    }),
   } as unknown as MediaStorage;
 
   const file = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02]);
@@ -114,6 +125,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     );
     expect(cleanup.rows[0].total).toBe(2);
     expect(objects.get(`pending/${userId}/${assetId}`)).toEqual(file);
+    expect(storage.putFile).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a final file checksum mismatch and returns the upload to uploading state', async () => {
@@ -232,12 +244,12 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     let releaseRead!: () => void;
     const readStarted = new Promise<void>(resolve => { markReadStarted = resolve; });
     const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
-    (storage.read as jest.Mock).mockImplementationOnce(async (key: string) => {
+    (storage.openReadStream as jest.Mock).mockImplementationOnce(async (key: string) => {
       markReadStarted();
       await readGate;
       const value = objects.get(key);
       if (!value) throw new Error('Object not found');
-      return Buffer.from(value);
+      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };
     });
 
     const assembly = service.completeResumableUpload(userId, uploadId);

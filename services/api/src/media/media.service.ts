@@ -1,9 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException, HttpException, HttpStatus } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
+import { createReadStream, createWriteStream } from 'fs';
+import { mkdtemp, rm, stat } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import { MediaStorage } from './media-storage.service';
 import { DatabaseService } from '../database/database.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_CONCURRENT_UPLOAD_ASSEMBLIES = Math.min(Math.max(Number(process.env.MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT) || 2, 1), 8);
+let activeUploadAssemblies = 0;
 
 @Injectable()
 export class MediaService {
@@ -110,6 +118,79 @@ export class MediaService {
     });
   }
 
+  async receiveUploadPartFile(userId:string,uploadId:string,partNumber:number,filePath:string,expectedBytes:number,checksumHeader:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
+    if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
+    const info=await stat(filePath).catch(()=>null);
+    if(!info?.isFile()||info.size<1||info.size>8*1024*1024||info.size!==expectedBytes) {
+      throw new PayloadTooLargeException('Each upload part must be between 1 byte and 8 MB.');
+    }
+    const digest=createHash('sha256');
+    for await(const chunk of createReadStream(filePath)) digest.update(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk));
+    const checksum=digest.digest('hex');
+    if(!/^[a-f0-9]{64}$/i.test(checksumHeader)||checksum!==checksumHeader.toLowerCase()) {
+      throw new BadRequestException('Part checksum mismatch.');
+    }
+    const upload=await this.db.query(
+      `SELECT u.id,u.state,u.uploader_id,a.size_bytes,a.storage_provider FROM media_uploads u
+       JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2`,[uploadId,userId]);
+    if(!upload.rowCount) throw new NotFoundException('Upload not found.');
+    if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
+    const key='parts/'+userId+'/'+uploadId+'/'+partNumber+'-'+checksum;
+    const existing=await this.db.query(
+      `SELECT byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
+    if(existing.rowCount) {
+      if(Number(existing.rows[0].byte_size)!==info.size||String(existing.rows[0].checksum_sha256)!==checksum) {
+        throw new ConflictException('Part number already contains different data.');
+      }
+      return {uploadId,partNumber,received:true,duplicate:true};
+    }
+    const storageProvider=String(upload.rows[0].storage_provider);
+    await this.storage.putFile(key,filePath,info.size,checksum,storageProvider);
+    let keepStoredPart=false;
+    let transactionCommitted=false;
+    try {
+      const inserted=await this.db.transaction(async client=>{
+        const locked=await client.query(
+          `SELECT u.state,a.size_bytes FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+           WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
+        if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) {
+          throw new ConflictException('Upload is no longer accepting parts.');
+        }
+        const accumulated=await client.query(
+          `SELECT COALESCE(sum(byte_size),0)::bigint total FROM media_upload_parts WHERE upload_id=$1`,[uploadId]);
+        if(BigInt(accumulated.rows[0].total)+BigInt(info.size)>BigInt(locked.rows[0].size_bytes)) {
+          throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
+        }
+        const saved=await client.query(
+          `INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key,storage_provider)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(upload_id,part_number) DO NOTHING
+           RETURNING part_number`,[uploadId,partNumber,info.size,checksum,key,storageProvider]);
+        if(!saved.rowCount) {
+          const winner=await client.query(
+            `SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
+             WHERE upload_id=$1 AND part_number=$2`,[uploadId,partNumber]);
+          if(!winner.rowCount||Number(winner.rows[0].byte_size)!==info.size||String(winner.rows[0].checksum_sha256)!==checksum) {
+            throw new ConflictException('Part number already contains different data.');
+          }
+          keepStoredPart=String(winner.rows[0].storage_key)===key;
+        } else keepStoredPart=true;
+        await client.query(
+          `UPDATE media_uploads SET state='uploading',
+             bytes_received=(SELECT COALESCE(sum(byte_size),0) FROM media_upload_parts WHERE upload_id=$1),
+             updated_at=now() WHERE id=$1`,[uploadId]);
+        return !saved.rowCount;
+      });
+      transactionCommitted=true;
+      if(!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
+      return {uploadId,partNumber,received:true,duplicate:inserted};
+    } catch(error) {
+      if(!transactionCommitted||!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
+      throw error;
+    }
+  }
+
   async receiveUploadPart(userId:string,uploadId:string,partNumber:number,bytes:Buffer,checksumHeader:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
@@ -184,7 +265,21 @@ export class MediaService {
   }
 
   async completeResumableUpload(userId:string,uploadId:string) {
-    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
+    if(activeUploadAssemblies>=MAX_CONCURRENT_UPLOAD_ASSEMBLIES) {
+      throw new HttpException('Resumable upload assembly is at capacity. Retry shortly.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    activeUploadAssemblies++;
+    try {
+      return await this.completeResumableUploadInternal(userId,uploadId);
+    } finally {
+      activeUploadAssemblies=Math.max(0,activeUploadAssemblies-1);
+    }
+  }
+
+  private async completeResumableUploadInternal(userId:string,uploadId:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
+      throw new BadRequestException('Invalid upload id.');
+    }
     const prepared=await this.db.transaction(async client=>{
       const upload=await client.query(
         `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256,a.storage_provider
@@ -204,27 +299,54 @@ export class MediaService {
       await this.enqueueUploadPartCleanup(uploadId);
       return this.getUpload(userId,uploadId);
     }
+    let stagingDirectory:string|undefined;
     try {
       const parts=prepared.parts;
       if(!parts.length) throw new ConflictException('No upload parts have been received.');
       for(let i=0;i<parts.length;i++) if(Number(parts[i].part_number)!==i) throw new ConflictException('Upload parts are incomplete.');
-      const buffers:Buffer[]=[];
+      const totalExpected=Number(prepared.upload.size_bytes);
+      if(!Number.isSafeInteger(totalExpected)||totalExpected<1||totalExpected>MAX_UPLOAD_BYTES) {
+        throw new PayloadTooLargeException('Declared upload size is outside the platform limit.');
+      }
+      stagingDirectory=await mkdtemp(join(tmpdir(),'momentia-assembly-'));
+      const stagedFile=join(stagingDirectory,'assembled-media.bin');
+      const fullDigest=createHash('sha256');
       let total=0;
-      for(const part of parts) {
-        const bytes=await this.storage.read(String(part.storage_key),String(part.storage_provider));
-        if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
+      for(let i=0;i<parts.length;i++) {
+        const part=parts[i];
+        const expectedPartBytes=Number(part.byte_size);
+        const opened=await this.storage.openReadStream(String(part.storage_key),expectedPartBytes,String(part.storage_provider));
+        if(opened.sizeBytes!==expectedPartBytes) throw new ConflictException('A stored upload part failed integrity verification.');
+        const partDigest=createHash('sha256');
+        let partBytes=0;
+        const verifier=new Transform({
+          transform(chunk:Buffer|string,_encoding,callback) {
+            const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+            partBytes+=bytes.length;
+            total+=bytes.length;
+            if(total>totalExpected||total>MAX_UPLOAD_BYTES) {
+              callback(new PayloadTooLargeException('Upload parts exceed the declared file size.'));
+              return;
+            }
+            partDigest.update(bytes);
+            fullDigest.update(bytes);
+            callback(null,bytes);
+          },
+        });
+        await pipeline(
+          opened.stream,
+          verifier,
+          createWriteStream(stagedFile,{flags:i===0?'wx':'a',mode:0o600}),
+        );
+        if(partBytes!==expectedPartBytes||partDigest.digest('hex')!==String(part.checksum_sha256)) {
           throw new ConflictException('A stored upload part failed integrity verification.');
         }
-        total+=bytes.length;
-        if(total>Number(prepared.upload.size_bytes)||total>MAX_UPLOAD_BYTES) throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
-        buffers.push(bytes);
       }
-      if(total!==Number(prepared.upload.size_bytes)) throw new ConflictException('Received parts do not match the declared file size.');
-      const complete=Buffer.concat(buffers,total);
-      if(createHash('sha256').update(complete).digest('hex')!==String(prepared.upload.checksum_sha256).toLowerCase()) {
+      if(total!==totalExpected) throw new ConflictException('Received parts do not match the declared file size.');
+      if(fullDigest.digest('hex')!==String(prepared.upload.checksum_sha256).toLowerCase()) {
         throw new BadRequestException('Final file checksum mismatch.');
       }
-      const result=await this.receiveUpload(userId,uploadId,complete,true);
+      const result=await this.receiveUploadFile(userId,uploadId,stagedFile,total,true);
       await this.enqueueUploadPartCleanup(uploadId);
       return result;
     } catch(error) {
@@ -233,7 +355,91 @@ export class MediaService {
          WHERE id=$1 AND uploader_id=$2 AND state='assembling'`,[uploadId,userId],
       ).catch(()=>undefined);
       throw error;
+    } finally {
+      if(stagingDirectory) await rm(stagingDirectory,{recursive:true,force:true}).catch(()=>undefined);
     }
+  }
+
+  async assertUploadOwner(userId:string,uploadId:string):Promise<void> {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
+      throw new BadRequestException('Invalid upload id.');
+    }
+    const owned=await this.db.query(
+      'SELECT 1 FROM media_uploads WHERE id=$1 AND uploader_id=$2',
+      [uploadId,userId],
+    );
+    if(!owned.rowCount) throw new NotFoundException('Upload not found.');
+  }
+
+  async receiveUploadFile(userId:string,uploadId:string,filePath:string,expectedBytes:number,assembling=false) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
+      throw new BadRequestException('Invalid upload id.');
+    }
+    const info=await stat(filePath).catch(()=>null);
+    if (!info?.isFile() || info.size<1 || info.size>MAX_UPLOAD_BYTES || info.size!==expectedBytes) {
+      throw new BadRequestException('Invalid staged upload size.');
+    }
+    const found=await this.db.query(
+      `SELECT u.id,u.state,u.uploader_id,a.id media_asset_id,a.size_bytes,a.checksum_sha256,
+              a.storage_key_original,a.storage_provider,u.declared_mime_type
+       FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+       WHERE u.id=$1 AND u.uploader_id=$2`,
+      [uploadId,userId]);
+    if (!found.rowCount) throw new NotFoundException('Upload not found.');
+    const row=found.rows[0];
+    if (['uploaded','processing','completed'].includes(String(row.state))) return this.getUpload(userId,uploadId);
+    if (!['created','uploading',...(assembling?['assembling']:[])].includes(String(row.state))) {
+      throw new ConflictException('Upload is not accepting content.');
+    }
+    if (Number(row.size_bytes)!==info.size) throw new BadRequestException('Uploaded byte count does not match the declared size.');
+    const digest=createHash('sha256');
+    const prefix:Buffer[]=[];
+    let prefixBytes=0;
+    for await (const chunk of createReadStream(filePath)) {
+      const part=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+      digest.update(part);
+      if(prefixBytes<16) {
+        const take=part.subarray(0,16-prefixBytes);
+        prefix.push(take);
+        prefixBytes+=take.length;
+      }
+    }
+    const checksum=digest.digest('hex');
+    if(checksum!==String(row.checksum_sha256).trim().toLowerCase()) {
+      throw new BadRequestException('SHA-256 checksum mismatch.');
+    }
+    const detectedMime=this.detectMime(Buffer.concat(prefix,prefixBytes));
+    if(!detectedMime||detectedMime!==row.declared_mime_type) {
+      throw new BadRequestException('File content does not match the declared media type.');
+    }
+    await this.storage.putFile(String(row.storage_key_original),filePath,info.size,checksum,String(row.storage_provider));
+    try {
+      await this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+        const updated=await client.query(
+          `UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
+           WHERE id=$2 AND uploader_id=$3
+             AND (($4::boolean AND state='assembling') OR (NOT $4::boolean AND state IN ('created','uploading')))`,
+          [info.size,uploadId,userId,assembling]);
+        if(!updated.rowCount) throw new ConflictException('Upload state changed while receiving content.');
+        await client.query(
+          `UPDATE media_assets SET status='quarantined',mime_type_detected=$1 WHERE id=$2 AND owner_id=$3`,
+          [row.declared_mime_type,row.media_asset_id,userId]);
+        await client.query(
+          `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+           VALUES($1,$2,'uploaded',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+          [userId,row.media_asset_id,info.size,'media-upload:'+uploadId]);
+        await client.query(
+          `INSERT INTO media_processing_jobs(media_asset_id,job_type)
+           VALUES($1,'inspect'),($1,'virus_scan')
+           ON CONFLICT(media_asset_id,job_type) DO NOTHING`,
+          [row.media_asset_id]);
+      });
+    } catch(error) {
+      await this.storage.remove(String(row.storage_key_original),String(row.storage_provider)).catch(()=>undefined);
+      throw error;
+    }
+    return this.getUpload(userId,uploadId);
   }
 
   async receiveUpload(userId:string,uploadId:string,bytes:Buffer,assembling=false) {

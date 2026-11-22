@@ -23,6 +23,8 @@ export const environmentSchema = Joi.object({
   ACCOUNT_DELETION_WORKER_TOKEN: Joi.string().min(32),
   AUTH_SESSION_WORKER_TOKEN: Joi.string().min(32),
   MEDIA_STORAGE_PROVIDER: Joi.string().valid('local','s3').default('local'),
+  MEDIA_UPLOAD_STAGING_MAX_CONCURRENT: Joi.number().integer().min(1).max(32).default(4),
+  MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT: Joi.number().integer().min(1).max(8).default(2),
   MEDIA_S3_BUCKET: Joi.when('MEDIA_STORAGE_PROVIDER',{is:'s3',then:Joi.string().min(3).required(),otherwise:Joi.string().allow('')}),
   MEDIA_S3_REGION: Joi.string().min(1).default('us-east-1'),
   MEDIA_S3_ENDPOINT: Joi.string().uri({scheme:['http','https']}).allow(''),

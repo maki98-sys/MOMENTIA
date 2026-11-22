@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { parseClamAvResponse, runFfmpeg as executeFfmpeg } from './process-utils';
 import { createMediaWorkerStorage } from './storage';
+import { renderImageVariant } from './image-processing';
+import { assertFileIntegrity } from './file-integrity';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
@@ -13,6 +15,8 @@ const WORKER_ID = process.env.MEDIA_WORKER_ID ?? `media-worker-${process.pid}`;
 let storage = createMediaWorkerStorage();
 const POLL_MS = Math.min(Math.max(Number(process.env.MEDIA_WORKER_POLL_MS) || 1500, 250), 30000);
 const BATCH_SIZE = Math.min(Math.max(Number(process.env.MEDIA_WORKER_BATCH_SIZE) || 5, 1), 20);
+const FFMPEG_TIMEOUT_MS = Math.min(Math.max(Number(process.env.MEDIA_FFMPEG_TIMEOUT_MS) || 120000, 1000), 300000);
+const MAX_IMAGE_PIXELS = Math.min(Math.max(Number(process.env.MEDIA_MAX_IMAGE_PIXELS) || 40_000_000, 1_000_000), 100_000_000);
 
 type Job = {
   id: string;
@@ -69,16 +73,22 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
     let response='';
     let settled=false;
     const finish=(error?:Error,verdict?:'clean'|'rejected'|'unavailable')=>{
-      if(settled)return;settled=true;socket.destroy();
+      if(settled)return;
+      settled=true;
+      socket.destroy();
       if(error)reject(error);else resolveVerdict(verdict??'unavailable');
     };
     socket.setTimeout(120000,()=>finish(new Error('ClamAV scan timed out')));
     socket.on('error',error=>finish(error));
+    socket.on('close',()=>{if(!settled)finish(new Error('ClamAV closed without a complete verdict'));});
     socket.on('data',chunk=>{
-      response+=chunk.toString('utf8');
-      if(response.includes('OK')) finish(undefined,'clean');
-      else if(response.includes('FOUND')) finish(undefined,'rejected');
-      else if(response.includes('ERROR')) finish(new Error('ClamAV scan failed'));
+      response=(response+chunk.toString('utf8')).slice(-4096);
+      try {
+        const verdict=parseClamAvResponse(response);
+        if(verdict!=='pending') finish(undefined,verdict);
+      } catch(error) {
+        finish(error instanceof Error?error:new Error('ClamAV scan failed'));
+      }
     });
     socket.on('connect',()=>{
       socket.write('zINSTREAM\0');
@@ -96,34 +106,26 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
 }
 
 async function runFfmpeg(args: string[]): Promise<void> {
-  await new Promise<void>((resolveProcess,reject)=>{
-    const child=spawn(process.env.FFMPEG_PATH??'ffmpeg',args,{stdio:['ignore','ignore','pipe']});
-    let errorText='';
-    child.stderr.on('data',chunk=>{errorText+=chunk.toString().slice(0,2000);});
-    child.on('error',reject);
-    child.on('close',code=>code===0?resolveProcess():reject(new Error(`ffmpeg exited ${code}: ${errorText.slice(-500)}`)));
-  });
+  await executeFfmpeg(process.env.FFMPEG_PATH??'ffmpeg',args,FFMPEG_TIMEOUT_MS);
 }
 
 async function makeImageVariants(job: Job): Promise<Variant[]> {
-  const source=await storage.materialize(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
   try {
-    const meta=await sharp(source,{failOn:'error'}).metadata();
+    await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
+    const meta=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true}).metadata();
     if(!meta.width||!meta.height) throw new Error('Image dimensions could not be read');
     const definitions=[{type:'thumbnail' as const,width:320},{type:'preview' as const,width:1280},{type:'display' as const,width:2048}];
     const variants:Variant[]=[];
+    try {
     for(const definition of definitions) {
       const storageKey=`variants/${job.media_asset_id}/${definition.type}.webp`;
       const target=safePath(storageKey);
       await storage.ensureParent(storageKey);
       try {
-        const output=await sharp(source,{failOn:'error'})
-          .rotate()
-          .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
-          .webp({quality:82,effort:4})
-          .toFile(target);
+        const output=await renderImageVariant(source,target,definition.width,MAX_IMAGE_PIXELS);
         const checksumSha256=await sha256(target);
-        await storage.commit(storageKey,target);
+        await storage.commit(storageKey,target,checksumSha256);
         variants.push({
           variantType:definition.type,storageKey,mimeType:'image/webp',
           sizeBytes:output.size,width:output.width,height:output.height,checksumSha256,
@@ -133,46 +135,59 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       }
     }
     return variants;
+    } catch(error) {
+      // If a later derivative fails, remove every earlier derivative committed
+      // by this job so a partial image set cannot be mistaken for a complete one.
+      await Promise.all(variants.map(variant=>storage.remove(variant.storageKey).catch(()=>undefined)));
+      throw error;
+    }
   } finally {
     await storage.release(job.storage_key_original).catch(()=>undefined);
   }
 }
 
 async function makeVideoPoster(job: Job): Promise<Variant[]> {
-  const source=await storage.materialize(job.storage_key_original);
+  const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
-  const target=safePath(storageKey);
+  // Never let FFmpeg write directly over a previously published poster. Local
+  // storage atomically renames this staged file; S3 uploads it only after checks.
+  const temporaryKey=`${storageKey}.tmp-${job.id}`;
+  const target=safePath(temporaryKey);
   try {
-    await storage.ensureParent(storageKey);
-    await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
+    await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
+    await storage.ensureParent(temporaryKey);
+    await runFfmpeg(['-nostdin','-y','-protocol_whitelist','file,pipe','-max_alloc','67108864','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3','-fs','20971520',target]);
     const meta=await sharp(target).metadata();
     const info=await stat(target);
     if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
     const checksumSha256=await sha256(target);
-    await storage.commit(storageKey,target);
+    await storage.commit(storageKey,target,checksumSha256);
     return [{
       variantType:'video_poster',storageKey,mimeType:'image/jpeg',
       sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256,
     }];
   } finally {
-    await storage.release(storageKey).catch(()=>undefined);
+    if(job.storage_provider==='s3') await storage.release(temporaryKey).catch(()=>undefined);
+    else await storage.remove(temporaryKey).catch(()=>undefined);
     await storage.release(job.storage_key_original).catch(()=>undefined);
   }
 }
 
 async function processJob(job: Job): Promise<Record<string,unknown>> {
   if(job.job_type==='inspect') {
-    const source=await storage.materialize(job.storage_key_original);
+    const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
     try {
       const info=await stat(source);
-      if(info.size!==Number(job.size_bytes)) throw new Error('Stored file size differs from the declared size');
-      if(await sha256(source)!==job.checksum_sha256) throw new Error('Stored file checksum mismatch');
+      await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
       return {success:true,result:{bytes:info.size}};
     } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
   }
   if(job.job_type==='virus_scan') {
-    const source=await storage.materialize(job.storage_key_original);
+    const source=await storage.materialize(job.storage_key_original,Number(job.size_bytes));
     try {
+      // Scan the exact original accepted by the API, not merely an object with
+      // the same length that may have been replaced in storage afterwards.
+      await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
       const verdict=await clamScan(source);
       return {success:true,scanVerdict:verdict,result:{scanner:process.env.CLAMD_HOST?'clamd':'not_configured'}};
     } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
