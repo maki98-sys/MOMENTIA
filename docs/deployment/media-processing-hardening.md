@@ -11,6 +11,16 @@ This runbook describes the operational controls required by the API and media wo
 - ClamAV results are accepted only as complete `stream: OK` or `stream: ... FOUND` responses. Scanner errors, timeouts, and premature disconnects fail closed.
 - S3 variant uploads include SHA-256 and are checked with `HeadObject` (content length and checksum) before the worker reports success. Failed verification triggers a best-effort object delete.
 
+## API upload streaming and temporary disk
+
+- Direct uploads are streamed from the HTTP request into a uniquely created temporary file; the API no longer concatenates a 200 MiB request body into one in-memory Buffer.
+- Multipart part requests are streamed to temporary files and are capped at 8 MiB while receiving the body.
+- The API verifies the staged file size, SHA-256 and media signature before storage. Ownership is checked before the request body is accepted and is rechecked before database state changes.
+- Local storage copies staged files through streams and atomically renames the completed temporary object. S3 uploads use a file stream and an explicit content length.
+- Resumable assembly reads one stored part stream at a time, verifies each part checksum, writes incrementally to a staged file and verifies the final whole-file checksum. It does not concatenate the full upload in memory.
+- Staging files are created under the operating system temporary directory (Node.js `os.tmpdir()`; typically controlled by `TMPDIR`) and removed after the request or assembly completes, including error paths.
+- Provision a private, writable temporary filesystem with enough free space for concurrent upload staging and resumable assembly. Apply container/host disk quotas, alert on free space and clean abandoned `momentia-upload-` / `momentia-assembly-` directories after unclean process termination. Per-request size limits do not by themselves cap aggregate concurrent disk use.
+
 ## Required deployment configuration
 
 ### ClamAV
