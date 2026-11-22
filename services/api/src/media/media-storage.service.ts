@@ -73,7 +73,9 @@ export class LocalMediaStorage extends MediaStorage {
   }
 
   async remove(storageKey: string, _provider?: string): Promise<void> {
-    await rm(this.pathFor(storageKey), { force: true });
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.root, target);
+    await rm(target, { force: true });
   }
 
   async read(storageKey: string, _provider?: string): Promise<Buffer> {
@@ -90,6 +92,7 @@ export class LocalMediaStorage extends MediaStorage {
 
   async locate(storageKey: string, expectedSize?: number): Promise<string> {
     const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.root, target);
     const info = await stat(target).catch(() => null);
     if (!info || !info.isFile() || (expectedSize !== undefined && info.size !== expectedSize)) {
       throw new ServiceUnavailableException('Media content is unavailable.');
