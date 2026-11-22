@@ -159,6 +159,32 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     await expect(processing.claimDeletions(workerId, 10)).resolves.toHaveLength(0);
   });
 
+  it('dead-letters an exhausted deletion when its worker lease expires', async () => {
+    await seedUpload();
+    const storageKey = `pending/${userId}/expired-final-lease`;
+    await pool.query(
+      `INSERT INTO media_storage_deletions(
+         media_asset_id,storage_key,storage_provider,attempts,max_attempts,status,locked_at,locked_by
+       ) VALUES($1,$2,'local',12,12,'processing',now()-interval '10 minutes','stale-media-worker')`,
+      [assetId, storageKey],
+    );
+
+    await expect(processing.releaseStaleLocks(60)).resolves.toMatchObject({ released: 1 });
+
+    const persisted = await pool.query(
+      `SELECT status,attempts,dead_lettered_at,last_error_code
+       FROM media_storage_deletions WHERE media_asset_id=$1 AND storage_key=$2`,
+      [assetId, storageKey],
+    );
+    expect(persisted.rows[0]).toMatchObject({
+      status: 'failed',
+      attempts: 12,
+      last_error_code: 'RETRY_EXHAUSTED:WORKER_LEASE_EXPIRED',
+    });
+    expect(persisted.rows[0].dead_lettered_at).not.toBeNull();
+    await expect(processing.claimDeletions('media-e2e-worker', 10)).resolves.toHaveLength(0);
+  });
+
   it('cancels an incomplete upload, queues fragment cleanup and refuses further parts', async () => {
     await seedUpload();
     const part = file.subarray(0, 4);
