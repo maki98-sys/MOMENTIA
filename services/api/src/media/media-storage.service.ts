@@ -166,11 +166,13 @@ export class S3MediaStorage extends MediaStorage {
   async putFile(storageKey: string, filePath: string, expectedSize: number, checksumSha256: string, _provider?: string): Promise<void> {
     const key = this.key(storageKey);
     const expected = Buffer.from(checksumSha256, 'hex').toString('base64');
+    let putAttempted = false;
     try {
       const info = await stat(filePath);
       if (!info.isFile() || info.size !== expectedSize || expectedSize < 1 || !/^[a-f0-9]{64}$/i.test(checksumSha256)) {
         throw new Error('Staged upload size or checksum is invalid');
       }
+      putAttempted = true;
       await this.client.send(new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
@@ -188,7 +190,7 @@ export class S3MediaStorage extends MediaStorage {
         throw new Error('Uploaded media object failed size or SHA-256 verification');
       }
     } catch {
-      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => undefined);
+      if (putAttempted) await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => undefined);
       throw new ServiceUnavailableException('Remote media storage is unavailable or failed integrity verification.');
     }
   }
