@@ -17,6 +17,21 @@ describe('AudioGateway', () => {
     gateway = new AudioGateway(verifier, identities, audio);
   });
 
+  it('fails production startup when the cross-instance Redis adapter is not configured', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousRedisUrl = process.env.AUDIO_REDIS_URL;
+    process.env.NODE_ENV = 'production';
+    delete process.env.AUDIO_REDIS_URL;
+    try {
+      await expect(gateway.afterInit()).rejects.toThrow('AUDIO_REDIS_URL_REQUIRED_IN_PRODUCTION');
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousRedisUrl === undefined) delete process.env.AUDIO_REDIS_URL;
+      else process.env.AUDIO_REDIS_URL = previousRedisUrl;
+    }
+  });
+
   it('disconnects a socket without a handshake access token', async () => {
     const socket = { handshake: { auth: {} }, disconnect: jest.fn(), data: {} } as any;
     await gateway.handleConnection(socket);
