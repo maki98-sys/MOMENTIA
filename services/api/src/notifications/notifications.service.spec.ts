@@ -1,6 +1,25 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { NotificationsService } from './notifications.service';
+import { isValidExpoPushToken, NotificationsService } from './notifications.service';
 import { DatabaseService } from '../database/database.service';
+
+describe('Expo push token validation', () => {
+  it('accepts current Expo token prefixes with a bracketed token value', () => {
+    expect(isValidExpoPushToken('ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]')).toBe(true);
+    expect(isValidExpoPushToken('ExpoPushToken[xxxxxxxxxxxxxxxxxxxxxx]')).toBe(true);
+  });
+
+  it.each([
+    '',
+    'ExponentPushToken',
+    'ExponentPushToken[]',
+    'ExponentPushToken[short]',
+    'ExponentPushToken[bad token value]',
+    'OtherPushToken[xxxxxxxxxxxxxxxxxxxxxx]',
+    'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]trailing',
+  ])('rejects malformed token %s', token => {
+    expect(isValidExpoPushToken(token)).toBe(false);
+  });
+});
 
 describe('NotificationsService', () => {
   const query = jest.fn();
