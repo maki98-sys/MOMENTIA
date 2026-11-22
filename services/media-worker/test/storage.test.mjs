@@ -105,18 +105,23 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
     const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-stage-'));
     const originalSend = S3Client.prototype.send;
     const calls = [];
-    let uploaded;\n    let uploadedChecksum;
+    let uploaded;
+    let uploadedChecksum;
     const remote = Buffer.from('remote-object-content');
     S3Client.prototype.send = async function(command) {
       calls.push(command);
       if (command instanceof GetObjectCommand) {
         return { Body: Readable.from([remote]) };
       }
-      if (command instanceof HeadObjectCommand) {\n        if (String(command.input.Key).includes('variant')) return { ContentLength: uploaded?.length, ChecksumSHA256: uploadedChecksum };\n        return { ContentLength: remote.length };\n      }
+      if (command instanceof HeadObjectCommand) {
+        if (String(command.input.Key).includes('variant')) return { ContentLength: uploaded?.length, ChecksumSHA256: uploadedChecksum };
+        return { ContentLength: remote.length };
+      }
       if (command instanceof PutObjectCommand) {
         const chunks = [];
         for await (const chunk of command.input.Body) chunks.push(Buffer.from(chunk));
-        uploaded = Buffer.concat(chunks);\n        uploadedChecksum = command.input.ChecksumSHA256;
+        uploaded = Buffer.concat(chunks);
+        uploadedChecksum = command.input.ChecksumSHA256;
         return {};
       }
       if (command instanceof DeleteObjectCommand) return {};
@@ -134,11 +139,14 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
       const uploadSource = join(stage, 'upload-source.bin');
       await mkdir(stage, { recursive: true });
       await writeFile(uploadSource, Buffer.from('upload-content'));
-      const expectedChecksum = createHash('sha256').update('upload-content').digest('hex');\n      await storage.commit('users/u1/variant.webp', uploadSource, expectedChecksum);
+      const expectedChecksum = createHash('sha256').update('upload-content').digest('hex');
+      await storage.commit('users/u1/variant.webp', uploadSource, expectedChecksum);
       const put = calls.find(command => command instanceof PutObjectCommand);
       assert.ok(put);
       assert.equal(put.input.ServerSideEncryption, 'AES256');
-      assert.deepEqual(uploaded, Buffer.from('upload-content'));\n      assert.equal(uploadedChecksum, Buffer.from(expectedChecksum, 'hex').toString('base64'));\n      assert.ok(calls.some(command => command instanceof HeadObjectCommand && command.input.ChecksumMode === 'ENABLED'));
+      assert.deepEqual(uploaded, Buffer.from('upload-content'));
+      assert.equal(uploadedChecksum, Buffer.from(expectedChecksum, 'hex').toString('base64'));
+      assert.ok(calls.some(command => command instanceof HeadObjectCommand && command.input.ChecksumMode === 'ENABLED'));
 
       process.env.MEDIA_S3_SSE_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/test-key';
       await storage.commit('users/u1/kms-variant.webp', uploadSource, expectedChecksum);
