@@ -109,6 +109,7 @@ describe('SocialService',()=>{
   transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.comments('u1','visible-post')).resolves.toEqual([]);
   expect(clientQuery.mock.calls[2][0]).toContain('NOT EXISTS (SELECT 1 FROM user_blocks');
+  expect(clientQuery.mock.calls[2][0]).toContain("comment_author.status='active'");
   expect(clientQuery.mock.calls[2][1]).toEqual(['visible-post','u1']);
  });
  it('rejects reactions to comments from blocked authors',async()=>{
