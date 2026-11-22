@@ -226,6 +226,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
       snapshotClient.release();
     }
 
+    if (!mutation) throw new Error('Authorization mutation did not start.');
     const changed = await mutation;
     expect(changed.rowCount).toBe(1);
   });
