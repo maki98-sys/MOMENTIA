@@ -71,19 +71,25 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
     let response='';
     let settled=false;
     const finish=(error?:Error,verdict?:'clean'|'rejected'|'unavailable')=>{
-      if(settled)return;settled=true;socket.destroy();
+      if(settled)return;
+      settled=true;
+      socket.destroy();
       if(error)reject(error);else resolveVerdict(verdict??'unavailable');
     };
     socket.setTimeout(120000,()=>finish(new Error('ClamAV scan timed out')));
-    socket.on('error',error=>finish(error));\n    socket.on('close',()=>{if(!settled)finish(new Error('ClamAV closed without a complete verdict'));});
+    socket.on('error',error=>finish(error));
+    socket.on('close',()=>{if(!settled)finish(new Error('ClamAV closed without a complete verdict'));});
     socket.on('data',chunk=>{
-      response+=chunk.toString('utf8');
-      if(response.includes('OK')) finish(undefined,'clean');
-      else if(response.includes('FOUND')) finish(undefined,'rejected');
-      else if(response.includes('ERROR')) finish(new Error('ClamAV scan failed'));
+      response=(response+chunk.toString('utf8')).slice(-4096);
+      try {
+        const verdict=parseClamAvResponse(response);
+        if(verdict!=='pending') finish(undefined,verdict);
+      } catch(error) {
+        finish(error instanceof Error?error:new Error('ClamAV scan failed'));
+      }
     });
     socket.on('connect',()=>{
-      socket.write('zINSTREAM\0');
+      socket.write('zINSTREAM\\0');
       const stream=createReadStream(path,{highWaterMark:64*1024});
       stream.on('data',chunk=>{
         const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
