@@ -31,6 +31,24 @@ describe('ModerationService',()=>{
     expect(clientQuery.mock.calls[2][1]).toEqual([postId,'hidden','published']);
   });
 
+  it('revokes sessions and pending push deliveries when suspending a user',async()=>{
+    const userId='00000000-0000-4000-8000-000000000050';
+    const reportId='00000000-0000-4000-8000-000000000051';
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:reportId,target_type:'user',target_id:userId,status:'open'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:userId}],rowCount:1})
+      .mockImplementation(async(sql:string)=>String(sql).includes('UPDATE user_reports')
+        ? {rows:[{id:reportId,status:'resolved'}],rowCount:1}
+        : {rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.review('moderator-1',reportId,{decision:'resolve',action:'suspend_user'}))
+      .resolves.toMatchObject({status:'resolved'});
+    const sql=clientQuery.mock.calls.map((call:any[])=>String(call[0]));
+    expect(sql.some((statement:string)=>statement.includes('UPDATE auth_sessions'))).toBe(true);
+    expect(sql.some((statement:string)=>statement.includes('UPDATE notification_outbox'))).toBe(true);
+  });
+
   it('does not restore a space that was not hidden by moderation',async()=>{
     const spaceId='00000000-0000-4000-8000-000000000020';
     const reportId='00000000-0000-4000-8000-000000000021';
