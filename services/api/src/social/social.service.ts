@@ -172,7 +172,11 @@ export class SocialService {
     await this.assertCanView(userId,postId);
     const r=await this.db.query(`SELECT c.id,c.post_id,c.author_id,c.body,c.created_at,up.display_name
       FROM post_comments c LEFT JOIN user_profiles up ON up.user_id=c.author_id
-      WHERE c.post_id=$1 AND c.status='visible' ORDER BY c.created_at ASC LIMIT 200`,[postId]);
+      WHERE c.post_id=$1 AND c.status='visible'
+        AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+          (b.blocker_id=$2 AND b.blocked_id=c.author_id)
+          OR (b.blocker_id=c.author_id AND b.blocked_id=$2))
+      ORDER BY c.created_at ASC LIMIT 200`,[postId,userId]);
     return r.rows;
   }
 
@@ -240,7 +244,10 @@ export class SocialService {
     }
     const visible=await this.db.query(
       `SELECT c.post_id FROM post_comments c
-       WHERE c.id=$1 AND c.status='visible'`,[commentId]);
+       WHERE c.id=$1 AND c.status='visible'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$2 AND b.blocked_id=c.author_id)
+           OR (b.blocker_id=c.author_id AND b.blocked_id=$2))`,[commentId,userId]);
     if(!visible.rowCount) throw new NotFoundException('Comment not found.');
     await this.assertCanView(userId,String(visible.rows[0].post_id));
     await this.assertCanInteract(userId,String(visible.rows[0].post_id));
@@ -258,7 +265,10 @@ export class SocialService {
   async removeCommentReaction(userId: string, commentId: string) {
     const visible=await this.db.query(
       `SELECT c.post_id FROM post_comments c
-       WHERE c.id=$1 AND c.status='visible'`,[commentId]);
+       WHERE c.id=$1 AND c.status='visible'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$2 AND b.blocked_id=c.author_id)
+           OR (b.blocker_id=c.author_id AND b.blocked_id=$2))`,[commentId,userId]);
     if(!visible.rowCount) throw new NotFoundException('Comment not found.');
     await this.assertCanView(userId,String(visible.rows[0].post_id));
     await this.assertCanInteract(userId,String(visible.rows[0].post_id));
