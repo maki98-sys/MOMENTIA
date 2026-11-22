@@ -47,6 +47,7 @@ describe('InvitationsService', () => {
 
   it('activates a membership and consumes a valid invitation atomically', async () => {
     const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{
         id: 'invite-1', space_id: 'space-1', role: 'guest',
         expires_at: new Date(Date.now() + 60_000).toISOString(),
@@ -62,14 +63,14 @@ describe('InvitationsService', () => {
     await expect(service.accept('user-2', 'a'.repeat(43))).resolves.toEqual({
       spaceId: 'space-1', role: 'guest', membership: 'active',
     });
-    expect(clientQuery).toHaveBeenCalledTimes(5);
-    expect(clientQuery.mock.calls[2][0]).toContain('INSERT INTO space_memberships');
-    expect(clientQuery.mock.calls[3][0]).toContain('uses = uses + 1');
-    expect(clientQuery.mock.calls[4][0]).toContain('space_audit_events');
+    expect(clientQuery).toHaveBeenCalledTimes(6);
+    expect(clientQuery.mock.calls[3][0]).toContain('INSERT INTO space_memberships');
+    expect(clientQuery.mock.calls[4][0]).toContain('uses = uses + 1');
+    expect(clientQuery.mock.calls[5][0]).toContain('space_audit_events');
   });
 
   it('does not accept an invitation for a couple space through the generic flow', async () => {
-    const clientQuery = jest.fn().mockResolvedValueOnce({ rowCount: 1, rows: [{
+    const clientQuery = jest.fn().mockResolvedValueOnce({ rowCount: 0, rows: [] }).mockResolvedValueOnce({ rowCount: 1, rows: [{
       id: 'invite-1', space_id: 'space-1', role: 'member',
       expires_at: new Date(Date.now() + 60_000).toISOString(),
       max_uses: 1, uses: 0, approval_required: false,
@@ -78,6 +79,6 @@ describe('InvitationsService', () => {
     transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) =>
       work({ query: clientQuery }));
     await expect(service.accept('user-2', 'b'.repeat(43))).rejects.toBeInstanceOf(BadRequestException);
-    expect(clientQuery).toHaveBeenCalledTimes(1);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
   });
 });
