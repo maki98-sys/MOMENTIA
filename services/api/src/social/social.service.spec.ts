@@ -43,9 +43,13 @@ describe('SocialService',()=>{
   expect(query.mock.calls[1][0]).toContain('DELETE FROM content_reactions');
  });
  it('returns comments even when the author has no profile row',async()=>{
-  query.mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.comments('u1','visible-post')).resolves.toEqual([]);
-  expect(query.mock.calls[1][0]).toContain('LEFT JOIN user_profiles');
+  expect(clientQuery.mock.calls[2][0]).toContain('LEFT JOIN user_profiles');
  });
 
  it('creates an accepted relationship for a public profile',async()=>{
@@ -93,10 +97,14 @@ describe('SocialService',()=>{
   expect(clientQuery).toHaveBeenCalledTimes(2);
  });
  it('filters comments authored by users blocked in either direction',async()=>{
-  query.mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.comments('u1','visible-post')).resolves.toEqual([]);
-  expect(query.mock.calls[1][0]).toContain('NOT EXISTS (SELECT 1 FROM user_blocks');
-  expect(query.mock.calls[1][1]).toEqual(['visible-post','u1']);
+  expect(clientQuery.mock.calls[2][0]).toContain('NOT EXISTS (SELECT 1 FROM user_blocks');
+  expect(clientQuery.mock.calls[2][1]).toEqual(['visible-post','u1']);
  });
  it('rejects reactions to comments from blocked authors',async()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
