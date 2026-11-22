@@ -1,3 +1,10 @@
+jest.mock('jose', () => ({
+  SignJWT: jest.fn(),
+  createRemoteJWKSet: jest.fn(),
+  jwtVerify: jest.fn(),
+  errors: {},
+}));
+
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SessionTokenService } from './session-token.service';
