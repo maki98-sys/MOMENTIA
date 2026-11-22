@@ -61,7 +61,7 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery.mock.calls[2][0]).toContain("CASE WHEN $2='rejected' THEN 'quarantined' ELSE status END");
     expect(clientQuery.mock.calls[2][1]).toEqual([assetId,'unavailable']);
     expect(clientQuery.mock.calls[3][0]).toContain("status='completed'");
-    expect(clientQuery.mock.calls.some(([sql]:[string])=>String(sql).includes('INSERT INTO media_processing_jobs'))).toBe(false);
+    expect(clientQuery.mock.calls.some(call=>String(call[0]).includes('INSERT INTO media_processing_jobs'))).toBe(false);
   });
 
   it('rejects a variant result with unsafe storage keys',async()=>{
