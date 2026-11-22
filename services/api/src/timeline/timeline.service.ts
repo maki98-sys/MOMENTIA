@@ -66,6 +66,7 @@ export class TimelineService {
     const occurredAt=v.occurredAt??new Date().toISOString();
     if(typeof occurredAt!=='string'||Number.isNaN(Date.parse(occurredAt))) throw new BadRequestException('occurredAt must be a valid ISO date-time.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const member=await client.query(`SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
       if(!member.rowCount) throw new NotFoundException('Space not found.');
       if(member.rows[0].role==='guest') throw new NotFoundException('Space not found.');
