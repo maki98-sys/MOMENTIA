@@ -139,6 +139,8 @@ export class MediaProcessingService {
   async cleanupExpiredUploads(limit = 100) {
     const batch = Math.min(Math.max(Number(limit) || 100, 1), 500);
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const expired = await client.query(
         `WITH candidates AS (
            SELECT u.id,u.media_asset_id,a.storage_key_original,a.storage_provider
