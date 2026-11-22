@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException, TooManyRequestsException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -10,6 +10,8 @@ import { MediaStorage } from './media-storage.service';
 import { DatabaseService } from '../database/database.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_CONCURRENT_UPLOAD_ASSEMBLIES = Math.min(Math.max(Number(process.env.MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT) || 2, 1), 8);
+let activeUploadAssemblies = 0;
 
 @Injectable()
 export class MediaService {
@@ -263,6 +265,18 @@ export class MediaService {
   }
 
   async completeResumableUpload(userId:string,uploadId:string) {
+    if(activeUploadAssemblies>=MAX_CONCURRENT_UPLOAD_ASSEMBLIES) {
+      throw new TooManyRequestsException('Resumable upload assembly is at capacity. Retry shortly.');
+    }
+    activeUploadAssemblies++;
+    try {
+      return await this.completeResumableUploadInternal(userId,uploadId);
+    } finally {
+      activeUploadAssemblies=Math.max(0,activeUploadAssemblies-1);
+    }
+  }
+
+  private async completeResumableUploadInternal(userId:string,uploadId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
       throw new BadRequestException('Invalid upload id.');
     }
