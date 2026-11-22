@@ -86,6 +86,25 @@ describe('AudioService', () => {
     expect(clientQuery.mock.calls.at(-1)[0]).toContain("state='played'");
   });
 
+  it('clears the current track when the host leaves the session', async () => {
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'p',role:'host',state:'playing'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(operation:any)=>operation({query:clientQuery}));
+
+    await expect(service.leave('user-1','11111111-1111-4111-8111-111111111111'))
+      .resolves.toMatchObject({left:true,sessionEnded:true,reason:'HOST_LEFT'});
+    const endCall=clientQuery.mock.calls.find((call:any[])=>String(call[0]).includes("SET state='ended'"));
+    expect(endCall).toBeDefined();
+    expect(endCall[0]).toContain('current_item_id=NULL');
+    expect(endCall[0]).toContain('position_ms=0');
+  });
+
   it('rejects invalid votes before database access', async () => {
     await expect(service.vote('user-1', '11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', 0))
       .rejects.toBeInstanceOf(BadRequestException);
