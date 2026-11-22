@@ -1,5 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { LocalMediaStorage } from './media-storage.service';
