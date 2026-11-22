@@ -390,6 +390,9 @@ export class MediaService {
                  JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE i.media_asset_id=a.id AND i.status='active'
                    AND (al.visibility='members' OR sm.role IN ('owner','admin','moderator'))
+                   AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                     (b.blocker_id=$2 AND b.blocked_id=i.added_by)
+                     OR (b.blocker_id=i.added_by AND b.blocked_id=$2))
                )
                OR EXISTS (
                  SELECT 1 FROM timeline_entries te
