@@ -373,7 +373,20 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
       await holder.query('BEGIN');
       await holder.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       let settled=false;
-      const mutation=memberships.remove(ownerId,spaceId,viewerId).finally(()=>{settled=true;});
+      let signalLockAttempt!:()=>void;
+      const lockAttempted=new Promise<void>(resolve=>{signalLockAttempt=resolve;});
+      const raceDatabase={
+        query:db.query.bind(db),
+        transaction:(work:any)=>db.transaction((client:any)=>work({
+          query:(sql:string,values?:unknown[])=>{
+            if(sql.includes('pg_advisory_xact_lock(')) signalLockAttempt();
+            return client.query(sql,values);
+          },
+        })),
+      };
+      const racingMemberships=new MembershipsService(raceDatabase as any);
+      const mutation=racingMemberships.remove(ownerId,spaceId,viewerId).finally(()=>{settled=true;});
+      await lockAttempted;
       await new Promise(resolve=>setTimeout(resolve,100));
       expect(settled).toBe(false);
       await holder.query('COMMIT');
