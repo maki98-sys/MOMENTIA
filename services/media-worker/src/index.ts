@@ -4,6 +4,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { parseClamAvResponse, runFfmpeg as executeFfmpeg } from './process-utils';
 import { createMediaWorkerStorage } from './storage';
+import { renderImageVariant } from './image-processing';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
@@ -119,11 +120,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       const target=safePath(storageKey);
       await storage.ensureParent(storageKey);
       try {
-        const output=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true})
-          .rotate()
-          .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
-          .webp({quality:82,effort:4})
-          .toFile(target);
+        const output=await renderImageVariant(source,target,definition.width,MAX_IMAGE_PIXELS);
         const checksumSha256=await sha256(target);
         await storage.commit(storageKey,target,checksumSha256);
         variants.push({
