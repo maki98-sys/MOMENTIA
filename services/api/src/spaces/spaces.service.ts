@@ -226,7 +226,6 @@ export class SpacesService {
     const grace = Math.min(Math.max(Number(graceHours) || 24, 1), 168);
     return this.database.transaction(async client => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const candidates = await client.query(
         `WITH ended AS (
            SELECT s.id FROM spaces s
