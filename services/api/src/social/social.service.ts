@@ -265,6 +265,38 @@ export class SocialService {
     return result.rows;
   }
 
+  async getPost(userId: string, postId: string) {
+    return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      await this.assertCanView(userId, postId, client);
+      const result = await client.query(
+        `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.status,
+                p.created_at,p.published_at,up.display_name,up.avatar_media_id,
+                (SELECT count(*)::int FROM content_reactions r
+                 JOIN users reaction_author ON reaction_author.id=r.user_id AND reaction_author.status='active'
+                 WHERE r.target_type='post' AND r.target_id=p.id
+                   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                     (b.blocker_id=$1 AND b.blocked_id=r.user_id)
+                     OR (b.blocker_id=r.user_id AND b.blocked_id=$1))) reaction_count,
+                (SELECT count(*)::int FROM post_comments c
+                 JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+                 WHERE c.post_id=p.id AND c.status='visible'
+                   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                     (b.blocker_id=$1 AND b.blocked_id=c.author_id)
+                     OR (b.blocker_id=c.author_id AND b.blocked_id=$1))) comment_count,
+                (SELECT r.reaction_type FROM content_reactions r
+                 WHERE r.target_type='post' AND r.target_id=p.id AND r.user_id=$1) my_reaction
+         FROM posts p
+         JOIN users author ON author.id=p.author_id AND author.status='active'
+         LEFT JOIN user_profiles up ON up.user_id=p.author_id
+         WHERE p.id=$2 AND p.status='published'`,
+        [userId, postId],
+      );
+      if (!result.rowCount) throw new NotFoundException('Post not found.');
+      return result.rows[0];
+    });
+  }
+
   async comments(userId: string, postId: string) {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
