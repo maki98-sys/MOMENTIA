@@ -6,44 +6,48 @@
 - Required issuer, audience, expiry and identity claims; RS256/ES256 algorithm allowlist and bounded clock tolerance.
 - Configuration validation for issuer, audience and JWKS URI; local development can start without an identity provider, but protected requests fail closed with service-unavailable.
 - Bearer guard resolves the external `issuer + subject` identity and attaches the canonical MOMENTIA user ID to the request.
-- Transactional first-login provisioning into `users` and `auth_identities`, serialized with an advisory transaction lock.
-- Only verified email may provision an account. Matching email alone never links identities; existing accounts require a future authenticated linking flow.
-- Suspended or otherwise inactive accounts are denied.
+- Transactional first-login provisioning into `users` and `auth_identities`, serialized by issuer/subject and verified-email advisory locks.
+- Only verified email may provision an account. Matching email alone never links identities.
+- Suspended, deletion-pending and otherwise inactive accounts are denied.
+- MOMENTIA access/refresh session issuance, hashed refresh-token persistence, rotation, reuse detection and revocation.
+- Authenticated identity listing, linking and unlinking using a fresh token proving control of the additional identity.
 
 ## Device and session management endpoints
 
-All routes below require a valid OIDC bearer access token and derive the account ID from the verified identity, never from request input.
+All routes below derive the account ID from the verified identity/session, never from request input.
 
-- `POST /auth/devices`: registers an iOS, Android or web device. Optional push token field is named `pushTokenEncrypted` and must already be encrypted by the client; it is never returned by list/register responses.
+- `POST /auth/devices`: registers a device with required `deviceKey` (stable installation UUID), `platform` and optional `pushToken`. The server encrypts the raw push token; clients must send it over TLS and must not pre-encrypt it. Re-registering a device key is idempotent. Moving the key to another account revokes the prior account's sessions and pending push deliveries.
+- Push tokens are currently supported only for iOS and Android. Web devices may register without a push token; web push delivery is not implemented.
 - `GET /auth/devices`: lists active devices belonging to the authenticated account.
 - `POST /auth/devices/:deviceId/heartbeat`: updates last-seen only for an active device owned by the caller.
-- `DELETE /auth/devices/:deviceId`: revokes the owned device and all active MOMENTIA sessions linked to it in one transaction.
+- `DELETE /auth/devices/:deviceId`: revokes the owned device, linked MOMENTIA sessions and pending push deliveries in one transaction.
+- `POST /auth/sessions`: exchanges a verified OIDC access token for a MOMENTIA session; optional `deviceId` must belong to the account.
+- `POST /auth/sessions/refresh`: rotates the refresh token and detects reuse.
+- `DELETE /auth/sessions/current`: revokes the current MOMENTIA session.
 - `GET /auth/sessions`: lists up to 100 session metadata rows; refresh-token hashes are never returned.
 - `DELETE /auth/sessions/:sessionId`: revokes one active session owned by the caller.
 - `DELETE /auth/sessions`: revokes all active sessions belonging to the caller.
+- `GET /auth/identities`, `POST /auth/identities/link` and `POST /auth/identities/unlink`: list and manage linked identities. Link/unlink require a MOMENTIA session and a fresh provider token proving control of the identity.
 
-These endpoints provide device inventory and server-side revocation for MOMENTIA session records. They do not revoke the identity provider's own access tokens; a provider logout/revocation integration remains necessary.
+These endpoints revoke MOMENTIA sessions and device records. They do not revoke the identity provider's own access tokens; provider logout/revocation integration remains necessary.
 
 ## Not implemented yet
 
-- Provider tenant/application registration and credentials.
-- Provider-specific Android/iOS Authorization Code + PKCE client integration and callback validation.
-- MOMENTIA access/refresh session issuance, hashed refresh-token persistence, rotation, reuse detection and revocation.
-- MOMENTIA refresh-token issuance/rotation/reuse detection and provider token revocation. Device inventory and revocation of existing MOMENTIA session records are implemented; complete user-facing logout still depends on token/session issuance.
-- Account recovery and authenticated identity-linking flow.
-- End-to-end tests against a real provider and production tenant.
-- Complete resource authorization matrix for every user, space, album, post, audio room and media operation.
+- Provider tenant/application registration, production credentials and provider-specific Android/iOS Authorization Code + PKCE client integration.
+- Provider callback/deep-link validation and end-to-end tests against a real provider and production tenant.
+- Account recovery and support-assisted identity recovery.
+- Web Push provider integration and delivery receipts.
+- A complete resource authorization matrix and exhaustive negative cross-account/cross-space tests. Authorization hardening is ongoing; see the open backend security audit and CI evidence.
 
 ## Integration sequence
 
 1. Approve a concrete managed OIDC provider and supported login methods.
 2. Register native Android/iOS clients and API audience; configure exact issuer, audience and JWKS URL in each environment.
 3. Verify the provider's access-token format and claims. Do not assume ID tokens are API access tokens.
-4. Add provider-specific PKCE client integration and callback validation.
-5. Implement MOMENTIA session issuance/rotation/revocation, storing only refresh-token hashes.
-6. Implement device registration, logout, recovery and safe account linking.
-7. Add explicit resource authorization and negative cross-account/cross-space tests.
-8. Complete threat model, privacy review and production configuration before launch.
+4. Implement provider-specific PKCE client integration and callback validation.
+5. Integrate device registration using a stable installation UUID, MOMENTIA session issuance, refresh rotation and logout.
+6. Complete account recovery, provider logout and production security review.
+7. Complete the resource authorization matrix and cross-account/cross-space regression tests before launch.
 
 ## Operational requirements
 

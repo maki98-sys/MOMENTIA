@@ -13,18 +13,53 @@ describe('DeviceSessionService', () => {
   });
 
   it('registers a supported device without returning push credentials', async () => {
-    query.mockResolvedValue({ rowCount: 1, rows: [{ id: 'device-1', platform: 'android' }] });
-    await expect(service.registerDevice('user-1', { platform: 'android' }))
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'user-1'}]})
+      .mockResolvedValueOnce({rowCount:0,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',platform:'android'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { deviceKey:'22222222-2222-4222-8222-222222222222', platform: 'android' }))
       .resolves.toMatchObject({ id: 'device-1', platform: 'android' });
-    expect(query.mock.calls[0][0]).toContain('RETURNING id, platform, last_seen_at, created_at');
+    expect(query.mock.calls[0][0]).toContain("status='active'");
+    expect(query.mock.calls[2][0]).toContain('INSERT INTO devices');
+    expect(query.mock.calls[2][1]).toEqual(['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','android',null]);
+    expect(query.mock.calls[3][0]).toContain("jsonb_build_object('platform',$3::text)");
   });
 
   it('rejects unsupported device platforms and fields', async () => {
-    await expect(service.registerDevice('user-1', { platform: 'desktop' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { deviceKey:'22222222-2222-4222-8222-222222222222', platform: 'desktop' }))
       .rejects.toBeInstanceOf(BadRequestException);
-    await expect(service.registerDevice('user-1', { platform: 'ios', userId: 'other-user' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'ios', userId: 'other-user' }))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects push tokens for web devices until a web push provider exists', async () => {
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', {
+      deviceKey:'22222222-2222-4222-8222-222222222222',platform:'web',pushToken:'web-push-token',
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('does not register a device for an inactive account', async () => {
+    query.mockResolvedValueOnce({rowCount:0,rows:[]});
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111',{deviceKey:'22222222-2222-4222-8222-222222222222',platform:'ios'}))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('transfers a stable device key and revokes the previous account sessions', async () => {
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'user-2'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',user_id:'user-1'}]})
+      .mockResolvedValueOnce({rowCount:2,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',platform:'ios'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    await expect(service.registerDevice('user-2',{
+      deviceKey:'22222222-2222-4222-8222-222222222222',platform:'ios',
+    })).resolves.toMatchObject({id:'device-1',platform:'ios'});
+    expect(query.mock.calls[2][0]).toContain('UPDATE auth_sessions');
+    expect(query.mock.calls[3][0]).toContain('UPDATE notification_outbox');
+    expect(query.mock.calls[4][0]).toContain('UPDATE devices SET user_id');
   });
 
   it('lists only active devices owned by the authenticated user', async () => {
@@ -36,22 +71,26 @@ describe('DeviceSessionService', () => {
 
   it('revokes a device and its sessions in one transaction', async () => {
     query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'device-1' }] })
-      .mockResolvedValueOnce({ rowCount: 2, rows: [] });
-    await expect(service.revokeDevice('user-1', 'device-1')).resolves.toEqual({ revoked: true });
+      .mockResolvedValueOnce({ rowCount: 2, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 3, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    await expect(service.revokeDevice('user-1', '11111111-1111-4111-8111-111111111111')).resolves.toEqual({ revoked: true, revokedSessions: 2, cancelledPushDeliveries: 3 });
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(4);
     expect(query.mock.calls[1][0]).toContain('UPDATE auth_sessions');
+    expect(query.mock.calls[2][0]).toContain('UPDATE notification_outbox');
+    expect(query.mock.calls[3][0]).toContain("jsonb_build_object('revokedSessions',$3::integer)");
   });
 
   it('does not revoke a device owned by another user', async () => {
     query.mockResolvedValue({ rowCount: 0, rows: [] });
-    await expect(service.revokeDevice('user-1', 'foreign-device')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.revokeDevice('user-1', '11111111-1111-4111-8111-111111111111')).rejects.toBeInstanceOf(NotFoundException);
     expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('revokes only a session belonging to the authenticated user', async () => {
     query.mockResolvedValue({ rowCount: 0, rows: [] });
-    await expect(service.revokeSession('user-1', 'foreign-session')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.revokeSession('user-1', '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(query.mock.calls[0][0]).toContain('WHERE id=$1 AND user_id=$2');
   });
 
@@ -59,5 +98,21 @@ describe('DeviceSessionService', () => {
     query.mockResolvedValue({ rowCount: 3, rows: [{ id: '1' }, { id: '2' }, { id: '3' }] });
     await expect(service.revokeAllSessions('user-1')).resolves.toEqual({ revokedCount: 3 });
     expect(query.mock.calls[0][0]).toContain('WHERE user_id=$1 AND revoked_at IS NULL');
+    expect(query).toHaveBeenCalledTimes(4);
   });
+  it('updates heartbeat only for a valid active device owned by the user',async()=>{
+    await expect(service.heartbeat('user-1','bad-id')).rejects.toBeInstanceOf(BadRequestException);
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',last_seen_at:new Date()}]});
+    await expect(service.heartbeat('user-1','11111111-1111-4111-8111-111111111111')).resolves.toMatchObject({id:'device-1'});
+    expect(query.mock.calls[0][0]).toContain('user_id=$2');
+    expect(query.mock.calls[0][0]).toContain('revoked_at IS NULL');
+  });
+
+  it('lists recent sessions with derived active, revoked and expired states',async()=>{
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'session-1',status:'active'}]});
+    await expect(service.listSessions('user-1')).resolves.toEqual([{id:'session-1',status:'active'}]);
+    expect(query.mock.calls[0][0]).toContain('CASE WHEN s.revoked_at IS NULL');
+    expect(query.mock.calls[0][0]).toContain('LIMIT 100');
+  });
+
 });

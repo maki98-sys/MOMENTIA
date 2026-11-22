@@ -80,6 +80,14 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const sessionIds = await this.audio.cleanupStaleParticipants(timeoutSeconds);
       for (const sessionId of sessionIds) {
         this.server?.to(room(sessionId)).emit('audio:presence:expired', { sessionId });
+        const sockets = await this.server?.in(room(sessionId)).fetchSockets();
+        for (const socket of sockets ?? []) {
+          const userId = socket.data.userId;
+          if (typeof userId !== 'string' || !(await this.audio.isActiveParticipant(userId,sessionId))) {
+            await socket.leave(room(sessionId));
+            socket.disconnect(true);
+          }
+        }
       }
     } catch (error) {
       this.logger.error('Could not expire stale Social Audio participants.', error instanceof Error ? error.stack : undefined);
@@ -101,10 +109,20 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const sessionId = client.data.sessionId;
+    const userId = client.data.userId;
     if (typeof sessionId === 'string') {
-      client.leave(room(sessionId));
+      if (typeof userId === 'string') {
+        try {
+          await this.audio.leave(userId,sessionId);
+          await this.publishSession(userId,sessionId,'audio:participant:left');
+        } catch {
+          // The REST leave path or a revocation may already have ended participation.
+        }
+      }
+      await client.leave(room(sessionId));
+      delete client.data.sessionId;
     }
   }
 
@@ -116,12 +134,22 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       return { event: 'audio:error', data: { code: 'INVALID_SESSION' } };
     }
     try {
-      const snapshot = await this.audio.getSession(userId, sessionId);
       const previous = client.data.sessionId;
-      if (typeof previous === 'string' && previous !== sessionId) await client.leave(room(previous));
+      if (typeof previous === 'string' && previous !== sessionId) {
+        try {
+          await this.audio.leave(userId,previous);
+          await this.publishSession(userId,previous,'audio:participant:left');
+        } catch {
+          // A stale or revoked previous participation is cleaned up by presence expiry.
+        }
+        await client.leave(room(previous));
+      }
+      await this.audio.join(userId, sessionId);
+      const snapshot = await this.audio.getSession(userId, sessionId);
       await client.join(room(sessionId));
       client.data.sessionId = sessionId;
       client.emit('audio:snapshot', snapshot);
+      this.server.to(room(sessionId)).emit('audio:participant:joined', { sessionId, userId, serverVersion: snapshot.server_version });
       return { event: 'audio:joined', data: { sessionId, serverVersion: snapshot.server_version } };
     } catch {
       return { event: 'audio:error', data: { code: 'SESSION_ACCESS_DENIED' } };
@@ -131,7 +159,18 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   @SubscribeMessage('audio:leave')
   async leave(@ConnectedSocket() client: Socket) {
     const sessionId = client.data.sessionId;
-    if (typeof sessionId === 'string') await client.leave(room(sessionId));
+    const userId = client.data.userId;
+    if (typeof sessionId === 'string') {
+      if (typeof userId === 'string') {
+        try {
+          await this.audio.leave(userId,sessionId);
+          await this.publishSession(userId,sessionId,'audio:participant:left');
+        } catch {
+          // Always leave the socket room even if participation already ended.
+        }
+      }
+      await client.leave(room(sessionId));
+    }
     delete client.data.sessionId;
     return { event: 'audio:left', data: { sessionId: sessionId ?? null } };
   }
@@ -147,6 +186,9 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const result = await this.audio.heartbeat(userId, sessionId);
       return { event: 'audio:heartbeat:ack', data: result };
     } catch {
+      await client.leave(room(sessionId));
+      delete client.data.sessionId;
+      client.disconnect(true);
       return { event: 'audio:error', data: { code: 'PARTICIPATION_INACTIVE' } };
     }
   }

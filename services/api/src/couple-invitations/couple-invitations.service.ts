@@ -26,8 +26,11 @@ export class CoupleInvitationsService {
     const token=randomBytes(32).toString('base64url');
     const hash=createHash('sha256').update(token).digest('hex');
     const result=await this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       const users=await client.query(
-        `SELECT id FROM users WHERE id=ANY($1::uuid[]) AND status='active' FOR SHARE`,
+        `SELECT id FROM users WHERE id=ANY($1::uuid[]) AND status='active'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b
+           WHERE b.blocker_id=ANY($1::uuid[]) AND b.blocked_id=ANY($1::uuid[])) FOR SHARE`,
         [[inviterId,inviteeId]]);
       if(users.rowCount!==2) throw new NotFoundException('An active account could not be found.');
       await client.query(
@@ -48,7 +51,7 @@ export class CoupleInvitationsService {
         [inviterId,inviteeId,hash]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$2,'couple.invitation.created','couple_invitation',$3,jsonb_build_object('expiresAt',$4))`,
+         VALUES($1,$2,'couple.invitation.created','couple_invitation',$3,jsonb_build_object('expiresAt',$4::timestamptz))`,
         [inviterId,inviteeId,created.rows[0].id,created.rows[0].expires_at]);
       return created.rows[0];
     });
@@ -87,6 +90,7 @@ export class CoupleInvitationsService {
     }
     const hash=createHash('sha256').update(token).digest('hex');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const found=await client.query(
         `SELECT id,inviter_user_id,invitee_user_id,expires_at,accepted_at,revoked_at
          FROM couple_space_invitations WHERE token_hash=$1 FOR UPDATE`,[hash]);
@@ -100,7 +104,10 @@ export class CoupleInvitationsService {
       // row locks, two different pending invitations could concurrently create
       // two active couple spaces for the same user pair.
       const lockedUsers=await client.query(
-        `SELECT id FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+        `SELECT id FROM users WHERE id=ANY($1::uuid[]) AND status='active'
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b
+           WHERE b.blocker_id=ANY($1::uuid[]) AND b.blocked_id=ANY($1::uuid[]))
+         ORDER BY id FOR UPDATE`,
         [[invite.inviter_user_id,userId]]);
       if(lockedUsers.rowCount!==2) throw new NotFoundException('An active account could not be found.');
       const occupied=await client.query(
@@ -111,8 +118,7 @@ export class CoupleInvitationsService {
       const ownerPlan=await client.query(
         `SELECT p.features,COALESCE((p.features->>'max_spaces')::integer,5) max_spaces,
                 (SELECT count(*)::integer FROM spaces s
-                 JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
-                 WHERE s.status IN ('active','archived')) owned_spaces
+                 WHERE s.owner_id=$1 AND s.status IN ('active','archived')) owned_spaces
          FROM subscription_plans p
          LEFT JOIN LATERAL (
            SELECT us.plan_id FROM user_subscriptions us
@@ -142,7 +148,7 @@ export class CoupleInvitationsService {
         `UPDATE couple_space_invitations SET accepted_at=now() WHERE id=$1`,[invite.id]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$2,'couple.space.created','space',$3,jsonb_build_object('invitationId',$4))`,
+         VALUES($1,$2,'couple.space.created','space',$3,jsonb_build_object('invitationId',$4::text))`,
         [userId,invite.inviter_user_id,spaceId,invite.id]);
       return {spaceId,type:'COUPLE',visibility:'private',members:[invite.inviter_user_id,userId]};
     });

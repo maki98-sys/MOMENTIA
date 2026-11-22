@@ -48,18 +48,24 @@ export class NotificationsService {
            SELECT 1 FROM notification_preferences np
            WHERE np.user_id=n.user_id AND np.category=n.category AND np.in_app_enabled=false
          )
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=n.user_id AND b.blocked_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))
+           OR (b.blocked_id=n.user_id AND b.blocker_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId')))
        ORDER BY n.created_at DESC, n.id DESC
        LIMIT $5`,
       [userId, decoded?.createdAt ?? null, decoded?.id ?? null, unreadOnly, pageSize],
     );
 
     const unread = await this.db.query(
-      `SELECT count(*)::int AS count FROM notifications
-       WHERE user_id = $1 AND read_at IS NULL
+      `SELECT count(*)::int AS count FROM notifications n
+       WHERE n.user_id = $1 AND n.read_at IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM notification_preferences np
-           WHERE np.user_id=notifications.user_id AND np.category=notifications.category AND np.in_app_enabled=false
-         )`,
+           WHERE np.user_id=n.user_id AND np.category=n.category AND np.in_app_enabled=false
+         )
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=n.user_id AND b.blocked_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))
+           OR (b.blocked_id=n.user_id AND b.blocker_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId')))`,
       [userId],
     );
     const last = result.rows[result.rows.length - 1] as Record<string, unknown> | undefined;
@@ -109,6 +115,9 @@ export class NotificationsService {
       throw new BadRequestException('Invalid notification deduplication key.');
     }
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const recipient=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[userId]);
+      if(!recipient.rowCount) throw new NotFoundException('Notification recipient is not active.');
       const inserted = await client.query(
         `INSERT INTO notifications(user_id,category,payload,dedupe_key)
          VALUES($1,$2,$3::jsonb,$4)
@@ -203,6 +212,7 @@ export class NotificationsService {
       const claimed = await client.query(
         `WITH candidates AS (
            SELECT o.id FROM notification_outbox o
+           JOIN users u ON u.id=o.user_id AND u.status='active'
            JOIN devices d ON d.id=o.device_id AND d.revoked_at IS NULL
            WHERE o.channel='push' AND o.status IN ('pending','failed')
              AND o.next_attempt_at<=now() AND o.attempts<8
@@ -296,28 +306,32 @@ export class NotificationsService {
     let failed = 0;
     for (const item of deliveries) {
       try {
-        const preference = await this.db.query(
-          `SELECT np.push_enabled
-           FROM notification_preferences np
-           JOIN notifications n ON n.user_id=np.user_id AND n.category=np.category
-           WHERE n.id=$1 AND np.user_id=$2
-           LIMIT 1`,
-          [item.notification_id,item.user_id],
+        const deliveryState = await this.db.query(
+          `SELECT d.revoked_at,d.platform,d.push_token_encrypted,
+                  COALESCE(np.push_enabled,true) AS push_enabled,
+                  EXISTS(SELECT 1 FROM user_blocks b WHERE
+                    (b.blocker_id=n.user_id AND b.blocked_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))
+                    OR (b.blocked_id=n.user_id AND b.blocker_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))) AS actor_blocked
+           FROM devices d JOIN users u ON u.id=d.user_id AND u.status='active'
+           JOIN notifications n ON n.id=$1 AND n.user_id=d.user_id
+           LEFT JOIN notification_preferences np ON np.user_id=d.user_id AND np.category=n.category
+           WHERE d.id=$2 AND d.user_id=$3`,
+          [item.notification_id,item.device_id,item.user_id],
         );
-        if (preference.rowCount && preference.rows[0].push_enabled === false) {
+        const state=deliveryState.rows[0];
+        if (!state || state.revoked_at || !state.push_token_encrypted || state.push_enabled === false || state.actor_blocked === true) {
           await this.db.query(
             `UPDATE notification_outbox
-             SET status='cancelled',last_error_code='PUSH_OPTED_OUT',
-                 processing_started_at=NULL
+             SET status='cancelled',last_error_code=$2,processing_started_at=NULL
              WHERE id=$1 AND status='processing'`,
-            [item.id],
+            [item.id,state?.push_enabled===false?'PUSH_OPTED_OUT':state?.actor_blocked===true?'ACTOR_BLOCKED':'DEVICE_UNAVAILABLE'],
           );
           continue;
         }
-        if (item.platform !== 'ios' && item.platform !== 'android') {
+        if (state.platform !== 'ios' && state.platform !== 'android') {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
-        const token = decryptPushToken(String(item.push_token_encrypted));
+        const token = decryptPushToken(String(state.push_token_encrypted));
         if (!/^(ExponentPushToken|ExpoPushToken)\\[.+\\]$/.test(token)) {
           throw new Error('INVALID_EXPO_PUSH_TOKEN');
         }

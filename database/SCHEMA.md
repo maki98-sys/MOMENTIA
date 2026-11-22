@@ -2,7 +2,7 @@
 
 This is the physical PostgreSQL schema inventory for the current database foundation. It documents persisted responsibilities; it does not imply that the corresponding API or user interface has been implemented.
 
-## Server schema (41 tables)
+## Server schema (64 tables, including `schema_migrations`)
 
 ### Identity and account security
 - `schema_migrations`: applied migration versions and timestamps.
@@ -71,6 +71,36 @@ This is the physical PostgreSQL schema inventory for the current database founda
 
 SQLite is a device cache and durable offline outbox, not the system of record. Authentication secrets belong in iOS Keychain / Android Keystore. Encryption-at-rest configuration, secure local file handling and sync conflict resolution are implementation tasks for the mobile/offline phases.
 
+
+
+### Additional server tables introduced by migrations 0004–0063
+
+These tables are part of the current migration chain and must be included in the physical inventory:
+
+#### Albums, journals and memberships
+- `space_albums`, `space_album_items`: general albums scoped to shared spaces (distinct from the event-album tables above).
+- `couple_journal_entries`, `couple_space_key_envelopes`: encrypted couple journal entries and per-member key envelopes.
+- `couple_space_invitations`: mutual-consent invitations for couple spaces.
+- `space_join_requests`: approval workflow for joining spaces.
+
+#### Audit, moderation and account lifecycle
+- `user_audit_events`, `moderation_audit_events`: account-level and moderation decision history.
+- `account_deletion_requests`: scheduled account deletion and worker lease state.
+
+#### Billing and storage
+- `subscription_plans`, `user_subscriptions`, `billing_webhook_events`, `storage_usage_events`: plan entitlements, subscription state, webhook processing and storage accounting.
+- Note: the database currently also contains the earlier `billing_plans`, `subscriptions` and `payment_events` model. These overlapping billing models require an explicit ownership/deprecation decision; their coexistence must not be mistaken for one unified billing schema.
+
+#### Notifications and media processing
+- `notification_preferences`, `notification_outbox`: per-category preferences and durable push delivery.
+- `media_processing_jobs`, `media_storage_deletions`: asynchronous processing and object-storage deletion work.
+
+#### Offline sync and resumable uploads
+- `sync_operation_receipts`, `sync_change_log`, `sync_device_cursors`, `sync_snapshot_sessions`: idempotent client operations, change feed, device checkpoints and paginated snapshot state.
+- `event_rsvps`: event attendance responses.
+- `media_upload_parts`: resumable multipart upload state.
+- `auth_session_refresh_tokens`: refresh-token family and rotation state.
+
 ## Critical invariants
 
 1. A space has one subtype matching its declared type.
@@ -92,3 +122,12 @@ SQLite is a device cache and durable offline outbox, not the system of record. A
 - Retention periods and deletion/anonymization behavior must be approved for each jurisdiction before policies are enabled.
 - The schema prepares Social Audio state; synchronized playback still depends on a licensed music provider and its platform SDK/terms.
 - Subscription and payment tables do not mean a payment provider has been selected or connected.
+
+
+## Authorization and device lifecycle extensions (0064–0066)
+
+- Migration 0064 adds transaction-level authorization write locks to changes that can alter access to shared content: memberships, relationships, blocks, spaces, posts, comments, albums, album items, media ownership/status and account status.
+- Migration 0065 adds the same lock for profile visibility changes, which affect follow authorization.
+- These triggers use the shared authorization advisory-lock key. Snapshot and read paths hold the shared lock while permission-sensitive data is read; mutation paths acquire the exclusive lock before row locks and permission checks.
+- Migration 0066 adds nullable `devices.device_key` with a unique partial index. New device registrations must provide a stable installation UUID. Re-registering a key updates the device; transferring it to another account revokes the previous account's sessions and pending push deliveries.
+- The authorization lock is deliberately global for correctness in this phase. It may serialize unrelated permission mutations; a per-user/per-resource epoch design remains a future scalability optimization.

@@ -47,6 +47,7 @@ export class SyncService {
       const requestHash = this.requestFingerprint(operation);
       try {
         const result = await this.db.transaction(async client => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
           const receipt = await client.query(
             `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type,request_hash)
              VALUES($1,$2,$3,$4) ON CONFLICT(user_id,operation_id) DO NOTHING
@@ -307,7 +308,14 @@ export class SyncService {
     if (membership.rows[0].role === 'guest') throw new Error('INTERACTION_NOT_ALLOWED');
     if (postId) {
       if (typeof postId !== 'string' || !UUID.test(postId)) throw new Error('INVALID_POST_ID');
-      const post = await client.query(`SELECT id FROM posts WHERE id=$1 AND space_id=$2 AND status='published'`, [postId,spaceId]);
+      const post = await client.query(
+        `SELECT p.id FROM posts p WHERE p.id=$1 AND p.space_id=$2
+           AND p.status='published' AND p.audience='space'
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+             (b.blocker_id=$3 AND b.blocked_id=p.author_id)
+             OR (b.blocker_id=p.author_id AND b.blocked_id=$3))`,
+        [postId,spaceId,userId],
+      );
       if (!post.rowCount) throw new Error('POST_NOT_FOUND');
     }
     if (mediaAssetId) {
@@ -532,7 +540,7 @@ export class SyncService {
       const latest = BigInt(bounds.rows[0].latest_sequence);
       const requested = BigInt(requestedCursor);
       const cursorAhead = requested > latest;
-      const historyExpired = oldest > 0n && requested < oldest - 1n;
+      const historyExpired = requested > 0n && oldest > 0n && requested < oldest - 1n;
       if (cursorAhead || historyExpired) {
         return {
           changes: [],
@@ -545,7 +553,7 @@ export class SyncService {
         };
       }
       const result = await client.query(
-        `SELECT sequence_id,entity_type,entity_id,change_type,payload,occurred_at
+        `SELECT sequence_id,entity_type,entity_id,change_type,occurred_at
          FROM sync_change_log
          WHERE user_id=$1 AND sequence_id>$2::bigint
          ORDER BY sequence_id ASC LIMIT $3`,
@@ -555,10 +563,14 @@ export class SyncService {
         ? String(result.rows[result.rows.length - 1].sequence_id)
         : requestedCursor;
       return {
-        changes: result.rows,
+        // Change-log payloads are intentionally not exposed: permissions may have
+        // been revoked since the event was recorded. Clients refresh authorized
+        // content through snapshot(), which revalidates every section.
+        changes: result.rows.map((row:any)=>({...row,payload:null})),
         nextCursor,
-        hasMore: result.rowCount === safeLimit,
+        hasMore: result.rows.length === safeLimit,
         resetRequired: false,
+        refreshRequired: result.rows.length > 0,
         serverCursor: latest.toString(),
       };
     });
@@ -566,7 +578,13 @@ export class SyncService {
 
   async snapshot(userId: string, input?: unknown) {
     return this.db.transaction(async client => {
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      // READ COMMITTED is intentional: each section query must see permission changes
+      // committed before that query, rather than reusing a transaction-wide old snapshot.
+      await client.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      // Shared global lock allows concurrent snapshots but orders them against
+      // every authorization-changing write guarded by migration 0064.
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      // Keep same-user snapshot creation/continuation serialized independently.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId]);
       await client.query(`DELETE FROM sync_snapshot_sessions WHERE expires_at <= now() OR created_at < now()-interval '24 hours'`);
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
@@ -583,11 +601,15 @@ export class SyncService {
       : Array.isArray(value.sections) && value.sections.every(item => typeof item === 'string' && allowed.includes(item))
         ? [...new Set(value.sections as string[])] : null;
     if (!requested) throw new BadRequestException('Invalid snapshot sections.');
+    // A continuation must never serve previously materialized authorization-sensitive data.
+    // Rebuild every requested section from current database permissions on every page.
+    // This trades strict point-in-time pagination for fail-closed authorization freshness.
+    let continuationSnapshotId: string | null = null;
     let frozenData: Record<string, unknown[]> | null = null;
     let frozenCursor: string | null = null;
     if (snapshotId) {
       const saved = await client.query(
-        `SELECT sections,data,cursor::text AS cursor,expires_at,created_at FROM sync_snapshot_sessions
+        `SELECT sections FROM sync_snapshot_sessions
          WHERE id=$1 AND user_id=$2 AND expires_at>now() FOR UPDATE`,
         [snapshotId,userId],
       );
@@ -597,8 +619,11 @@ export class SyncService {
         throw new BadRequestException('Snapshot sections cannot change during pagination.');
       }
       requested = savedSections;
-      frozenData = saved.rows[0].data as Record<string, unknown[]>;
-      frozenCursor = String(saved.rows[0].cursor);
+      continuationSnapshotId = String(snapshotId);
+      await client.query(
+        `DELETE FROM sync_snapshot_sessions WHERE id=$1 AND user_id=$2`,
+        [snapshotId,userId],
+      );
     }
     const requestedLimit = value.limit === undefined ? 500 : value.limit;
     if (!Number.isSafeInteger(requestedLimit) || Number(requestedLimit) < 1 || Number(requestedLimit) > 1000) {
@@ -619,6 +644,11 @@ export class SyncService {
     if (Object.keys(offsets).some(section => !requested.includes(section))) {
       throw new BadRequestException('Snapshot offsets must belong to requested sections.');
     }
+    // Capture the change-feed watermark before reading section data. If a write
+    // commits while sections are being materialized, its sequence must remain
+    // above this cursor so the next pull can deliver it (duplicates are safe).
+    const cursor = await client.query(
+      `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
     const nextOffsets: Record<string, number> = {};
     const data: Record<string, unknown[]> = frozenData ?? {};
     const has = (section: string) => !frozenData && requested.includes(section);
@@ -645,12 +675,13 @@ export class SyncService {
     if (has('posts')) {
       const r = await client.query(
         `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.status,p.created_at,p.published_at,p.updated_at
-         FROM posts p
+         FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
          WHERE p.status='published' AND (
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
              SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-           OR (p.audience='space' AND EXISTS(
+           OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+             AND EXISTS(
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
@@ -660,12 +691,14 @@ export class SyncService {
     if (has('comments')) {
       const r = await client.query(
         `SELECT c.id,c.post_id,c.author_id,c.body,c.status,c.created_at
-         FROM post_comments c JOIN posts p ON p.id=c.post_id
+         FROM post_comments c JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+         JOIN posts p ON p.id=c.post_id JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
          WHERE c.status='visible' AND p.status='published' AND (
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
              SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-           OR (p.audience='space' AND EXISTS(
+           OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+             AND EXISTS(
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
@@ -679,9 +712,30 @@ export class SyncService {
         `SELECT t.id,t.space_id,t.post_id,t.media_asset_id,t.occurred_at,t.source,t.created_at
          FROM timeline_entries t JOIN space_memberships m ON m.space_id=t.space_id
          JOIN spaces s ON s.id=t.space_id
-         WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
-           AND (t.post_id IS NULL OR EXISTS(SELECT 1 FROM posts p WHERE p.id=t.post_id AND p.status='published'))
-           AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
+         WHERE m.user_id=$1 AND m.state='active' AND s.status IN ('active','archived')
+           AND (t.post_id IS NULL OR EXISTS(
+             SELECT 1 FROM posts p JOIN users timeline_author ON timeline_author.id=p.author_id AND timeline_author.status='active'
+             WHERE p.id=t.post_id AND p.space_id=t.space_id AND p.status='published'
+               AND (
+                 p.author_id=$1 OR p.audience='public'
+                 OR (p.audience='followers' AND EXISTS(
+                   SELECT 1 FROM user_relationships rel
+                   WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
+                 OR (p.audience='space' AND EXISTS(
+                   SELECT 1 FROM space_memberships pm
+                   WHERE pm.space_id=p.space_id AND pm.user_id=$1 AND pm.state='active'))
+               )
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=p.author_id)
+                 OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+           ))
+           AND (t.media_asset_id IS NULL OR EXISTS(
+             SELECT 1 FROM media_assets a JOIN users media_owner ON media_owner.id=a.owner_id AND media_owner.status='active'
+               WHERE a.id=t.media_asset_id AND a.status='ready'
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=a.owner_id)
+                 OR (b.blocker_id=a.owner_id AND b.blocked_id=$1))
+           ))
          ORDER BY t.occurred_at DESC,t.id`, [userId]);
       data.timeline = r.rows;
     }
@@ -689,9 +743,18 @@ export class SyncService {
       const r = await client.query(
         `SELECT a.id AS album_id,a.space_id,a.name,a.description,a.visibility,
                 i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
-         FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
+         FROM space_albums a JOIN spaces album_space ON album_space.id=a.space_id AND album_space.status IN ('active','archived')
+         JOIN space_memberships m ON m.space_id=a.space_id
          LEFT JOIN space_album_items i ON i.album_id=a.id AND i.status='active'
-           AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready')
+           AND EXISTS(SELECT 1 FROM users added_by WHERE added_by.id=i.added_by AND added_by.status='active')
+           AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+             (b.blocker_id=$1 AND b.blocked_id=i.added_by)
+             OR (b.blocker_id=i.added_by AND b.blocked_id=$1))
+           AND EXISTS(SELECT 1 FROM media_assets ma JOIN users media_owner ON media_owner.id=ma.owner_id AND media_owner.status='active'
+             WHERE ma.id=i.media_asset_id AND ma.status='ready'
+             AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+               (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
+               OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1)))
          WHERE m.user_id=$1 AND m.state='active'
            AND (a.visibility='members' OR m.role IN ('owner','admin','moderator'))
          ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id`, [userId]);
@@ -761,21 +824,25 @@ export class SyncService {
         `SELECT r.id,r.target_type,r.target_id,r.reaction_type,r.created_at
          FROM content_reactions r
          WHERE r.user_id=$1 AND (
-           (r.target_type='post' AND EXISTS(SELECT 1 FROM posts p WHERE p.id=r.target_id AND p.status='published'
+           (r.target_type='post' AND EXISTS(SELECT 1 FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active' WHERE p.id=r.target_id AND p.status='published'
              AND (p.author_id=$1 OR p.audience='public'
                OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                  WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-               OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+               OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+                 AND EXISTS(SELECT 1 FROM space_memberships sm
                  WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
                (b.blocker_id=p.author_id AND b.blocked_id=$1)))
-           OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c JOIN posts p ON p.id=c.post_id
+           OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c
+             JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+             JOIN posts p ON p.id=c.post_id JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
              WHERE c.id=r.target_id AND c.status='visible' AND p.status='published'
                AND (p.author_id=$1 OR p.audience='public'
                  OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                    WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-                 OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+                 OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+                   AND EXISTS(SELECT 1 FROM space_memberships sm
                    WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
                AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                  (b.blocker_id=$1 AND b.blocked_id=c.author_id) OR
@@ -810,26 +877,31 @@ export class SyncService {
          ORDER BY e.space_id,e.key_version DESC`, [userId]);
       data.coupleKeyEnvelopes = r.rows;
     }
-    let cursorValue = frozenCursor;
+    let cursorValue: string | null = frozenCursor;
     let snapshotAt: unknown = null;
-    let activeSnapshotId = snapshotId ?? null;
+    let activeSnapshotId: string | null = snapshotId ?? null;
     if (!frozenData) {
       const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
       if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 24 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
-      const cursor = await client.query(
-        `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
       cursorValue = String(cursor.rows[0].cursor);
-      const saved = await client.query(
-        `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
-         VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
-         RETURNING id,created_at`,
-        [userId,requested,JSON.stringify(data),cursorValue],
-      );
+      const saved = continuationSnapshotId
+        ? await client.query(
+            `INSERT INTO sync_snapshot_sessions(id,user_id,sections,data,cursor,expires_at)
+             VALUES($1,$2,$3::text[],$4::jsonb,$5::bigint,now()+interval '30 minutes')
+             RETURNING id,created_at`,
+            [continuationSnapshotId,userId,requested,JSON.stringify({}),cursorValue],
+          )
+        : await client.query(
+            `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
+             VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
+             RETURNING id,created_at`,
+            [userId,requested,JSON.stringify({}),cursorValue],
+          );
       activeSnapshotId = String(saved.rows[0].id);
       snapshotAt = saved.rows[0].created_at;
       const excess = await client.query(
         `SELECT id FROM sync_snapshot_sessions WHERE user_id=$1 AND id<>$2
-         ORDER BY created_at DESC OFFSET 2`,
+         ORDER BY created_at DESC OFFSET 1`,
         [userId,activeSnapshotId],
       );
       if (excess.rowCount) await client.query(
@@ -852,7 +924,7 @@ export class SyncService {
       snapshotId: activeSnapshotId, data, limit, sections: requested, nextOffsets,
       hasMore: Object.keys(nextOffsets).length > 0,
       cursor: cursorValue, snapshotAt, expiresInSeconds: 1800,
-      consistency: 'materialized_snapshot', generatedAt: new Date().toISOString(),
+      consistency: 'authorization_revalidated_materialization', generatedAt: new Date().toISOString(),
     };
     });
   }
@@ -914,9 +986,9 @@ export class SyncService {
       throw new BadRequestException('Active device not found.');
     }
     const row = result.rows[0];
-    const cursor = BigInt(row.device_cursor);
-    const oldest = BigInt(row.oldest_sequence);
-    const latest = BigInt(row.latest_sequence);
+    const cursor = BigInt(String(row.device_cursor));
+    const oldest = BigInt(String(row.oldest_sequence));
+    const latest = BigInt(String(row.latest_sequence));
     const historyExpired = oldest > 0n && cursor < oldest - 1n;
     const cursorAhead = cursor > latest;
     return {

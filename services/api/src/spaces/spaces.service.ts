@@ -140,6 +140,7 @@ export class SpacesService {
       throw new BadRequestException('downloadPolicy is invalid.');
     }
     return this.database.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const access=await client.query(
         `SELECT s.id,s.name,ed.starts_at,ed.ends_at,ed.timezone,ed.moderation_mode,ed.download_policy
          FROM spaces s JOIN event_details ed ON ed.space_id=s.id
@@ -177,6 +178,7 @@ export class SpacesService {
       throw new BadRequestException('action must be archive, reopen or close.');
     }
     return this.database.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const current=await client.query(
         `SELECT s.id,s.type,s.status FROM spaces s
          JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1
@@ -213,7 +215,7 @@ export class SpacesService {
       }
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4,'newStatus',$5))`,
+         VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4::text,'newStatus',$5::text))`,
         [spaceId,userId,`space.${action}`,status,next]);
       return updated.rows[0];
     });
@@ -223,6 +225,7 @@ export class SpacesService {
   async archiveEndedEvents(graceHours = 24) {
     const grace = Math.min(Math.max(Number(graceHours) || 24, 1), 168);
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const candidates = await client.query(
         `WITH ended AS (
            SELECT s.id FROM spaces s
@@ -260,7 +263,7 @@ export class SpacesService {
         );
         await client.query(
           `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-           VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3))`,
+           VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3::integer))`,
           [event.id,event.owner_id,grace],
         );
       }

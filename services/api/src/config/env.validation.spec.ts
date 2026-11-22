@@ -8,12 +8,18 @@ describe('environmentSchema', () => {
   });
 
   it('applies safe development defaults', () => {
-    const result = environmentSchema.validate({ DATABASE_URL: database });
+    const result = environmentSchema.validate({ DATABASE_URL: database, MOMENTIA_SESSION_SECRET: 's'.repeat(32) });
     expect(result.error).toBeUndefined();
     expect(result.value.NODE_ENV).toBe('development');
     expect(result.value.PORT).toBe(3000);
     expect(result.value.DATABASE_POOL_MAX).toBe(10);
     expect(result.value.DATABASE_SSL).toBe(false);
+    expect(result.value.MOMENTIA_SESSION_SECRET).toBe('s'.repeat(32));
+  });
+
+  it('requires a strong session secret', () => {
+    expect(environmentSchema.validate({ DATABASE_URL: database }).error).toBeDefined();
+    expect(environmentSchema.validate({ DATABASE_URL: database, MOMENTIA_SESSION_SECRET: 'short' }).error).toBeDefined();
   });
 
   it('rejects unsupported runtime environments', () => {
@@ -23,6 +29,7 @@ describe('environmentSchema', () => {
   it('requires OIDC settings to be supplied as a complete set', () => {
     expect(environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
     }).error).toBeDefined();
   });
@@ -30,6 +37,7 @@ describe('environmentSchema', () => {
   it('rejects an HTTP JWKS endpoint', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
       OIDC_AUDIENCE: 'momentia-api',
       OIDC_JWKS_URI: 'http://id.example.test/.well-known/jwks.json',
@@ -40,6 +48,7 @@ describe('environmentSchema', () => {
   it('accepts a complete OIDC configuration', () => {
     const result = environmentSchema.validate({
       DATABASE_URL: database,
+      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
       OIDC_ISSUER: 'https://id.example.test/',
       OIDC_AUDIENCE: 'momentia-api',
       OIDC_JWKS_URI: 'https://id.example.test/.well-known/jwks.json',

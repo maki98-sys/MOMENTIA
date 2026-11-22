@@ -24,7 +24,8 @@ export class AlbumsService {
   async create(userId:string,spaceId:string,input:unknown) {
     const v=this.validate(input);
     return this.db.transaction(async client=>{
-      const member=await client.query(`SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      const member=await client.query(`SELECT sm.role FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status='active' WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,[spaceId,userId]);
       if(!member.rowCount||!['owner','admin','moderator'].includes(String(member.rows[0].role))) throw new NotFoundException('Space not found.');
       const result=await client.query(
         `INSERT INTO space_albums(space_id,created_by,name,description,visibility,event_starts_at,event_ends_at)
@@ -38,17 +39,35 @@ export class AlbumsService {
   }
 
   async list(userId:string,spaceId:string) {
-    const r=await this.db.query(
-      `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.created_at,
-        (SELECT count(*)::int FROM space_album_items i WHERE i.album_id=a.id AND i.status='active') item_count
-       FROM space_albums a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
-       WHERE a.space_id=$2 AND (a.visibility='members' OR sm.role IN ('owner','admin','moderator'))
-       ORDER BY a.created_at DESC`,[userId,spaceId]);
-    if(!r.rowCount) {
-      const membership=await this.db.query(`SELECT 1 FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
-      if(!membership.rowCount) throw new NotFoundException('Space not found.');
-    }
-    return r.rows;
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const r=await client.query(
+        `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.created_at,
+          (SELECT count(*)::int FROM space_album_items i
+            JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
+            JOIN media_assets ma ON ma.id=i.media_asset_id AND ma.status='ready'
+            JOIN users media_owner ON media_owner.id=ma.owner_id AND media_owner.status='active'
+            WHERE i.album_id=a.id AND i.status='active'
+              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                (b.blocker_id=$1 AND b.blocked_id=i.added_by)
+                OR (b.blocker_id=i.added_by AND b.blocked_id=$1))
+              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
+                OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1))) item_count
+         FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
+         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+         WHERE a.space_id=$2 AND (a.visibility='members' OR sm.role IN ('owner','admin','moderator'))
+         ORDER BY a.created_at DESC`,[userId,spaceId]);
+      if(!r.rowCount) {
+        const membership=await client.query(
+          `SELECT 1 FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status IN ('active','archived')
+           WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,
+          [spaceId,userId],
+        );
+        if(!membership.rowCount) throw new NotFoundException('Space not found.');
+      }
+      return r.rows;
+    });
   }
 
   async listItems(userId:string,spaceId:string,albumId:string,cursor?:string,cursorId?:string,limit=30) {
@@ -59,8 +78,10 @@ export class AlbumsService {
     if (cursorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cursorId)) {
       throw new BadRequestException('cursorId must be a UUID.');
     }
-    const access=await this.db.query(
-      `SELECT a.id,a.visibility,sm.role FROM space_albums a
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const access=await client.query(
+      `SELECT a.id,a.visibility,sm.role FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        WHERE a.id=$2 AND a.space_id=$3`,
       [userId,albumId,spaceId]);
@@ -68,22 +89,31 @@ export class AlbumsService {
     if(access.rows[0].visibility==='admins'&&!['owner','admin','moderator'].includes(String(access.rows[0].role))) {
       throw new NotFoundException('Album not found.');
     }
-    const result=await this.db.query(
+      const result=await client.query(
       `SELECT i.id,i.album_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.created_at,
               m.mime_type_detected,m.width,m.height,m.size_bytes
        FROM space_album_items i
        JOIN media_assets m ON m.id=i.media_asset_id AND m.status='ready'
+       JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
+       JOIN users media_owner ON media_owner.id=m.owner_id AND media_owner.status='active'
        WHERE i.album_id=$1 AND i.status='active'
+         AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$5 AND b.blocked_id=i.added_by)
+           OR (b.blocker_id=i.added_by AND b.blocked_id=$5))
+         AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$5 AND b.blocked_id=m.owner_id)
+           OR (b.blocker_id=m.owner_id AND b.blocked_id=$5))
          AND ($2::timestamptz IS NULL OR (i.created_at,i.id)<($2::timestamptz,$3::uuid))
        ORDER BY i.created_at DESC,i.id DESC LIMIT $4`,
-      [albumId,cursor??null,cursorId??null,pageSize+1]);
+      [albumId,cursor??null,cursorId??null,pageSize+1,userId]);
     const hasMore=result.rows.length>pageSize;
     const items=result.rows.slice(0,pageSize);
     const last=items[items.length-1] as Record<string,unknown>|undefined;
-    return {
-      items,
-      nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
-    };
+      return {
+        items,
+        nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
+      };
+    });
   }
 
   async addItem(userId:string,spaceId:string,albumId:string,input:unknown) {
@@ -96,8 +126,10 @@ export class AlbumsService {
     const occurred=v.occurredAt??new Date().toISOString();
     if(typeof occurred!=='string'||Number.isNaN(Date.parse(occurred))) throw new BadRequestException('occurredAt must be a valid ISO date-time.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const album=await client.query(
         `SELECT a.id,a.visibility,sm.role FROM space_albums a
+         JOIN spaces s ON s.id=a.space_id AND s.status='active'
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
          WHERE a.id=$2 AND a.space_id=$3 FOR UPDATE`,[userId,albumId,spaceId]);
       if(!album.rowCount) throw new NotFoundException('Album not found.');
@@ -122,6 +154,7 @@ export class AlbumsService {
 
   async removeItem(userId:string,spaceId:string,albumId:string,itemId:string) {
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result=await client.query(
         `SELECT i.id,i.added_by,sm.role FROM space_album_items i
          JOIN space_albums a ON a.id=i.album_id

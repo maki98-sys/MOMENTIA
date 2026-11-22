@@ -49,6 +49,7 @@ export class MediaProcessingService {
     if (value.result!==undefined && (!value.result || typeof value.result!=='object' || Array.isArray(value.result) || Buffer.byteLength(JSON.stringify(value.result))>12000)) throw new BadRequestException('Invalid result metadata.');
     if (value.scanVerdict!==undefined && !['clean','rejected','unavailable'].includes(String(value.scanVerdict))) throw new BadRequestException('Invalid scan verdict.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const locked=await client.query(
         `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected,a.storage_provider,a.status asset_status
          FROM media_processing_jobs j JOIN media_assets a ON a.id=j.media_asset_id
@@ -139,6 +140,7 @@ export class MediaProcessingService {
   async cleanupExpiredUploads(limit = 100) {
     const batch = Math.min(Math.max(Number(limit) || 100, 1), 500);
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const expired = await client.query(
         `WITH candidates AS (
            SELECT u.id,u.media_asset_id,a.storage_key_original,a.storage_provider
@@ -195,22 +197,37 @@ export class MediaProcessingService {
 
   async releaseStaleLocks(staleSeconds=300) {
     const seconds=Math.min(Math.max(Number(staleSeconds)||300,60),3600);
-    const result=await this.db.query(
-      `UPDATE media_processing_jobs SET status='failed',locked_at=NULL,locked_by=NULL,
-         last_error_code='WORKER_LEASE_EXPIRED',available_at=now(),updated_at=now()
-       WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
-       RETURNING id,media_asset_id,attempts,max_attempts`,[seconds]);
-    const terminalAssets=result.rows.filter(job=>Number(job.attempts)>=Number(job.max_attempts)).map(job=>job.media_asset_id);
-    if(terminalAssets.length) await this.db.query(
-      `UPDATE media_assets SET status='failed'
-       WHERE id=ANY($1::uuid[]) AND status IN ('pending','processing','quarantined')`,[terminalAssets]);
-    const deletions=await this.db.query(
-      `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
-         last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
-       WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
-       RETURNING id`,[seconds]);
-    return {released:(result.rowCount??0)+(deletions.rowCount??0)};
+    return this.db.transaction(async client=>{
+      // Acquire the authorization lock before any media row locks. The media
+      // asset status trigger takes the same lock; doing this first avoids
+      // row-lock/advisory-lock inversion with complete() and cleanupExpiredUploads().
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      const result=await client.query(
+        `UPDATE media_processing_jobs SET status='failed',locked_at=NULL,locked_by=NULL,
+           last_error_code='WORKER_LEASE_EXPIRED',available_at=now(),updated_at=now()
+         WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
+         RETURNING id,media_asset_id,attempts,max_attempts`,
+        [seconds],
+      );
+      const terminalAssets=result.rows
+        .filter(job=>Number(job.attempts)>=Number(job.max_attempts))
+        .map(job=>job.media_asset_id);
+      if(terminalAssets.length) await client.query(
+        `UPDATE media_assets SET status='failed'
+         WHERE id=ANY($1::uuid[]) AND status IN ('pending','processing','quarantined')`,
+        [terminalAssets],
+      );
+      const deletions=await client.query(
+        `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
+           last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
+         WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
+         RETURNING id`,
+        [seconds],
+      );
+      return {released:(result.rowCount??0)+(deletions.rowCount??0)};
+    });
   }
+
   async claimDeletions(workerId:string,limit=50,ownerUserId?:string) {
     if(!/^[a-zA-Z0-9._:-]{3,100}$/.test(workerId)) throw new BadRequestException('Invalid worker id.');
     if(ownerUserId!==undefined&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId)) {

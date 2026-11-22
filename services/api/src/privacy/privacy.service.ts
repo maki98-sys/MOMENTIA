@@ -33,7 +33,8 @@ export class PrivacyService {
       ['coupleJournalEntries', `SELECT id,space_id,encode(ciphertext,'base64') ciphertext_base64,encode(nonce,'base64') nonce_base64,encryption_version,key_version,created_at,updated_at,deleted_at FROM couple_journal_entries WHERE author_id=$1 ORDER BY created_at`],
       ['coupleKeyEnvelopes', `SELECT space_id,key_version,algorithm,encode(encrypted_key,'base64') encrypted_key_base64,encode(nonce,'base64') nonce_base64,created_at,updated_at FROM couple_space_key_envelopes WHERE user_id=$1 ORDER BY space_id,key_version`],
       ['deletionRequests', `SELECT id,status,requested_at,scheduled_for,cancelled_at,completed_at,failed_at,last_error_code FROM account_deletion_requests WHERE user_id=$1 ORDER BY requested_at`],
-      ['authIdentities', `SELECT provider,created_at FROM auth_identities WHERE user_id=$1 ORDER BY created_at`],
+      ['authIdentities', `SELECT provider,provider_subject,created_at FROM auth_identities WHERE user_id=$1 ORDER BY created_at`],
+      ['subscriptions', `SELECT s.plan_id,p.code AS plan_code,p.display_name AS plan_name,p.monthly_price_minor,p.currency,p.features,s.status,s.provider,s.provider_customer_id,s.provider_subscription_id,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.created_at,s.updated_at FROM user_subscriptions s JOIN subscription_plans p ON p.id=s.plan_id WHERE s.user_id=$1 ORDER BY s.created_at`],
       ['notificationPreferences', `SELECT category,in_app_enabled,push_enabled,updated_at FROM notification_preferences WHERE user_id=$1 ORDER BY category`],
       ['spacesJoined', `SELECT s.id,s.type,s.owner_id,s.name,s.visibility,s.status,s.settings,m.role,m.state,m.joined_at,m.left_at FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.user_id=$1 ORDER BY s.created_at`],
       ['spaceSubtypeDetails', `SELECT s.id AS space_id,s.type,
@@ -59,10 +60,11 @@ export class PrivacyService {
     ];
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      const entries = await Promise.all(queries.map(async ([key,sql]) => {
+      const entries: Array<[string,Record<string,unknown>[]]> = [];
+      for (const [key,sql] of queries) {
         const result = await client.query(sql,[userId]);
-        return [key,result.rows] as const;
-      }));
+        entries.push([key,result.rows]);
+      }
       return {
         format: 'momentia-data-export-v1',
         exportedAt: new Date().toISOString(),
@@ -74,6 +76,9 @@ export class PrivacyService {
 
   async requestDeletion(userId: string) {
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
       if (!account.rowCount || account.rows[0].status==='deleted') {
@@ -94,9 +99,14 @@ export class PrivacyService {
         `UPDATE devices SET revoked_at=now()
          WHERE user_id=$1 AND revoked_at IS NULL`,[userId]);
       await client.query(
+        `UPDATE notification_outbox
+         SET status='cancelled',processing_started_at=NULL,last_error_code='ACCOUNT_DELETION_PENDING'
+         WHERE user_id=$1 AND channel='push'
+           AND status IN ('pending','failed','processing')`,[userId]);
+      await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$1,'account.deletion_requested','account',$1,
-           jsonb_build_object('requestId',$2,'scheduledFor',$3))`,
+           jsonb_build_object('requestId',$2::text,'scheduledFor',$3::timestamptz))`,
         [userId,inserted.rows[0].id,inserted.rows[0].scheduled_for]);
       return { ...inserted.rows[0], gracePeriodDays: 30, sessionsRevoked: true };
     });
@@ -110,6 +120,9 @@ export class PrivacyService {
     }
     const batch = Math.min(limit, 25);
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       // A worker may disappear while holding its final lease. Such requests
       // must become terminal failures instead of remaining pending forever.
       await client.query(
@@ -215,6 +228,9 @@ export class PrivacyService {
       throw new BadRequestException('A successful deletion must confirm purged=true.');
     }
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const locked = await client.query(
         `SELECT id,user_id,processing_attempts FROM account_deletion_requests
          WHERE id=$1 AND status='pending' AND processing_worker_id=$2
@@ -444,7 +460,7 @@ export class PrivacyService {
          RETURNING id,status,completed_at`, [requestId,workerId]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'account.deletion_completed','account',$1,jsonb_build_object('requestId',$2))`,
+         VALUES($1,$1,'account.deletion_completed','account',$1,jsonb_build_object('requestId',$2::text))`,
         [request.user_id,requestId]);
       return completed.rows[0];
     });
@@ -460,6 +476,9 @@ export class PrivacyService {
 
   async cancelDeletion(userId: string) {
     return this.db.transaction(async client => {
+      // Acquire the authorization write lock before taking row locks in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+
       const account = await client.query(
         `SELECT id,status FROM users WHERE id=$1 FOR UPDATE`,[userId]);
       if (!account.rowCount || account.rows[0].status!=='deletion_pending') {
@@ -475,7 +494,7 @@ export class PrivacyService {
         `UPDATE users SET status='active',deletion_requested_at=NULL WHERE id=$1`,[userId]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'account.deletion_cancelled','account',$1,jsonb_build_object('requestId',$2))`,
+         VALUES($1,$1,'account.deletion_cancelled','account',$1,jsonb_build_object('requestId',$2::text))`,
         [userId,request.rows[0].id]);
       return { cancelled: true, requestId: request.rows[0].id };
     });

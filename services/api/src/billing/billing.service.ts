@@ -69,10 +69,10 @@ export class BillingService {
        )`,
       [userId],
     );
-    if (!result.rowCount) return null;
+    if ((result.rowCount ?? 0) === 0) return null;
     const row = result.rows[0];
-    const quota = BigInt(row.storage_quota_bytes);
-    const used = BigInt(row.used_bytes);
+    const quota = BigInt(String(row.storage_quota_bytes));
+    const used = BigInt(String(row.used_bytes));
     const remaining = quota > used ? quota - used : 0n;
     return {
       ...row,
@@ -80,8 +80,8 @@ export class BillingService {
       used_bytes: used.toString(),
       remaining_bytes: remaining.toString(),
       asset_count: Number(row.asset_count),
-      pending_bytes: BigInt(row.pending_bytes).toString(),
-      ready_bytes: BigInt(row.ready_bytes).toString(),
+      pending_bytes: BigInt(String(row.pending_bytes)).toString(),
+      ready_bytes: BigInt(String(row.ready_bytes)).toString(),
       storage_usage_percent: quota > 0n
         ? Math.min(100, Number((used * 10000n) / quota) / 100)
         : 0,

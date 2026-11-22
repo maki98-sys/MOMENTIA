@@ -39,6 +39,7 @@ export class InvitationsService {
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const result = await this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const created = await client.query(
         `INSERT INTO space_invitations
            (space_id, created_by, token_hash, role, expires_at, max_uses, approval_required)
@@ -52,7 +53,7 @@ export class InvitationsService {
       if(!created.rowCount) throw new NotFoundException('Space was not found or invitation permission is missing.');
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,'invitation.created','invitation',$3,jsonb_build_object('role',$4,'expiresAt',$5))`,
+         VALUES($1,$2,'invitation.created','invitation',$3,jsonb_build_object('role',$4::text,'expiresAt',$5::timestamptz))`,
         [spaceId,userId,created.rows[0].id,input.role,created.rows[0].expires_at]);
       return created.rows[0];
     });
@@ -119,6 +120,7 @@ export class InvitationsService {
     }
     const tokenHash = createHash('sha256').update(token).digest('hex');
     return this.database.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const invitation = await client.query(
         `SELECT i.id, i.space_id, i.role, i.expires_at, i.max_uses, i.uses,
                 i.approval_required, i.revoked_at, s.type, s.status

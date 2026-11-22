@@ -380,3 +380,257 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - CI API #44244715376: **success** para el endpoint de transferencia y su validación.
 - La sincronización aún no es automática ni reanudable en segundo plano; el cliente lee el archivo completo para calcular el hash; no se ha probado en dispositivos físicos ni en redes intermitentes. El servidor mantiene el archivo en cuarentena y no genera variantes ni URL pública.
 - La cifra global ponderada se recalculó a **26.84% (≈27%)** con los pesos de las ocho fases. Es un indicador de avance técnico, no de disponibilidad del producto.
+
+
+## 2026-11-21 — Actualización verificada de CI, cobertura y auditoría de sincronización
+
+**Rama:** `fix/migration-0036-duplicate-index`  
+**Commit evaluado:** `302cf32c241481dd7a64e26c5eacf8b1d64105f9`  
+**PR #2:** cambios aún sin merge.
+
+### Evidencia CI
+
+- API: run [44958766152](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766152) — success.
+- Cobertura: run [44958766130](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766130) — success.
+- Base de datos: run [44958766064](https://github.com/maki98-sys/MOMENTIA/actions/runs/44958766064) — success.
+- Pruebas API: 21 suites aprobadas, 143 pruebas aprobadas (143/143). Incluye `sync-payload.validator.spec.ts`.
+- Base de datos: migraciones e idempotencia aprobadas; backup/restore smoke test: 61/61 migraciones y 65 tablas; SQLite schema smoke test y auditoría de columnas de secretos aprobados; prueba concurrente de membresía COUPLE aprobada.
+- Cobertura Jest global: statements 21.48%, branches 20.05%, functions 21.35%, lines 22.92%.
+
+### Entrega de validación de payload sync
+
+- Commit `302cf32c241481dd7a64e26c5eacf8b1d64105f9`.
+- Añadidas pruebas de envelope válido/inválido, campos adicionales, lotes 1–50, números no finitos, valores no JSON, tamaño de cadenas, arrays, cantidad de claves, claves de contaminación de prototipo, profundidad y tamaño total.
+- Las pruebas se ejecutaron en CI y pasaron.
+- Esto mejora la validación de entrada; no certifica la autorización, persistencia, orden, reintentos ni sincronización completa del cliente.
+
+### Hallazgo histórico de seguridad — snapshots de sincronización
+
+**Estado del hallazgo original:** identificado el 21 de noviembre y parcialmente corregido en la actualización del 22 de noviembre que aparece más abajo. El texto siguiente describe el riesgo original; no debe interpretarse como descripción del código actual.
+
+La inspección estática de `SyncService.snapshot()` identificó un riesgo que requiere resolver antes de certificar snapshots paginados como seguros: al crear el snapshot, se materializa información autorizada y se persiste en `sync_snapshot_sessions.data`. Las páginas posteriores recuperan ese contenido congelado por `snapshotId` y `user_id`, sin volver a evaluar todos los permisos de origen. Si después de crear el snapshot se revoca una membresía o cambia una relación/bloqueo/visibilidad, el contenido materializado podría seguir disponible hasta la expiración de la sesión (30 minutos).
+
+- Estado: hallazgo de revisión estática, no explotación demostrada.
+- Severidad propuesta: alta por posible exposición de contenido privado tras revocación.
+- No se declara resuelto ni se contabiliza como seguridad aceptada.
+- Corrección requerida: invalidación fiable de snapshots ante cualquier cambio de autorización relevante o revalidación por sección/registro en cada página. Añadir pruebas de integración PostgreSQL para revocación de membresía, bloqueo, unfollow y cambio de visibilidad entre páginas.
+- También probar liberación, expiración, límite de sesiones, paginación y aislamiento entre usuarios.
+
+### Porcentajes
+
+No se modifica el avance global ni el avance ponderado de backend en esta actualización. El control de fase del 18 de noviembre necesita una revisión completa por tareas y aceptación de módulos; el CI de esta entrega solo acredita los pasos descritos arriba. La cobertura de código no se debe interpretar como porcentaje de implementación.
+
+
+
+---
+
+## Auditoría backend y base de datos — actualización 2026-11-22
+
+**Alcance de esta actualización:** base de datos, backend, seguridad, migraciones y pruebas. **Frontend excluido deliberadamente** porque todavía no ha comenzado.
+
+### Cambios y verificaciones
+
+- Migraciones corregidas o añadidas: `0036`, `0039`, `0056`, `0061`–`0066`.
+- Última verificación de base de datos completada: workflow `44970052087`, commit `995d91f`, resultado **success**. Aplicación de migraciones, repetición/idempotencia, ledger, integridad, smoke test de timeline, backup/restore, SQLite y prueba de membresía COUPLE.
+- Última cobertura completada disponible: workflow `44970052062`, commit `995d91f`; **169/169 pruebas unitarias, 24 suites**.
+- Cobertura en ese corte: statements **30,29%**, branches **28,33%**, functions **29,24%**, lines **32,26%**. La siguiente ejecución está en curso tras añadir más pruebas y correcciones; estos valores no se presentan como resultado del head actual.
+- Se añadieron pruebas PostgreSQL para revocación entre páginas, unfollow, bloqueo, cambio de audiencia, autor suspendido, timeline archivado, cursor, redacción de payloads de pull, expiración, liberación, aislamiento por usuario y límite de sesiones. También se añadió una prueba de serialización de revocación de membresía; su CI está pendiente.
+- PR #2 permanece abierto y sin fusionar.
+
+### Correcciones de seguridad y backend realizadas
+
+- Las páginas de snapshot vuelven a consultar los datos con permisos actuales; la sesión ya no conserva una copia JSONB de contenido antiguo.
+- El pull incremental entrega metadatos y `payload: null`; el cliente debe refrescar mediante snapshot para no reproducir contenido que pudo perder autorización.
+- Se introdujeron bloqueos transaccionales compartidos/exclusivos para coordinar lecturas autorizadas y mutaciones de permisos, incluyendo perfil, membresías, relaciones, bloqueos, espacios, publicaciones, comentarios, álbumes y multimedia.
+- Se reforzó Social Audio: cuenta activa, participación persistida al entrar/salir, revocación y expiración de sockets.
+- Se reforzaron moderación, exportación de privacidad, notificaciones, registro de dispositivos y manejo de conexiones PostgreSQL.
+- El registro de dispositivos ahora exige una clave UUID estable; transferir la instalación a otra cuenta revoca sesiones y entregas push pendientes.
+
+### Pendientes que impiden certificar el backend como completo
+
+1. Terminar la auditoría semántica de las 66 migraciones, dependencias, triggers, restricciones, índices y rutas de escritura; que todas apliquen en CI no sustituye esa revisión.
+2. Esperar CI del head actual: TypeScript, pruebas unitarias, E2E PostgreSQL, build, contenedor y database-check.
+3. Completar pruebas de concurrencia y autorización para todos los cambios relevantes, no solo membresías.
+4. Revisar retención/limpieza de `sync_change_log`, recibos de operaciones sync, snapshots expirados y colas/outbox.
+5. Implementar cancelación real de suscripciones externas antes de completar la eliminación de una cuenta; hoy falta el adaptador del proveedor.
+6. Integrar proveedor de billing: endpoint/webhook real con verificación de firma, checkout, portal, cancelación y reconciliación.
+7. Completar Social Audio con adaptadores y autenticación de proveedores musicales; el backend actual coordina sesiones/cola/estado, pero no implementa la reproducción licenciada en cada teléfono.
+8. Completar entrega push con recibos del proveedor y soporte Web Push; actualmente los tokens push están limitados a iOS/Android.
+9. Incorporar rate limiting distribuido para endpoints públicos y eventos WebSocket, además de controles de abuso.
+10. Ampliar cobertura y pruebas de integración de privacidad, procesamiento multimedia, billing, parejas, eventos, notificaciones y autorización cruzada.
+11. Completar la revisión de producción: observabilidad, alertas, rotación de claves, recuperación, almacenamiento de objetos y pruebas de restauración de medios.
+
+**No se asigna porcentaje global de backend** hasta cerrar el inventario de módulos y definir ponderaciones verificables. La cobertura de tests se informa por separado. No se inicia frontend ni se fusiona el PR #2 en esta fase.
+
+
+---
+
+## Continuación de auditoría backend y base de datos — 2026-11-22 (01:36 UTC)
+
+**Alcance:** backend, PostgreSQL, seguridad, migraciones y pruebas. Frontend sigue fuera de alcance.
+
+### Evidencia de CI en el head `c50bf8f96163d8028b11ad279e458e1d6803b11d`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44971987081` | **success** |
+| API Coverage | `44971987083` | **success** |
+| Database Check | `44971987104` | **success** |
+
+API Check: TypeScript aprobado, **171/171 pruebas unitarias**, **16/16 pruebas E2E PostgreSQL**, build y contenedor de producción aprobados.
+
+Cobertura del mismo corte: statements **26.55%**, branches **23.45%**, functions **27.19%**, lines **28.65%**. La cobertura es una métrica de pruebas, no un porcentaje de implementación.
+
+Database Check: aplicó las 66 migraciones, repitió el migrador, verificó ledger e integridad, ejecutó query plans, timeline sintético de 10.000 filas, backup/restore, esquema SQLite y prueba de concurrencia COUPLE. Todos los pasos pasaron.
+
+### Correcciones incorporadas después del último informe
+
+- Migraciones `0064` y `0065`: bloqueos transaccionales para ordenar lecturas de snapshots frente a cambios de autorización, incluyendo visibilidad de perfiles.
+- Migración `0066`: columna e índice de identidad de instalación con DDL `IF NOT EXISTS`.
+- Snapshots: límite de dos sesiones corregido; cursor inicial cero aceptado con secuencia global; expiración E2E respeta la restricción temporal.
+- Membresías: orden del bloqueo antes de row locks y parámetros UUID/texto de auditoría tipados correctamente.
+- Social: unfollow, respuesta de solicitudes y unblock coordinados con mutaciones de autorización.
+- Parejas: lecturas/escrituras de diario coordinadas con revocación de membresía.
+- Eventos: resumen y mutaciones RSVP coordinados con autorización; cuentas suspendidas excluidas; parámetros de auditoría tipados.
+- Perfil: cambio de visibilidad dentro de transacción con bloqueo exclusivo.
+- Invitaciones, moderación, espacios y privacidad: parámetros de metadata JSONB tipados para evitar errores PostgreSQL en ejecución.
+
+### Seguridad de snapshots
+
+La mitigación principal de la carrera concurrente está implementada y ha pasado CI. El snapshot mantiene un bloqueo compartido; los triggers de autorización toman el bloqueo exclusivo antes de cambios relevantes. Las continuaciones reconstruyen el contenido con permisos actuales. No se reutiliza el payload JSONB congelado anterior.
+
+Issue #3 permanece **abierta** deliberadamente. Faltan pruebas específicas de revocación de acceso a álbumes y parejas, prueba concurrente de visibilidad de perfil y revisión de todos los caminos de escritura de autorización. El bloqueo global es una solución conservadora de corrección; falta medir su contención y granularizarlo antes de certificar escalabilidad alta.
+
+### Pendientes de backend y calidad
+
+1. Terminar la auditoría semántica de servicios y controladores aún no revisados integralmente.
+2. Añadir pruebas para billing webhook (actualmente sin cobertura propia suficiente) y decidir/integrar proveedor real: firma, endpoint de ingreso, checkout, portal, cancelación y reconciliación. El worker interno no equivale a una integración completa.
+3. Ampliar pruebas de procesamiento multimedia, sesiones/tokens, álbumes, eventos, notificaciones, privacidad, parejas y permisos cruzados.
+4. Completar los casos restantes de la issue #3 y medir contención/concurrencia del bloqueo global.
+5. Auditar retención/limpieza de change log, recibos sync, snapshots expirados, colas y outbox.
+6. Completar revisión de producción: rate limiting distribuido, límites WebSocket, observabilidad/alertas, rotación de secretos, recuperación y almacenamiento de objetos.
+7. Ejecutar una auditoría final de regresión sobre el head final después de las próximas correcciones.
+
+**Estado:** CI de este corte completamente verde; base de datos y conjunto actual de pruebas aprobados. Backend todavía no certificado al 100%. No se asigna porcentaje global sin inventario ponderado verificable. PR #2 sigue abierto y no fusionado.
+
+
+---
+
+## Continuación de auditoría — verificación de snapshots y billing — 2026-11-22 (01:44 UTC)
+
+**Head verificado:** `832047aadfe4a1697b1de3c5a0be6b9153082ff2`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44972599693` | **success** |
+| API Coverage | `44972599728` | **success** |
+| Database Check | `44972599743` | **success** |
+
+- Unit tests: **180/180**, 25 suites.
+- PostgreSQL E2E de snapshots: **19/19**.
+- TypeScript, build y contenedor de producción: aprobados.
+- Database migrations, repetición/idempotencia, ledger, integridad, planes de consulta, timeline 10k, backup/restore, SQLite y concurrencia COUPLE: aprobados.
+- Cobertura global: statements **28.53%**, branches **26.13%**, functions **28.70%**, lines **30.50%**.
+- `billing-webhook.service.ts`: 80.18% statements y 94.11% lines.
+
+### Casos nuevos de seguridad aprobados
+
+- Revalidación de álbum después de revocar membresía del espacio.
+- Revalidación de diario COUPLE después de archivar el espacio. La base de datos exige exactamente dos miembros activos en espacios COUPLE, por lo que la revocación de acceso se modela mediante archivo, no dejando un espacio COUPLE con un único miembro.
+- Bloqueo concurrente de cambio de visibilidad de perfil.
+- El resto de pruebas de snapshots cubre membership, unfollow, block, cambio de audiencia, autor suspendido, timeline archivado, orden de bloqueos, cursor inicial, payload histórico sin datos, release, expiry, aislamiento y límite de sesiones.
+
+**Issue #3 cerrada** tras pasar estos criterios y CI. El bloqueo global es correcto según las pruebas, pero la medición de contención y su futura granularización siguen siendo una tarea de escalabilidad.
+
+### Siguiente bloque de auditoría
+
+1. Auditoría y pruebas de `MediaProcessingService`: leases, retries, escaneo, variantes, finalize, cleanup y cola de eliminación de objetos.
+2. Revisar y reforzar consultas de listado de álbumes para mantener la autorización estable durante lecturas concurrentes; impedir crear o añadir elementos en espacios archivados.
+3. Aumentar pruebas de `SessionTokenService`, privacidad, notificaciones, espacios, invitaciones y servicios de álbumes.
+4. Completar la revisión de todos los servicios/controladores no auditados integralmente.
+5. Resolver integraciones externas pendientes (proveedor de billing, proveedor musical, push/Web Push) cuando se definan proveedores y credenciales.
+6. Ejecutar la auditoría de producción y regresión final después de las correcciones restantes.
+
+No se declara terminado el backend completo ni se asigna porcentaje global de implementación. PR #2 sigue abierto y sin fusionar. Frontend continúa excluido.
+
+
+---
+
+## Auditoría de multimedia y álbumes — 2026-11-22 (01:50 UTC)
+
+**Head verificado:** `83ee8d7fcda65a05d7f9ecfee5d18dd5677206ba`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44973122879` | **success** |
+| API Coverage | `44973122813` | **success** |
+| Database Check | `44973122856` | **success** |
+
+- Unit tests: **194/194**, 26 suites.
+- PostgreSQL snapshot E2E: **19/19**.
+- TypeScript, build y contenedor de producción: aprobados.
+- Database migrations, idempotencia, ledger, integridad, query plans, timeline 10k, backup/restore, SQLite y concurrencia COUPLE: aprobados.
+- Cobertura: statements **31.22%**, branches **29.79%**, functions **31.62%**, lines **33.44%**.
+- `MediaProcessingService`: 73.38% statements, 56.15% branches, 88.88% functions, 83.83% lines.
+- `AlbumsService`: 65.09% statements, 61.62% branches, 85.71% functions, 70.51% lines.
+
+### Cambios de multimedia
+
+- Se añadió suite para claim SKIP LOCKED, virus scan, validación de variantes, finalize, retries, leases, cleanup y cola de eliminación de objetos.
+- `releaseStaleLocks()` ahora adquiere el bloqueo global de autorización antes de bloquear filas de trabajos y medios, evitando inversión de orden con `complete()` y `cleanupExpiredUploads()`.
+- Sigue pendiente revisar el worker externo real: el repositorio contiene el ciclo de jobs, pero el procesamiento físico de imágenes/video, antivirus y borrado en storage requiere workers/adaptadores desplegados y credenciales. No se certifica la ejecución real de proveedores externos por los tests unitarios.
+
+### Cambios de álbumes
+
+- `AlbumsService.list()` ahora mantiene un bloqueo compartido durante la lectura y la comprobación de membresía.
+- Crear álbumes y añadir elementos exige que el espacio esté activo; no se permiten escrituras en espacios archivados.
+- Se añadieron pruebas para listado vacío autorizado, usuario sin membresía y rechazo de escrituras en espacios archivados.
+
+### Pendientes siguientes
+
+1. Revisar `SessionTokenService`, renovación/revocación de sesiones, expiración, rotación y concurrencia.
+2. Revisar `MediaProcessingService` frente a los workers reales; decidir el tratamiento explícito de escaneo antivirus `unavailable` y el job `inspect`.
+3. Completar cobertura y revisión semántica de privacidad, notificaciones, invitaciones, espacios, social, parejas y eventos.
+4. Revisar todos los controladores y límites de rate limiting; completar protección distribuida y límites WebSocket.
+5. Integrar proveedor de billing, proveedor musical y push según proveedor/credenciales elegidos.
+6. Medir contención del bloqueo global de autorización y decidir granularización.
+7. Realizar auditoría final de producción, observabilidad, secretos, recuperación y storage externo.
+
+Backend completo aún no certificado; no se asigna porcentaje global de implementación. Issue #3 está cerrada con regresión PostgreSQL aprobada. PR #2 permanece abierto y sin fusionar. Frontend sigue excluido.
+
+
+---
+
+## Auditoría de autenticación y dispositivos — 2026-11-22 (01:58 UTC)
+
+**Head verificado:** `1636001b2c08576b7c59b19011206818652263cf`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44973673278` | **success** |
+| API Coverage | `44973673283` | **success** |
+| Database Check | `44973673276` | **success** |
+
+- Unit tests: **206/206**, 27 suites.
+- PostgreSQL snapshot E2E: 19/19 en el API Check.
+- TypeScript, build y contenedor de producción: aprobados.
+- Cobertura global: statements **32.94%**, branches **31.13%**, functions **33.73%**, lines **35.43%**.
+- `SessionTokenService`: 92.94% statements, 72.72% branches, 100% functions, 97.33% lines.
+- `DeviceSessionService`: 88.31% statements, 64.70% branches, 100% functions, 90.90% lines.
+
+### Autenticación reforzada y pruebas
+
+- Se añadió cobertura para creación de sesión solo con cuenta activa, rotación de refresh token, detección de reuse y revocación de la familia, expiración, validación JWT y limpieza.
+- Se corrigió el tipo del parámetro nullable `deviceId` en el audit JSONB de creación de sesión.
+- Se añadieron pruebas de heartbeat de dispositivo, listado de sesiones y auditoría de revocación.
+- Se corrigieron los tipos PostgreSQL de `platform` y `revokedSessions` en metadata JSONB de dispositivos.
+- Registro de dispositivo comprueba cuenta activa; el cambio de propietario de un device key revoca sesiones y cancela entregas push pendientes del propietario anterior.
+
+### Pendiente de autenticación y privacidad
+
+- Completar pruebas y auditoría de `PrivacyService`, especialmente exportación consistente, solicitud/cancelación de borrado, leases del worker, purga, reintentos y límites.
+- Revisar la política de transferencia de `deviceKey` entre cuentas y el tratamiento de entregas push ya en curso al revocar un dispositivo o iniciar eliminación.
+- Medir rotación/expiración de refresh tokens y comportamiento bajo concurrencia real.
+- Revisar secretos, rate limiting y controles de workers.
+
+No se declara terminado el backend completo. PR #2 sigue abierto y sin fusionar.

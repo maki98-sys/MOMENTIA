@@ -1,0 +1,40 @@
+name: api-coverage
+
+on:
+  push:
+    paths:
+      - "services/api/**"
+      - ".github/workflows/api-coverage.yml"
+  pull_request:
+    paths:
+      - "services/api/**"
+      - ".github/workflows/api-coverage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/api/package.json
+      - name: Install API dependencies
+        working-directory: services/api
+        run: npm install --no-audit --no-fund
+      - name: Run unit tests with coverage
+        working-directory: services/api
+        run: npm test -- --coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: momentia-api-coverage
+          path: services/api/coverage/
+          if-no-files-found: warn
+          retention-days: 14

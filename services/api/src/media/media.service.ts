@@ -257,6 +257,7 @@ export class MediaService {
     await this.storage.put(String(row.storage_key_original), bytes, String(row.storage_provider));
     try {
       await this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
         const updated=await client.query(
           `UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
            WHERE id=$2 AND uploader_id=$3
@@ -288,6 +289,7 @@ export class MediaService {
       throw new BadRequestException('Invalid upload id.');
     }
     return this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result=await client.query(
         `SELECT u.id,u.state,u.media_asset_id,a.status asset_status,a.storage_provider
          FROM media_uploads u
@@ -356,7 +358,7 @@ export class MediaService {
       `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.storage_provider,a.mime_type_detected,
               a.original_filename,a.size_bytes,a.width,a.height,a.created_at,
               a.processing_completed_at,a.moderation_scan_status
-       FROM media_assets a
+       FROM media_assets a JOIN users asset_owner ON asset_owner.id=a.owner_id AND asset_owner.status='active'
        WHERE a.id=$1 AND a.status='ready'
          AND (
            a.owner_id=$2
@@ -366,7 +368,7 @@ export class MediaService {
                   OR (b.blocker_id=a.owner_id AND b.blocked_id=$2))
              AND (
                EXISTS (
-                 SELECT 1 FROM posts p
+                 SELECT 1 FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
                  WHERE p.media_asset_id=a.id AND p.status='published'
                    AND NOT EXISTS (SELECT 1 FROM user_blocks b
                      WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id)
@@ -375,21 +377,32 @@ export class MediaService {
                      OR (p.audience='followers' AND EXISTS (
                        SELECT 1 FROM user_relationships ur
                        WHERE ur.requester_id=$2 AND ur.target_id=p.author_id AND ur.state='accepted'))
-                     OR (p.audience='space' AND EXISTS (
+                     OR (p.audience='space' AND EXISTS (SELECT 1 FROM spaces post_space WHERE post_space.id=p.space_id AND post_space.status IN ('active','archived'))
+                       AND EXISTS (
                        SELECT 1 FROM space_memberships sm
                        WHERE sm.space_id=p.space_id AND sm.user_id=$2 AND sm.state='active')))
                )
                OR EXISTS (
                  SELECT 1 FROM space_album_items i
+                 JOIN users album_adder ON album_adder.id=i.added_by AND album_adder.status='active'
                  JOIN space_albums al ON al.id=i.album_id
+                 JOIN spaces album_space ON album_space.id=al.space_id AND album_space.status IN ('active','archived')
                  JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE i.media_asset_id=a.id AND i.status='active'
                    AND (al.visibility='members' OR sm.role IN ('owner','admin','moderator'))
                )
                OR EXISTS (
                  SELECT 1 FROM timeline_entries te
+                 JOIN posts timeline_post ON timeline_post.id=te.post_id
+                   AND timeline_post.space_id=te.space_id
+                   AND timeline_post.status='published' AND timeline_post.audience='space'
+                 JOIN users timeline_author ON timeline_author.id=timeline_post.author_id AND timeline_author.status='active'
+                 JOIN spaces timeline_space ON timeline_space.id=te.space_id AND timeline_space.status IN ('active','archived')
                  JOIN space_memberships sm ON sm.space_id=te.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE te.media_asset_id=a.id
+                   AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                     (b.blocker_id=$2 AND b.blocked_id=timeline_post.author_id)
+                     OR (b.blocker_id=timeline_post.author_id AND b.blocked_id=$2))
                )
              )
            )
@@ -440,6 +453,7 @@ export class MediaService {
   async deleteAsset(userId:string,assetId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
     return this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const asset=await client.query(
         `SELECT id,status,size_bytes,storage_key_original,storage_provider FROM media_assets
          WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[assetId,userId]);
@@ -478,7 +492,7 @@ export class MediaService {
         `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
          VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
         [userId,assetId,-(Number(asset.rows[0].size_bytes)+variants.rows.reduce((sum,v)=>sum+Number(v.size_bytes),0)),'media-delete:'+assetId]);
-      return {deleted:true,queuedStorageObjects:variants.rowCount+1};
+      return {deleted:true,queuedStorageObjects:(variants.rowCount ?? 0)+1};
     });
   }
 

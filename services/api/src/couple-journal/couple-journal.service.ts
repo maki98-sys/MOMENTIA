@@ -36,6 +36,7 @@ export class CoupleJournalService {
  async list(spaceId:string,userId:string,limit=30){
   const n=Math.min(Math.max(Number(limit)||30,1),100);
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const r=await client.query(
     `SELECT id,author_id,ciphertext,nonce,encryption_version,key_version,created_at,updated_at
@@ -54,6 +55,7 @@ export class CoupleJournalService {
   const keyVersion=v.keyVersion===undefined?1:Number(v.keyVersion);
   if(!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new BadRequestException('Invalid journal key version.');
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const envelopes=await client.query(
     `SELECT count(DISTINCT e.user_id)::int total
@@ -66,6 +68,10 @@ export class CoupleJournalService {
     `INSERT INTO couple_journal_entries(id,space_id,author_id,ciphertext,nonce,encryption_version,key_version)
      VALUES($1,$2,$3,$4,$5,1,$6)
      RETURNING id,author_id,key_version,created_at,updated_at`,[id,spaceId,userId,ciphertext,nonce,keyVersion]);
+   await client.query(
+    `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+     VALUES($1,$2,'couple.journal_entry.created','couple_journal_entry',$3,$4::jsonb)`,
+    [spaceId,userId,id,JSON.stringify({keyVersion})]);
    return r.rows[0];
   });
  }
@@ -79,6 +85,7 @@ export class CoupleJournalService {
   const keyVersion=v.keyVersion===undefined?1:Number(v.keyVersion);
   if(!Number.isSafeInteger(keyVersion)||keyVersion<1||keyVersion>1000000) throw new BadRequestException('Invalid journal key version.');
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const envelopes=await client.query(
     `SELECT count(DISTINCT e.user_id)::int total
@@ -103,12 +110,17 @@ export class CoupleJournalService {
 
  async remove(spaceId:string,entryId:string,userId:string){
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const r=await client.query(
     `UPDATE couple_journal_entries SET deleted_at=now(),updated_at=now()
      WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
      RETURNING id`,[entryId,spaceId,userId]);
    if(!r.rowCount) throw new NotFoundException('Journal entry not found.');
+   await client.query(
+    `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+     VALUES($1,$2,'couple.journal_entry.deleted','couple_journal_entry',$3,'{}'::jsonb)`,
+    [spaceId,userId,entryId]);
    return {deleted:true,id:r.rows[0].id};
   });
  }
@@ -122,6 +134,7 @@ export class CoupleJournalService {
   const encryptedKey=this.decode(v.encryptedKey,32,4096,'encryptedKey');
   const nonce=this.decode(v.nonce,12,24,'nonce');
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const result=await client.query(
     `INSERT INTO couple_space_key_envelopes(space_id,user_id,key_version,algorithm,encrypted_key,nonce)
@@ -145,6 +158,7 @@ export class CoupleJournalService {
   const version=keyVersion===undefined?undefined:Number(keyVersion);
   if(version!==undefined&&(!Number.isSafeInteger(version)||version<1)) throw new BadRequestException('Invalid key version.');
   return this.db.transaction(async client=>{
+   await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
    await this.assertCouple(client,spaceId,userId);
    const result=await client.query(
     `SELECT key_version,algorithm,encrypted_key,nonce,created_at,updated_at

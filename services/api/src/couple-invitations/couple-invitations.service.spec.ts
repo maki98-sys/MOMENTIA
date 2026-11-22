@@ -11,31 +11,41 @@ describe('CoupleInvitationsService',()=>{
   expect(()=>service.validateCreateInput({inviteeUserId:'00000000-0000-4000-8000-000000000001',role:'owner'})).toThrow(BadRequestException);
  });
  it('requires two active accounts before creating an invitation',async()=>{
-  const cq=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{}]});
+  const cq=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{}]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.create('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002')).rejects.toBeTruthy();
-  expect(cq).toHaveBeenCalledTimes(1);
+  expect(cq).toHaveBeenCalledTimes(2);
+  expect(cq.mock.calls[1][0]).toContain('user_blocks');
  });
  it('creates the private couple space only after the invitee accepts',async()=>{
   const cq=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[{id:'i1',inviter_user_id:'00000000-0000-4000-8000-000000000001',invitee_user_id:'00000000-0000-4000-8000-000000000002',expires_at:new Date(Date.now()+60000).toISOString(),accepted_at:null,revoked_at:null}]})
    .mockResolvedValueOnce({rowCount:2,rows:[{id:'00000000-0000-4000-8000-000000000001'},{id:'00000000-0000-4000-8000-000000000002'}]})
    .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{features:{couple_journal:true},max_spaces:5,owned_spaces:0}]})
    .mockResolvedValueOnce({rowCount:1,rows:[{id:'space1'}]})
    .mockResolvedValueOnce({rowCount:1,rows:[]})
    .mockResolvedValueOnce({rowCount:2,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.accept('00000000-0000-4000-8000-000000000002','a'.repeat(43))).resolves.toMatchObject({type:'COUPLE',visibility:'private'});
-  expect(cq).toHaveBeenCalledTimes(8);
-  expect(cq.mock.calls[1][0]).toContain('ORDER BY id FOR UPDATE');
-  expect(cq.mock.calls[5][0]).toContain("'owner','active'");
+  expect(cq).toHaveBeenCalledTimes(10);
+  expect(cq.mock.calls[2][0]).toContain('ORDER BY id FOR UPDATE');
+  expect(cq.mock.calls[2][0]).toContain("status='active'");
+  expect(cq.mock.calls[2][0]).toContain('user_blocks');
+  expect(cq.mock.calls[4][0]).toContain('s.owner_id=$1');
+  expect(cq.mock.calls[4][0]).not.toContain('JOIN space_memberships');
+  expect(cq.mock.calls[7][0]).toContain("'owner','active'");
  });
  it('does not allow another user to accept the token',async()=>{
-  const cq=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{id:'i1',inviter_user_id:'00000000-0000-4000-8000-000000000001',invitee_user_id:'00000000-0000-4000-8000-000000000002',expires_at:new Date(Date.now()+60000).toISOString(),accepted_at:null,revoked_at:null}]});
+  const cq=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{id:'i1',inviter_user_id:'00000000-0000-4000-8000-000000000001',invitee_user_id:'00000000-0000-4000-8000-000000000002',expires_at:new Date(Date.now()+60000).toISOString(),accepted_at:null,revoked_at:null}]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.accept('00000000-0000-4000-8000-000000000003','b'.repeat(43))).rejects.toBeInstanceOf(ForbiddenException);
-  expect(cq).toHaveBeenCalledTimes(1);
+  expect(cq).toHaveBeenCalledTimes(2);
  });
 });

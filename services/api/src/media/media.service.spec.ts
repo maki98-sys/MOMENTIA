@@ -1,14 +1,15 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { MediaService } from './media.service';
 import { DatabaseService } from '../database/database.service';
+import { LocalMediaStorage } from './media-storage.service';
 
 describe('MediaService',()=>{
  const query=jest.fn(),transaction=jest.fn();
- const service=new MediaService({query,transaction} as unknown as DatabaseService);
+ const service=new MediaService({query,transaction} as unknown as DatabaseService, new LocalMediaStorage());
  beforeEach(()=>{query.mockReset();transaction.mockReset();});
  it('requires idempotency key',async()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:100,checksumSha256:'a'.repeat(64)},'')).rejects.toBeInstanceOf(BadRequestException);
@@ -39,7 +40,7 @@ describe('MediaService',()=>{
   const root=await mkdtemp(join(tmpdir(),'momentia-media-'));
   const previous=process.env.MEDIA_STORAGE_DIR;
   process.env.MEDIA_STORAGE_DIR=root;
-  const bytes=Buffer.from('momentia-test-image-bytes');
+  const bytes=Buffer.from([0xff,0xd8,0xff,0xdb,0x00,0x43,0x00]);
   const uploadId='123e4567-e89b-42d3-a456-426614174000';
   query.mockResolvedValueOnce({rowCount:1,rows:[{
    id:uploadId,state:'created',uploader_id:'u',media_asset_id:'asset-1',
@@ -50,7 +51,8 @@ describe('MediaService',()=>{
   transaction.mockImplementation(async (operation:(client:unknown)=>Promise<unknown>) =>
    operation({query:jest.fn().mockResolvedValue({rowCount:1,rows:[]})}));
   try {
-   const result=await service.receiveUpload('u',uploadId,bytes);
+   const uploadService=new MediaService({query,transaction} as unknown as DatabaseService,new LocalMediaStorage());
+   const result=await uploadService.receiveUpload('u',uploadId,bytes);
    const stored=await readFile(join(root,'pending','u','asset-1'));
    expect(stored).toEqual(bytes);
    expect(result).toMatchObject({state:'uploaded',asset_status:'quarantined'});
@@ -65,4 +67,15 @@ describe('MediaService',()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:100,checksumSha256:'bad'},'key')).rejects.toBeInstanceOf(BadRequestException);
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('does not expose shared media owned by suspended accounts',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect((service as any).findViewableAsset('viewer-1','asset-1')).rejects.toBeInstanceOf(NotFoundException);
+  expect(query.mock.calls[0][0]).toContain("asset_owner.status='active'");
+  expect(query.mock.calls[0][0]).toContain("post_author.status='active'");
+  expect(query.mock.calls[0][0]).toContain("album_adder.status='active'");
+  expect(query.mock.calls[0][0]).toContain("timeline_post.audience='space'");
+  expect(query.mock.calls[0][0]).toContain("timeline_post.status='published'");
+  expect(query.mock.calls[0][0]).toContain("album_space.status IN ('active','archived')");
+ });
+
 });

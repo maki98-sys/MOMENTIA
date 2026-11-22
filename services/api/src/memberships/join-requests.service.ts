@@ -36,21 +36,25 @@ export class JoinRequestsService {
   }
 
   async list(actorId:string,spaceId:string) {
-    const access=await this.db.query(
-      `SELECT 1 FROM space_memberships
-       WHERE space_id=$1 AND user_id=$2 AND state='active' AND role IN ('owner','admin')`,
-      [spaceId,actorId]);
-    if(!access.rowCount) throw new NotFoundException('Circle not found or permission denied.');
-    const result=await this.db.query(
-      `SELECT r.id,r.requester_id,up.display_name,up.avatar_media_id,r.status,r.created_at
-       FROM space_join_requests r JOIN user_profiles up ON up.user_id=r.requester_id
-       WHERE r.space_id=$1 AND r.status='pending'
-       ORDER BY r.created_at ASC LIMIT 100`,[spaceId]);
-    return result.rows;
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const access=await client.query(
+        `SELECT 1 FROM space_memberships
+         WHERE space_id=$1 AND user_id=$2 AND state='active' AND role IN ('owner','admin')`,
+        [spaceId,actorId]);
+      if(!access.rowCount) throw new NotFoundException('Circle not found or permission denied.');
+      const result=await client.query(
+        `SELECT r.id,r.requester_id,up.display_name,up.avatar_media_id,r.status,r.created_at
+         FROM space_join_requests r JOIN user_profiles up ON up.user_id=r.requester_id
+         WHERE r.space_id=$1 AND r.status='pending'
+         ORDER BY r.created_at ASC LIMIT 100`,[spaceId]);
+      return result.rows;
+    });
   }
 
   async review(actorId:string,spaceId:string,requestId:string,decision:'approved'|'rejected') {
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const request=await client.query(
         `SELECT r.id,r.requester_id,r.status,s.id AS space_id
          FROM space_join_requests r JOIN spaces s ON s.id=r.space_id

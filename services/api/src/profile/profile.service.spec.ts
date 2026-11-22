@@ -4,10 +4,11 @@ import { ProfileService } from './profile.service';
 
 describe('ProfileService', () => {
   const query = jest.fn();
-  const database = { query } as unknown as DatabaseService;
+  const transaction = jest.fn();
+  const database = { query, transaction } as unknown as DatabaseService;
   const service = new ProfileService(database);
 
-  beforeEach(() => query.mockReset());
+  beforeEach(() => { query.mockReset(); transaction.mockReset(); });
 
   it('returns the authenticated account and nullable profile', async () => {
     query.mockResolvedValueOnce({ rows: [{
@@ -67,18 +68,23 @@ describe('ProfileService', () => {
   });
 
   it('upserts a profile only for an active account', async () => {
-    query.mockResolvedValueOnce({ rows: [{
-      display_name: 'Ana', bio: null, visibility: 'private',
-    }] });
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({ rows: [{ display_name: 'Ana', bio: null, visibility: 'private' }],rowCount:1 });
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.updateMyProfile('user-1', {
       displayName: 'Ana', bio: null, visibility: 'private',
     })).resolves.toEqual({ displayName: 'Ana', bio: null, visibility: 'private' });
-    expect(query.mock.calls[0][0]).toContain("status = 'active'");
-    expect(query.mock.calls[0][0]).toContain('ON CONFLICT (user_id) DO UPDATE');
+    expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
+    expect(clientQuery.mock.calls[1][0]).toContain("status = 'active'");
+    expect(clientQuery.mock.calls[1][0]).toContain('ON CONFLICT (user_id) DO UPDATE');
   });
 
   it('rejects profile updates for inactive accounts', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({ rows: [],rowCount:0 });
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.updateMyProfile('user-2', {
       displayName: 'Ana', bio: null, visibility: 'private',
     })).rejects.toBeInstanceOf(NotFoundException);

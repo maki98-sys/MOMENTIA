@@ -15,16 +15,23 @@ export class DatabaseService implements OnApplicationShutdown {
 
   async transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    let discardClient=false;
     try {
       await client.query('BEGIN');
       const result = await operation(client);
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // A connection that cannot roll back must not be returned to the pool.
+        discardClient=true;
+      }
       throw error;
     } finally {
-      client.release();
+      if(discardClient) client.release(new Error('PostgreSQL transaction rollback failed.'));
+      else client.release();
     }
   }
 

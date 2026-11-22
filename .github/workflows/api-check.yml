@@ -60,6 +60,9 @@ jobs:
       - name: Unit tests
         working-directory: services/api
         run: npm test
+      - name: PostgreSQL end-to-end tests
+        working-directory: services/api
+        run: npm run test:e2e
       - name: Build
         working-directory: services/api
         run: npm run build

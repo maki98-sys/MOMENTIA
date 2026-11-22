@@ -14,6 +14,9 @@ export class SessionTokenService {
   private readonly secret: Uint8Array;
   constructor(private readonly db: DatabaseService, config: ConfigService) {
     const value = config.get<string>('MOMENTIA_SESSION_SECRET') ?? '';
+    if (Buffer.byteLength(value, 'utf8') < 32) {
+      throw new Error('MOMENTIA_SESSION_SECRET must contain at least 32 bytes.');
+    }
     this.secret = new TextEncoder().encode(value);
   }
 
@@ -41,6 +44,11 @@ export class SessionTokenService {
     const refreshHash = this.hash(refreshToken);
     const familyId = randomUUID();
     const session = await this.db.transaction(async client => {
+      const account = await client.query(
+        `SELECT id FROM users WHERE id=$1 AND status='active' FOR UPDATE`,
+        [userId],
+      );
+      if (!account.rowCount) throw new UnauthorizedException('MOMENTIA account is not active.');
       if (deviceId) {
         const device = await client.query(
           `SELECT id FROM devices WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR UPDATE`,
@@ -62,7 +70,7 @@ export class SessionTokenService {
       );
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'auth.session.created','session',$2,jsonb_build_object('deviceId',$3))`,
+         VALUES($1,$1,'auth.session.created','session',$2,jsonb_build_object('deviceId',$3::text))`,
         [userId,inserted.rows[0].id,deviceId ?? null],
       );
       return inserted.rows[0];
@@ -94,12 +102,12 @@ export class SessionTokenService {
       if (row.consumed_at) {
         await client.query(
           `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
-           WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
+           WHERE family_id=$1::uuid AND revoked_at IS NULL`,[row.family_id],
         );
         await client.query(
           `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1)
-           FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::uuid)
+           FROM auth_sessions WHERE family_id=$1::uuid LIMIT 1`,[row.family_id],
         );
         return { reused: true as const };
       }
@@ -111,7 +119,7 @@ export class SessionTokenService {
                 d.id device_id_found,d.revoked_at device_revoked_at
          FROM auth_sessions s JOIN users u ON u.id=s.user_id
          LEFT JOIN devices d ON d.id=s.device_id
-         WHERE s.id=$1 AND s.family_id=$2 FOR UPDATE OF s,u`,
+         WHERE s.id=$1 AND s.family_id=$2 AND s.revoked_at IS NULL FOR UPDATE OF s,u`,
         [row.session_id,row.family_id],
       );
       if (!session.rowCount || session.rows[0].status!=='active' ||
@@ -122,7 +130,18 @@ export class SessionTokenService {
         `UPDATE auth_session_refresh_tokens SET consumed_at=now(),replaced_by_hash=$2
          WHERE token_hash=$1 AND consumed_at IS NULL RETURNING token_hash`,[oldHash,nextHash],
       );
-      if (!consumed.rowCount) throw new UnauthorizedException('Refresh token was already used.');
+      if (!consumed.rowCount) {
+        await client.query(
+          `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
+           WHERE family_id=$1::uuid AND revoked_at IS NULL`,[row.family_id],
+        );
+        await client.query(
+          `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::uuid)
+           FROM auth_sessions WHERE family_id=$1::uuid LIMIT 1`,[row.family_id],
+        );
+        return { reused: true as const };
+      }
       await client.query(
         `INSERT INTO auth_session_refresh_tokens(token_hash,session_id,family_id,expires_at)
          VALUES($1,$2,$3,$4)`,

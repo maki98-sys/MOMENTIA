@@ -6,20 +6,21 @@ export class MembershipsService {
   constructor(private readonly database: DatabaseService) {}
 
   async list(userId: string, spaceId: string) {
-    const access = await this.database.query(
-      `SELECT 1 FROM space_memberships WHERE space_id = $1 AND user_id = $2 AND state = 'active'`,
-      [spaceId, userId],
-    );
-    if (!access.rowCount) throw new NotFoundException('Space not found.');
     const result = await this.database.query(
       `SELECT sm.user_id, sm.role, sm.state, sm.joined_at,
-              u.display_name, u.avatar_url
+              p.display_name, p.avatar_media_id
        FROM space_memberships sm
        JOIN users u ON u.id = sm.user_id
-       WHERE sm.space_id = $1 AND sm.state = 'active'
-       ORDER BY CASE sm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, sm.joined_at`,
-      [spaceId],
+       LEFT JOIN user_profiles p ON p.user_id = sm.user_id
+       WHERE sm.space_id = $1
+         AND EXISTS (
+           SELECT 1 FROM space_memberships caller
+           WHERE caller.space_id = $1 AND caller.user_id = $2 AND caller.state = 'active'
+         )
+       ORDER BY sm.joined_at ASC, sm.user_id ASC`,
+      [spaceId, userId],
     );
+    if (!result.rowCount) throw new NotFoundException('Space not found.');
     return result.rows;
   }
 
@@ -28,6 +29,7 @@ export class MembershipsService {
       throw new BadRequestException('Unsupported membership role.');
     }
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const current=await client.query(
         `SELECT target.role FROM space_memberships target
          WHERE target.space_id=$2 AND target.user_id=$3 AND target.state='active'
@@ -38,7 +40,7 @@ export class MembershipsService {
            AND (target.role<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
              WHERE owner.space_id=target.space_id AND owner.user_id=$1
                AND owner.state='active' AND owner.role='owner'))
-           AND ($4<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
+           AND ($4::text<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
              WHERE owner.space_id=target.space_id AND owner.user_id=$1
                AND owner.state='active' AND owner.role='owner'))
          FOR UPDATE OF target`,
@@ -56,7 +58,7 @@ export class MembershipsService {
       if(previousRole!==String(role)) await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
          VALUES($1,$2,'membership.role_changed','membership',$3,
-           jsonb_build_object('targetUserId',$4,'previousRole',$5,'newRole',$6))`,
+           jsonb_build_object('targetUserId',$4::text,'previousRole',$5::text,'newRole',$6::text))`,
         [spaceId,actorId,targetId,targetId,previousRole,String(role)],
       );
       if(!['owner','admin','moderator'].includes(String(role))) {
@@ -87,6 +89,7 @@ export class MembershipsService {
   async remove(actorId: string, spaceId: string, targetId: string) {
     if (actorId === targetId) throw new BadRequestException('Use the leave endpoint to remove yourself.');
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result = await client.query(
         `UPDATE space_memberships target SET state = 'removed', left_at = now()
          WHERE target.space_id = $2 AND target.user_id = $3 AND target.state = 'active'
@@ -113,7 +116,7 @@ export class MembershipsService {
       await this.endDepartedAudioParticipation(client,spaceId,targetId);
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,'membership.removed','membership',$3,jsonb_build_object('targetUserId',$3))`,
+         VALUES($1,$2,'membership.removed','membership',$3,jsonb_build_object('targetUserId',$3::uuid))`,
         [spaceId,actorId,targetId],
       );
       return result.rows[0];
@@ -125,6 +128,7 @@ export class MembershipsService {
       throw new BadRequestException('Ownership must be transferred to another active member.');
     }
     return this.database.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const locked = await client.query(
         `SELECT id FROM spaces
          WHERE id = $1 AND owner_id = $2 AND status = 'active'
@@ -160,7 +164,7 @@ export class MembershipsService {
       await client.query(
         `INSERT INTO space_audit_events
            (space_id, actor_id, action, resource_type, resource_id, metadata)
-         VALUES ($1, $2, 'ownership.transferred', 'space', $1, jsonb_build_object('newOwnerId', $3))`,
+         VALUES ($1, $2, 'ownership.transferred', 'space', $1, jsonb_build_object('newOwnerId', $3::text))`,
         [spaceId, actorId, targetId],
       );
       return { spaceId, previousOwnerId: actorId, ownerId: targetId };
@@ -169,6 +173,7 @@ export class MembershipsService {
 
   async leave(userId: string, spaceId: string) {
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result = await client.query(
         `UPDATE space_memberships SET state = 'left', left_at = now()
          WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role <> 'owner'

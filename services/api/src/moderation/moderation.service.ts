@@ -36,7 +36,7 @@ export class ModerationService {
       const prior=await client.query(`SELECT id FROM user_reports WHERE reporter_id=$1 AND target_type=$2 AND target_id=$3 AND status IN ('open','reviewing') LIMIT 1`,[reporterId,v.targetType,v.targetId]);
       if(prior.rowCount) throw new BadRequestException('You already have an open report for this target.');
       const created=await client.query(`INSERT INTO user_reports(reporter_id,target_type,target_id,reason,details) VALUES($1,$2,$3,$4,$5) RETURNING id,target_type,target_id,reason,status,created_at`,[reporterId,v.targetType,v.targetId,v.reason,v.details??null]);
-      await client.query(`INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata) VALUES($1,NULL,'moderation.report.submitted','report',$2,jsonb_build_object('targetType',$3,'reason',$4))`,[reporterId,created.rows[0].id,v.targetType,v.reason]);
+      await client.query(`INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata) VALUES($1,NULL,'moderation.report.submitted','report',$2,jsonb_build_object('targetType',$3::text,'reason',$4::text))`,[reporterId,created.rows[0].id,v.targetType,v.reason]);
       return created.rows[0];
     });
   }
@@ -68,8 +68,10 @@ export class ModerationService {
     if(Object.keys(v).some(k=>!['decision','action','note'].includes(k))) throw new BadRequestException('Unsupported review fields.');
     if(!['reviewing','resolve','dismiss'].includes(String(v.decision))) throw new BadRequestException('Invalid moderation decision.');
     if(v.action!==undefined&&!['none','hide','restore','suspend_user','unsuspend_user','remove_media'].includes(String(v.action))) throw new BadRequestException('Invalid moderation action.');
+    if(v.decision!=='resolve'&&v.action!==undefined&&v.action!=='none') throw new BadRequestException('Moderation actions can only be applied when resolving a report.');
     if(v.note!==undefined&&(typeof v.note!=='string'||v.note.length>2000)) throw new BadRequestException('note must not exceed 2000 characters.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const found=await client.query(`SELECT * FROM user_reports WHERE id=$1 FOR UPDATE`,[reportId]);
       if(!found.rowCount) throw new NotFoundException('Report not found.');
       const report=found.rows[0] as Record<string,any>;
@@ -92,21 +94,83 @@ export class ModerationService {
       };
       const spec=states[target];
       if(!spec) throw new BadRequestException('Hide/restore is not supported for this target.');
+      if(target==='space'&&action==='restore') {
+        const prior=await client.query(
+          `SELECT action FROM moderation_audit_events
+           WHERE target_type='space' AND target_id=$1
+           ORDER BY created_at DESC,id DESC LIMIT 1`,[id]);
+        if(prior.rows[0]?.action!=='hide') {
+          throw new BadRequestException('Only a space archived by moderation can be restored by moderation.');
+        }
+      }
+      const expected=action==='hide'?spec.visible:spec.hidden;
       const value=action==='hide'?spec.hidden:spec.visible;
-      const r=await client.query(`UPDATE ${spec.table} SET ${spec.column}=$2 WHERE id=$1 RETURNING id`,[id,value]);
-      if(!r.rowCount) throw new NotFoundException('Moderation target not found.');
+      const r=await client.query(
+        `UPDATE ${spec.table} SET ${spec.column}=$2
+         WHERE id=$1 AND ${spec.column}=$3 RETURNING id`,[id,value,expected]);
+      if(!r.rowCount) throw new NotFoundException('Moderation target not found or not in a restorable state.');
       return;
     }
     if(action==='suspend_user'||action==='unsuspend_user') {
       if(target!=='user') throw new BadRequestException('Account suspension applies only to users.');
       const r=await client.query(`UPDATE users SET status=$2 WHERE id=$1 AND status IN ('active','suspended') RETURNING id`,[id,action==='suspend_user'?'suspended':'active']);
       if(!r.rowCount) throw new NotFoundException('User target not found or cannot change status.');
+      if(action==='suspend_user') {
+        await client.query(
+          `UPDATE auth_sessions SET revoked_at=now()
+           WHERE user_id=$1 AND revoked_at IS NULL`,[id]);
+        await client.query(
+          `UPDATE notification_outbox SET status='cancelled',processing_started_at=NULL,
+             last_error_code='ACCOUNT_SUSPENDED'
+           WHERE user_id=$1 AND channel='push' AND status IN ('pending','failed','processing')`,[id]);
+      }
       return;
     }
     if(action==='remove_media') {
       if(target!=='media') throw new BadRequestException('Media removal applies only to media targets.');
-      const r=await client.query(`UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1 AND status<>'deleted' RETURNING id`,[id]);
-      if(!r.rowCount) throw new NotFoundException('Media target not found or already deleted.');
+      const asset=await client.query(
+        `SELECT id,owner_id,size_bytes,storage_key_original,storage_provider,status
+         FROM media_assets WHERE id=$1 AND status<>'deleted' FOR UPDATE`,[id]);
+      if(!asset.rowCount) throw new NotFoundException('Media target not found or already deleted.');
+      const variants=await client.query(
+        `SELECT storage_key,size_bytes,storage_provider FROM media_variants
+         WHERE media_asset_id=$1 FOR UPDATE`,[id]);
+      const objects=[
+        {storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},
+        ...variants.rows,
+      ];
+      for(const object of objects) {
+        await client.query(
+          `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+           VALUES($1,$2,$3) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+          [id,object.storage_key,object.storage_provider]);
+      }
+      await client.query(
+        `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
+         WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,[id]);
+      await client.query(
+        `UPDATE posts SET status='removed',updated_at=now()
+         WHERE media_asset_id=$1 AND status<>'removed'`,[id]);
+      await client.query(
+        `UPDATE space_album_items SET status='removed',removed_at=now()
+         WHERE media_asset_id=$1 AND status='active'`,[id]);
+      await client.query(
+        `DELETE FROM timeline_entries WHERE media_asset_id=$1
+          OR post_id IN (SELECT id FROM posts WHERE media_asset_id=$1)`,[id]);
+      await client.query(
+        `UPDATE user_profiles SET avatar_media_id=NULL,updated_at=now()
+         WHERE avatar_media_id=$1`,[id]);
+      await client.query(
+        `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,[id]);
+      await client.query(
+        `UPDATE media_uploads SET state='cancelled',updated_at=now()
+         WHERE media_asset_id=$1 AND state NOT IN ('completed','failed','cancelled')`,[id]);
+      const deletedBytes=Number(asset.rows[0].size_bytes)+variants.rows.reduce(
+        (sum:number,row:{size_bytes:string|number})=>sum+Number(row.size_bytes),0);
+      await client.query(
+        `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+         VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+        [asset.rows[0].owner_id,id,-deletedBytes,'moderation-delete:'+id]);
     }
   }
 }
