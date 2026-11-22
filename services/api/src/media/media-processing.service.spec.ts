@@ -146,9 +146,24 @@ describe('MediaProcessingService',()=>{
       .mockResolvedValueOnce({rows:[{id:deletionId,status:'completed',media_asset_id:assetId}],rowCount:1});
     await expect(service.claimDeletions(worker,1000)).resolves.toHaveLength(1);
     expect(query.mock.calls[0][0]).toContain('FOR UPDATE OF d SKIP LOCKED');
+    expect(query.mock.calls[0][0]).toContain('d.attempts<d.max_attempts');
+    expect(query.mock.calls[0][0]).toContain('d.dead_lettered_at IS NULL');
     await expect(service.completeDeletion(worker,deletionId,{success:true}))
       .resolves.toMatchObject({id:deletionId,status:'completed'});
     expect(query.mock.calls[1][1]).toEqual([deletionId,worker,'completed',null]);
+  });
+
+
+  it('dead-letters a storage deletion after its bounded retry budget is exhausted',async()=>{
+    query.mockResolvedValueOnce({
+      rows:[{id:deletionId,status:'failed',media_asset_id:assetId,dead_lettered_at:'2026-11-22T00:00:00.000Z'}],
+      rowCount:1,
+    });
+    await expect(service.completeDeletion(worker,deletionId,{success:false,errorCode:'S3_UNAVAILABLE'}))
+      .resolves.toMatchObject({id:deletionId,status:'failed',dead_lettered_at:expect.any(String)});
+    expect(query.mock.calls[0][0]).toContain('attempts>=max_attempts');
+    expect(query.mock.calls[0][0]).toContain('dead_lettered_at');
+    expect(query.mock.calls[0][0]).toContain('RETRY_EXHAUSTED:');
   });
 
   it('rejects completion by a worker that does not own the deletion task',async()=>{
