@@ -203,8 +203,8 @@ export class AudioService {
   async leave(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
     return this.db.transaction(async client => {
-      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
+      await this.assertAudioEntitlement(client,userId);
       const participation = await client.query(
         `SELECT p.id,p.role,a.state
          FROM audio_participants p
@@ -267,8 +267,8 @@ export class AudioService {
   async removeQueueItem(userId: string, sessionId: string, itemId: string) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
     return this.db.transaction(async client => {
-      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
+      await this.assertAudioEntitlement(client,userId);
       const r = await client.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
         JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$3 AND sm.state='active'
@@ -296,8 +296,8 @@ export class AudioService {
     let itemId = input.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
     return this.db.transaction(async client => {
-      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
+      await this.assertAudioEntitlement(client,userId);
       const s = await client.query(`SELECT a.id,a.host_user_id,a.state,a.server_version FROM audio_sessions a
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
         WHERE a.id=$1 FOR UPDATE OF a`, [sessionId,userId]);
@@ -343,8 +343,8 @@ export class AudioService {
     const value = Number(vote);
     if (value !== -1 && value !== 1) throw new BadRequestException('Vote must be -1 or 1.');
     return this.db.transaction(async client => {
-      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
+      await this.assertAudioEntitlement(client,userId);
       const allowed = await client.query(`SELECT 1 FROM audio_queue_items q
         JOIN audio_participants p ON p.session_id=q.session_id
         JOIN audio_sessions a ON a.id=q.session_id
