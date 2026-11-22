@@ -279,4 +279,25 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     await expect(mutation).resolves.toMatchObject({role:'moderator',user_id:viewerId});
   });
 
+
+  it('captures the sync change cursor before reading snapshot sections', async () => {
+    const statements: string[] = [];
+    const recordingDatabase = {
+      query: db.query.bind(db),
+      transaction: (work: any) => db.transaction((client: any) => work({
+        query: (sql: string, values?: unknown[]) => {
+          statements.push(sql);
+          return client.query(sql, values);
+        },
+      })),
+    };
+    const recordingSync = new SyncService(recordingDatabase as any);
+    await recordingSync.snapshot(viewerId, { sections: ['timeline'], limit: 100 });
+
+    const cursorIndex = statements.findIndex(sql => sql.includes('MAX(sequence_id)'));
+    const timelineIndex = statements.findIndex(sql => sql.includes('FROM timeline_entries t'));
+    expect(cursorIndex).toBeGreaterThanOrEqual(0);
+    expect(timelineIndex).toBeGreaterThan(cursorIndex);
+  });
+
 });
