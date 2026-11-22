@@ -14,6 +14,9 @@ export class SessionTokenService {
   private readonly secret: Uint8Array;
   constructor(private readonly db: DatabaseService, config: ConfigService) {
     const value = config.get<string>('MOMENTIA_SESSION_SECRET') ?? '';
+    if (Buffer.byteLength(value, 'utf8') < 32) {
+      throw new Error('MOMENTIA_SESSION_SECRET must contain at least 32 bytes.');
+    }
     this.secret = new TextEncoder().encode(value);
   }
 
