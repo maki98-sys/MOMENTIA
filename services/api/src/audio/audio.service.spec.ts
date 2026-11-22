@@ -39,8 +39,11 @@ describe('AudioService', () => {
 
   it('requires a host-controlled playback action', async () => {
     query.mockResolvedValueOnce({ rows: [{ enabled: true }], rowCount: 1 });
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({ rows: [{ id: 's', host_user_id: 'another-user', server_version: 1 }], rowCount: 1 });
     transaction.mockImplementation(async (operation: (client: { query: jest.Mock }) => Promise<unknown>) =>
-      operation({ query: jest.fn().mockResolvedValueOnce({ rows: [{ id: 's', host_user_id: 'another-user', server_version: 1 }], rowCount: 1 }) }),
+      operation({ query: clientQuery }),
     );
     await expect(service.updatePlayback('user-1', '11111111-1111-4111-8111-111111111111', { action: 'play' }))
       .rejects.toBeInstanceOf(ForbiddenException);
