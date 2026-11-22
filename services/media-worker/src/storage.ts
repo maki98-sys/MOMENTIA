@@ -1,5 +1,4 @@
 import { createWriteStream, createReadStream } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { lstat, mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
