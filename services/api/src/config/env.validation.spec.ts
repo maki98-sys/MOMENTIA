@@ -69,43 +69,36 @@ describe('environmentSchema', () => {
     expect(result.error).toBeUndefined();
   });
 
-  it('requires a dedicated media worker token in production', () => {
+  it('requires every internal worker secret and push-token encryption key in production', () => {
     const base = {
       NODE_ENV: 'production',
       DATABASE_URL: database,
       MOMENTIA_SESSION_SECRET: 's'.repeat(32),
-    };
-    expect(environmentSchema.validate(base).error).toBeDefined();
-    expect(environmentSchema.validate({
-      ...base,
-      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
-      PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
-    }).error).toBeDefined();
-    expect(environmentSchema.validate({
-      ...base,
       MEDIA_WORKER_TOKEN: 'm'.repeat(32),
+      ACCOUNT_DELETION_WORKER_TOKEN: 'd'.repeat(32),
+      AUTH_SESSION_WORKER_TOKEN: 'a'.repeat(32),
       NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
+      EVENTS_WORKER_TOKEN: 'e'.repeat(32),
+      AUDIO_WORKER_TOKEN: 'u'.repeat(32),
+      BILLING_WORKER_TOKEN: 'b'.repeat(32),
       PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
-    }).error).toBeUndefined();
-  });
+    };
+    expect(environmentSchema.validate(base).error).toBeUndefined();
 
-  it('requires notification worker and push-token encryption secrets in production', () => {
-    const base = {
-      NODE_ENV: 'production',
-      DATABASE_URL: database,
-      MOMENTIA_SESSION_SECRET: 's'.repeat(32),
-      MEDIA_WORKER_TOKEN: 'm'.repeat(32),
-    };
-    expect(environmentSchema.validate(base).error).toBeDefined();
-    expect(environmentSchema.validate({
-      ...base,
-      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
-    }).error).toBeDefined();
-    expect(environmentSchema.validate({
-      ...base,
-      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
-      PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
-    }).error).toBeUndefined();
+    for (const key of [
+      'MEDIA_WORKER_TOKEN',
+      'ACCOUNT_DELETION_WORKER_TOKEN',
+      'AUTH_SESSION_WORKER_TOKEN',
+      'NOTIFICATION_WORKER_TOKEN',
+      'EVENTS_WORKER_TOKEN',
+      'AUDIO_WORKER_TOKEN',
+      'BILLING_WORKER_TOKEN',
+      'PUSH_TOKEN_ENCRYPTION_KEY',
+    ]) {
+      const incomplete = { ...base };
+      delete (incomplete as Record<string, unknown>)[key];
+      expect(environmentSchema.validate(incomplete).error).toBeDefined();
+    }
   });
 
   it('rejects a weak media worker token when supplied', () => {
