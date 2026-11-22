@@ -680,7 +680,8 @@ export class SyncService {
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
              SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-           OR (p.audience='space' AND EXISTS(
+           OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+             AND EXISTS(
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
@@ -696,7 +697,8 @@ export class SyncService {
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
              SELECT 1 FROM user_relationships rel WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-           OR (p.audience='space' AND EXISTS(
+           OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+             AND EXISTS(
              SELECT 1 FROM space_memberships sm WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
          ) AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
@@ -741,7 +743,8 @@ export class SyncService {
       const r = await client.query(
         `SELECT a.id AS album_id,a.space_id,a.name,a.description,a.visibility,
                 i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
-         FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
+         FROM space_albums a JOIN spaces album_space ON album_space.id=a.space_id AND album_space.status IN ('active','archived')
+         JOIN space_memberships m ON m.space_id=a.space_id
          LEFT JOIN space_album_items i ON i.album_id=a.id AND i.status='active'
            AND EXISTS(SELECT 1 FROM users added_by WHERE added_by.id=i.added_by AND added_by.status='active')
            AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
@@ -825,7 +828,8 @@ export class SyncService {
              AND (p.author_id=$1 OR p.audience='public'
                OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                  WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-               OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+               OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+                 AND EXISTS(SELECT 1 FROM space_memberships sm
                  WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
