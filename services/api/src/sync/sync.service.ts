@@ -825,7 +825,9 @@ export class SyncService {
              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR
                (b.blocker_id=p.author_id AND b.blocked_id=$1)))
-           OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c JOIN posts p ON p.id=c.post_id
+           OR (r.target_type='comment' AND EXISTS(SELECT 1 FROM post_comments c
+             JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+             JOIN posts p ON p.id=c.post_id JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
              WHERE c.id=r.target_id AND c.status='visible' AND p.status='published'
                AND (p.author_id=$1 OR p.audience='public'
                  OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
