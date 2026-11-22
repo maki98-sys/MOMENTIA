@@ -36,6 +36,50 @@ describe('MediaService',()=>{
   await expect(service.receiveUpload('u','123e4567-e89b-42d3-a456-426614174000',Buffer.from('x'))).rejects.toThrow('SHA-256 checksum mismatch.');
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('streams a staged resumable part after validating its checksum and ownership',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'momentia-part-stream-'));
+  const previous=process.env.MEDIA_STORAGE_DIR;
+  process.env.MEDIA_STORAGE_DIR=root;
+  const bytes=Buffer.from('part-stream-content');
+  const staged=join(root,'part.bin');
+  const uploadId='123e4567-e89b-42d3-a456-426614174000';
+  await writeFile(staged,bytes);
+  query.mockResolvedValueOnce({rowCount:1,rows:[{id:uploadId,state:'created',size_bytes:100,storage_provider:'local'}]});
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementation(async(operation:(client:unknown)=>Promise<unknown>)=>{
+   const clientQuery=jest.fn()
+    .mockResolvedValueOnce({rowCount:1,rows:[{state:'created',size_bytes:100}]})
+    .mockResolvedValueOnce({rowCount:1,rows:[{total:0}]})
+    .mockResolvedValueOnce({rowCount:1,rows:[{part_number:0}]})
+    .mockResolvedValueOnce({rowCount:1,rows:[]});
+   return operation({query:clientQuery});
+  });
+  try {
+   const storage=new LocalMediaStorage();
+   const uploadService=new MediaService({query,transaction} as unknown as DatabaseService,storage);
+   const result=await uploadService.receiveUploadPartFile('u',uploadId,0,staged,bytes.length,createHash('sha256').update(bytes).digest('hex'));
+   expect(result).toMatchObject({uploadId,partNumber:0,received:true,duplicate:false});
+   expect(await readFile(join(root,'parts/u/'+uploadId+'/0-'+createHash('sha256').update(bytes).digest('hex')))).toEqual(bytes);
+  } finally {
+   if(previous===undefined) delete process.env.MEDIA_STORAGE_DIR;
+   else process.env.MEDIA_STORAGE_DIR=previous;
+   await rm(root,{recursive:true,force:true});
+  }
+ });
+ it('rejects staged resumable parts with a mismatched checksum before database access',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'momentia-part-stream-invalid-'));
+  const staged=join(root,'part.bin');
+  const bytes=Buffer.from('part-stream-content');
+  await writeFile(staged,bytes);
+  try {
+   await expect(service.receiveUploadPartFile('u','123e4567-e89b-42d3-a456-426614174000',0,staged,bytes.length,'0'.repeat(64)))
+    .rejects.toThrow('Part checksum mismatch.');
+   expect(query).not.toHaveBeenCalled();
+   expect(transaction).not.toHaveBeenCalled();
+  } finally {
+   await rm(root,{recursive:true,force:true});
+  }
+ });
  it('does not let another account upload a part into someone else\'s upload',async()=>{
   query.mockResolvedValueOnce({rowCount:0,rows:[]});
   const put=jest.spyOn(service['storage'],'put');
