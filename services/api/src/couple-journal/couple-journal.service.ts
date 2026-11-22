@@ -66,6 +66,10 @@ export class CoupleJournalService {
     `INSERT INTO couple_journal_entries(id,space_id,author_id,ciphertext,nonce,encryption_version,key_version)
      VALUES($1,$2,$3,$4,$5,1,$6)
      RETURNING id,author_id,key_version,created_at,updated_at`,[id,spaceId,userId,ciphertext,nonce,keyVersion]);
+   await client.query(
+    `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+     VALUES($1,$2,'couple.journal_entry.created','couple_journal_entry',$3,$4::jsonb)`,
+    [spaceId,userId,id,JSON.stringify({keyVersion})]);
    return r.rows[0];
   });
  }
@@ -109,6 +113,10 @@ export class CoupleJournalService {
      WHERE id=$1 AND space_id=$2 AND author_id=$3 AND deleted_at IS NULL
      RETURNING id`,[entryId,spaceId,userId]);
    if(!r.rowCount) throw new NotFoundException('Journal entry not found.');
+   await client.query(
+    `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
+     VALUES($1,$2,'couple.journal_entry.deleted','couple_journal_entry',$3,'{}'::jsonb)`,
+    [spaceId,userId,entryId]);
    return {deleted:true,id:r.rows[0].id};
   });
  }
