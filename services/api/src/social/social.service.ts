@@ -299,7 +299,7 @@ export class SocialService {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const visible=await client.query(
-        `SELECT c.post_id FROM post_comments c
+        `SELECT c.post_id FROM post_comments c JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
          WHERE c.id=$1 AND c.status='visible'
            AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
              (b.blocker_id=$2 AND b.blocked_id=c.author_id)
