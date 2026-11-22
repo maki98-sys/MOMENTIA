@@ -1,5 +1,19 @@
+jest.mock('jose',()=>({
+  SignJWT: class {
+    setProtectedHeader(){return this;}
+    setIssuer(){return this;}
+    setAudience(){return this;}
+    setSubject(){return this;}
+    setIssuedAt(){return this;}
+    setExpirationTime(){return this;}
+    async sign(){return 'mock.signed.access.token';}
+  },
+  jwtVerify: jest.fn(),
+}));
+
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { jwtVerify } from 'jose';
 import { DatabaseService } from '../database/database.service';
 import { SessionTokenService } from './session-token.service';
 
@@ -101,6 +115,7 @@ describe('SessionTokenService',()=>{
       .mockResolvedValueOnce({rows:[],rowCount:1});
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     const created=await service.create(userId);
+    (jwtVerify as unknown as jest.Mock).mockResolvedValueOnce({payload:{sub:userId,sid:sessionId,typ:'access'}});
     query.mockResolvedValueOnce({rows:[{user_id:userId}],rowCount:1});
     await expect(service.verifyAccessToken(created.accessToken)).resolves.toEqual({userId,sessionId});
     expect(query.mock.calls[0][0]).toContain("u.status='active'");
@@ -108,6 +123,7 @@ describe('SessionTokenService',()=>{
 
   it('rejects revoked access sessions and invalid tokens',async()=>{
     await expect(service.verifyAccessToken('bad-token')).rejects.toBeInstanceOf(UnauthorizedException);
+    (jwtVerify as unknown as jest.Mock).mockRejectedValueOnce(new Error('invalid jwt'));
     query.mockResolvedValueOnce({rows:[],rowCount:0});
     await expect(service.verifyAccessToken('mta_invalid')).rejects.toBeInstanceOf(UnauthorizedException);
   });
