@@ -123,17 +123,17 @@ export class ModerationService {
          FROM media_assets WHERE id=$1 AND status<>'deleted' FOR UPDATE`,[id]);
       if(!asset.rowCount) throw new NotFoundException('Media target not found or already deleted.');
       const variants=await client.query(
-        `SELECT storage_key,size_bytes FROM media_variants
+        `SELECT storage_key,size_bytes,storage_provider FROM media_variants
          WHERE media_asset_id=$1 FOR UPDATE`,[id]);
       const objects=[
-        {storage_key:asset.rows[0].storage_key_original},
-        ...variants.rows.map((row:{storage_key:string})=>({storage_key:row.storage_key})),
+        {storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},
+        ...variants.rows,
       ];
       for(const object of objects) {
         await client.query(
-          `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
-           VALUES($1,$2) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
-          [id,object.storage_key]);
+          `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+           VALUES($1,$2,$3) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+          [id,object.storage_key,object.storage_provider]);
       }
       await client.query(
         `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
