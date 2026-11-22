@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
 import { SyncService } from '../src/sync/sync.service';
+import { MembershipsService } from '../src/memberships/memberships.service';
 
 describe('Sync snapshot authorization (PostgreSQL)', () => {
   const databaseUrl = process.env.DATABASE_URL;
@@ -10,6 +11,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4 });
   const db = new DatabaseService(pool);
   const sync = new SyncService(db);
+  const memberships = new MembershipsService(db);
 
   let viewerId: string;
   let ownerId: string;
@@ -229,6 +231,52 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     if (!mutation) throw new Error('Authorization mutation did not start.');
     const changed = await mutation;
     expect(changed.rowCount).toBe(1);
+  });
+
+
+  it('takes the authorization write lock before membership row locks', async () => {
+    const snapshotClient = await pool.connect();
+    const probeClient = await pool.connect();
+    let mutation: Promise<any> | undefined;
+    try {
+      await snapshotClient.query('BEGIN');
+      await snapshotClient.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))",
+      );
+
+      mutation = memberships.changeRole(ownerId, spaceId, viewerId, 'moderator');
+      let waiting = false;
+      const deadline = Date.now() + 3000;
+      while (!waiting && Date.now() < deadline) {
+        const locks = await pool.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_locks l
+             JOIN pg_stat_activity a ON a.pid=l.pid
+             WHERE l.locktype='advisory' AND NOT l.granted
+               AND a.query LIKE 'SELECT pg_advisory_xact_lock%'
+           ) AS waiting`,
+        );
+        waiting = locks.rows[0].waiting === true;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+
+      await probeClient.query('BEGIN');
+      await probeClient.query(
+        `SELECT user_id FROM space_memberships
+         WHERE space_id=$1 AND user_id=$2 FOR UPDATE NOWAIT`,
+        [spaceId, viewerId],
+      );
+      await probeClient.query('COMMIT');
+    } finally {
+      await probeClient.query('ROLLBACK').catch(() => undefined);
+      probeClient.release();
+      await snapshotClient.query('COMMIT').catch(() => undefined);
+      snapshotClient.release();
+    }
+
+    if (!mutation) throw new Error('Membership mutation did not start.');
+    await expect(mutation).resolves.toMatchObject({role:'moderator',user_id:viewerId});
   });
 
 });
