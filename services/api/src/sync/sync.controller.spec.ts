@@ -2,6 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { SyncService } from './sync.service';
+
+// The controller's class-level guard is not under test here. Mocking it keeps
+// unit tests independent from jose's ESM-only runtime entry point.
+jest.mock('../auth/oidc-bearer.guard', () => ({
+  OidcBearerGuard: class OidcBearerGuard {},
+}));
+
 import { SyncController } from './sync.controller';
 
 describe('SyncController', () => {
