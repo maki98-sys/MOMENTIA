@@ -3,24 +3,24 @@
 ## Last completed coverage run
 
 - Workflow: `api-coverage`
-- Run ID: `44969387684`
-- Commit: `0fc` (the CI run's exact SHA is recorded in GitHub Actions)
+- Run ID: `44969699881`
+- Commit: `ef7ac503556bde91cf3676893a68c7d04b13f8fa`
 - Result: success
-- Unit tests: **164/164 passed**
-- Suites: **23/23 passed**
+- Unit tests: **168/168 passed**
+- Suites: **24/24 passed**
 
 | Metric | Coverage |
 |---|---:|
-| Statements | 29.47% |
-| Branches | 27.78% |
-| Functions | 28.33% |
-| Lines | 31.28% |
+| Statements | 30.29% |
+| Branches | 28.13% |
+| Functions | 29.24% |
+| Lines | 32.26% |
 
 ## Interpretation
 
 - These values describe coverage of the code instrumented by Jest. They are **not** a percentage of backend implementation completion.
 - A passing unit suite does not certify database authorization, integration behavior, concurrency, provider integration or production readiness.
-- The current branch has additional tests and corrections after this run. Newer coverage and API/E2E checks are running; use their final results before treating the current PR head as approved.
+- The current branch has additional tests and corrections after this run; newer coverage is running. Newer coverage and API/E2E checks are running; use their final results before treating the current PR head as approved.
 - Frontend is excluded from this audit because frontend implementation has not started.
 
 ## Additional test work in the current branch
