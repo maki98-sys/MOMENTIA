@@ -20,7 +20,7 @@ export class TimelineService {
               COALESCE(up.display_name,pu.display_name) display_name
        FROM timeline_entries t
        JOIN space_memberships sm ON sm.space_id=t.space_id AND sm.user_id=$1 AND sm.state='active'
-       LEFT JOIN posts p ON p.id=t.post_id AND p.status='published'
+       LEFT JOIN posts p ON p.id=t.post_id AND p.space_id=t.space_id AND p.status='published'
        LEFT JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
        LEFT JOIN user_profiles up ON up.user_id=p.author_id
        LEFT JOIN media_assets m ON m.id=t.media_asset_id AND m.status='ready'
