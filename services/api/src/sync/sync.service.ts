@@ -712,7 +712,7 @@ export class SyncService {
          JOIN spaces s ON s.id=t.space_id
          WHERE m.user_id=$1 AND m.state='active' AND s.status='active'
            AND (t.post_id IS NULL OR EXISTS(
-             SELECT 1 FROM posts p
+             SELECT 1 FROM posts p JOIN users timeline_author ON timeline_author.id=p.author_id AND timeline_author.status='active'
              WHERE p.id=t.post_id AND p.status='published'
                AND (
                  p.author_id=$1 OR p.audience='public'
@@ -728,7 +728,8 @@ export class SyncService {
                  OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
            ))
            AND (t.media_asset_id IS NULL OR EXISTS(
-             SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'
+             SELECT 1 FROM media_assets a JOIN users media_owner ON media_owner.id=a.owner_id AND media_owner.status='active'
+               WHERE a.id=t.media_asset_id AND a.status='ready'
                AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                  (b.blocker_id=$1 AND b.blocked_id=a.owner_id)
                  OR (b.blocker_id=a.owner_id AND b.blocked_id=$1))
@@ -883,13 +884,13 @@ export class SyncService {
             `INSERT INTO sync_snapshot_sessions(id,user_id,sections,data,cursor,expires_at)
              VALUES($1,$2,$3::text[],$4::jsonb,$5::bigint,now()+interval '30 minutes')
              RETURNING id,created_at`,
-            [continuationSnapshotId,userId,requested,JSON.stringify(data),cursorValue],
+            [continuationSnapshotId,userId,requested,JSON.stringify({}),cursorValue],
           )
         : await client.query(
             `INSERT INTO sync_snapshot_sessions(user_id,sections,data,cursor,expires_at)
              VALUES($1,$2::text[],$3::jsonb,$4::bigint,now()+interval '30 minutes')
              RETURNING id,created_at`,
-            [userId,requested,JSON.stringify(data),cursorValue],
+            [userId,requested,JSON.stringify({}),cursorValue],
           );
       activeSnapshotId = String(saved.rows[0].id);
       snapshotAt = saved.rows[0].created_at;
