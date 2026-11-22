@@ -41,7 +41,15 @@ export class AlbumsService {
   async list(userId:string,spaceId:string) {
     const r=await this.db.query(
       `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.created_at,
-        (SELECT count(*)::int FROM space_album_items i WHERE i.album_id=a.id AND i.status='active') item_count
+        (SELECT count(*)::int FROM space_album_items i
+          JOIN media_assets ma ON ma.id=i.media_asset_id AND ma.status='ready'
+          WHERE i.album_id=a.id AND i.status='active'
+            AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+              (b.blocker_id=$1 AND b.blocked_id=i.added_by)
+              OR (b.blocker_id=i.added_by AND b.blocked_id=$1))
+            AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+              (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
+              OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1))) item_count
        FROM space_albums a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        WHERE a.space_id=$2 AND (a.visibility='members' OR sm.role IN ('owner','admin','moderator'))
        ORDER BY a.created_at DESC`,[userId,spaceId]);
@@ -77,9 +85,15 @@ export class AlbumsService {
        FROM space_album_items i
        JOIN media_assets m ON m.id=i.media_asset_id AND m.status='ready'
        WHERE i.album_id=$1 AND i.status='active'
+         AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$5 AND b.blocked_id=i.added_by)
+           OR (b.blocker_id=i.added_by AND b.blocked_id=$5))
+         AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=$5 AND b.blocked_id=m.owner_id)
+           OR (b.blocker_id=m.owner_id AND b.blocked_id=$5))
          AND ($2::timestamptz IS NULL OR (i.created_at,i.id)<($2::timestamptz,$3::uuid))
        ORDER BY i.created_at DESC,i.id DESC LIMIT $4`,
-      [albumId,cursor??null,cursorId??null,pageSize+1]);
+      [albumId,cursor??null,cursorId??null,pageSize+1,userId]);
     const hasMore=result.rows.length>pageSize;
     const items=result.rows.slice(0,pageSize);
     const last=items[items.length-1] as Record<string,unknown>|undefined;
