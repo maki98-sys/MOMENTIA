@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { MediaService } from './media.service';
@@ -76,6 +76,59 @@ describe('MediaService',()=>{
    expect(stored).toEqual(bytes);
    expect(result).toMatchObject({state:'uploaded',asset_status:'quarantined'});
    expect(transaction).toHaveBeenCalledTimes(1);
+  } finally {
+   if(previous===undefined) delete process.env.MEDIA_STORAGE_DIR;
+   else process.env.MEDIA_STORAGE_DIR=previous;
+   await rm(root,{recursive:true,force:true});
+  }
+ });
+ it('streams a staged upload, verifies checksum and quarantines the asset',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'momentia-media-stream-'));
+  const previous=process.env.MEDIA_STORAGE_DIR;
+  process.env.MEDIA_STORAGE_DIR=root;
+  const bytes=Buffer.from([0xff,0xd8,0xff,0xdb,0x00,0x43,0x00]);
+  const uploadId='123e4567-e89b-42d3-a456-426614174000';
+  const staged=join(root,'incoming.bin');
+  await writeFile(staged,bytes);
+  query.mockResolvedValueOnce({rowCount:1,rows:[{
+   id:uploadId,state:'created',uploader_id:'u',media_asset_id:'asset-stream',
+   size_bytes:bytes.length,checksum_sha256:createHash('sha256').update(bytes).digest('hex'),
+   storage_key_original:'pending/u/asset-stream',declared_mime_type:'image/jpeg',storage_provider:'local',
+  }]});
+  query.mockResolvedValueOnce({rowCount:1,rows:[{id:uploadId,state:'uploaded',media_asset_id:'asset-stream',asset_status:'quarantined'}]});
+  transaction.mockImplementation(async(operation:(client:unknown)=>Promise<unknown>)=>
+   operation({query:jest.fn().mockResolvedValue({rowCount:1,rows:[]})}));
+  try {
+   const uploadService=new MediaService({query,transaction} as unknown as DatabaseService,new LocalMediaStorage());
+   const result=await uploadService.receiveUploadFile('u',uploadId,staged,bytes.length);
+   expect(await readFile(join(root,'pending/u/asset-stream'))).toEqual(bytes);
+   expect(result).toMatchObject({state:'uploaded',asset_status:'quarantined'});
+  } finally {
+   if(previous===undefined) delete process.env.MEDIA_STORAGE_DIR;
+   else process.env.MEDIA_STORAGE_DIR=previous;
+   await rm(root,{recursive:true,force:true});
+  }
+ });
+ it('rejects staged upload checksum mismatch before writing to media storage',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'momentia-media-stream-invalid-'));
+  const previous=process.env.MEDIA_STORAGE_DIR;
+  process.env.MEDIA_STORAGE_DIR=root;
+  const bytes=Buffer.from([0xff,0xd8,0xff,0xdb,0x00,0x43,0x00]);
+  const uploadId='123e4567-e89b-42d3-a456-426614174000';
+  const staged=join(root,'incoming.bin');
+  await writeFile(staged,bytes);
+  query.mockResolvedValueOnce({rowCount:1,rows:[{
+   id:uploadId,state:'created',uploader_id:'u',media_asset_id:'asset-stream-invalid',
+   size_bytes:bytes.length,checksum_sha256:'0'.repeat(64),
+   storage_key_original:'pending/u/asset-stream-invalid',declared_mime_type:'image/jpeg',storage_provider:'local',
+  }]});
+  const storage=new LocalMediaStorage();
+  const putFile=jest.spyOn(storage,'putFile');
+  try {
+   const uploadService=new MediaService({query,transaction} as unknown as DatabaseService,storage);
+   await expect(uploadService.receiveUploadFile('u',uploadId,staged,bytes.length)).rejects.toThrow('SHA-256 checksum mismatch.');
+   expect(putFile).not.toHaveBeenCalled();
+   expect(transaction).not.toHaveBeenCalled();
   } finally {
    if(previous===undefined) delete process.env.MEDIA_STORAGE_DIR;
    else process.env.MEDIA_STORAGE_DIR=previous;
