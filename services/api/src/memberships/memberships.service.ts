@@ -13,9 +13,10 @@ export class MembershipsService {
     if (!access.rowCount) throw new NotFoundException('Space not found.');
     const result = await this.database.query(
       `SELECT sm.user_id, sm.role, sm.state, sm.joined_at,
-              u.display_name, u.avatar_url
+              p.display_name, p.avatar_media_id
        FROM space_memberships sm
        JOIN users u ON u.id = sm.user_id
+       LEFT JOIN user_profiles p ON p.user_id = sm.user_id
        WHERE sm.space_id = $1 AND sm.state = 'active'
        ORDER BY CASE sm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, sm.joined_at`,
       [spaceId],
