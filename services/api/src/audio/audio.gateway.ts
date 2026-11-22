@@ -80,6 +80,14 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const sessionIds = await this.audio.cleanupStaleParticipants(timeoutSeconds);
       for (const sessionId of sessionIds) {
         this.server?.to(room(sessionId)).emit('audio:presence:expired', { sessionId });
+        const sockets = await this.server?.in(room(sessionId)).fetchSockets();
+        for (const socket of sockets ?? []) {
+          const userId = socket.data.userId;
+          if (typeof userId !== 'string' || !(await this.audio.isActiveParticipant(userId,sessionId))) {
+            await socket.leave(room(sessionId));
+            socket.disconnect(true);
+          }
+        }
       }
     } catch (error) {
       this.logger.error('Could not expire stale Social Audio participants.', error instanceof Error ? error.stack : undefined);
@@ -178,6 +186,9 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const result = await this.audio.heartbeat(userId, sessionId);
       return { event: 'audio:heartbeat:ack', data: result };
     } catch {
+      await client.leave(room(sessionId));
+      delete client.data.sessionId;
+      client.disconnect(true);
       return { event: 'audio:error', data: { code: 'PARTICIPATION_INACTIVE' } };
     }
   }
