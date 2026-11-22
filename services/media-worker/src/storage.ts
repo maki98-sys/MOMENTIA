@@ -1,5 +1,6 @@
 import { createWriteStream, createReadStream } from 'node:fs';
-import { lstat, mkdir, rm, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -66,7 +67,25 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
     await assertNoSymlinkPath(this.root, target);
     return target;
   }
-  async commit(_storageKey: string, _localPath: string, _checksumSha256?: string): Promise<void> {}
+  async commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void> {
+    validateKey(storageKey);
+    if (!checksumSha256 || !/^[a-f0-9]{64}$/i.test(checksumSha256)) {
+      throw new Error('A SHA-256 checksum is required before committing a media object');
+    }
+    const target = this.pathFor(storageKey);
+    const source = resolve(localPath);
+    if (!source.startsWith(this.root + '/')) throw new Error('Local media staging path escapes configured root');
+    await assertNoSymlinkPath(this.root, source);
+    await assertNoSymlinkPath(this.root, target, true);
+    const info = await stat(source);
+    if (!info.isFile()) throw new Error('Media staging path must be a regular file');
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(source)) hash.update(chunk as Buffer);
+    if (hash.digest('hex') !== checksumSha256.toLowerCase()) {
+      throw new Error('Staged media object failed SHA-256 verification');
+    }
+    if (source !== target) await rename(source, target);
+  }
   async release(_storageKey: string): Promise<void> {}
   async remove(storageKey: string): Promise<void> {
     const target = this.pathFor(storageKey);
