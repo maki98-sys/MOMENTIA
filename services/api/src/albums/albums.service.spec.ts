@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AlbumsService } from './albums.service';
 import { DatabaseService } from '../database/database.service';
 describe('AlbumsService',()=>{
@@ -33,4 +33,39 @@ describe('AlbumsService',()=>{
  it('rejects unsupported fields',async()=>{
   await expect(service.create('u','s',{name:'Album',owner:true})).rejects.toBeInstanceOf(BadRequestException);
  });
+ it('serializes album listing with authorization changes and returns an empty list for an active member',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.list('u1','s1')).resolves.toEqual([]);
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock_shared');
+  expect(clientQuery.mock.calls[2][0]).toContain("sm.state='active'");
+ });
+ it('hides album listing from a user without active space membership',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.list('u1','s1')).rejects.toBeInstanceOf(NotFoundException);
+ });
+ it('does not create albums inside archived spaces',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.create('u1','s1',{name:'Album'})).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery.mock.calls[1][0]).toContain("s.status='active'");
+ });
+ it('does not add media items to albums in archived spaces',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.addItem('u1','s1','a1',{mediaAssetId:'m1'})).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery.mock.calls[1][0]).toContain("s.status='active'");
+ });
+
 });
