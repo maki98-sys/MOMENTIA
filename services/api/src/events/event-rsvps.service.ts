@@ -43,29 +43,34 @@ export class EventRsvpsService {
   }
 
   async summary(userId: string, spaceId: string) {
-    const access=await this.db.query(
-      `SELECT sm.role FROM spaces s
-       JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
-       WHERE s.id=$2 AND s.type='EVENT' AND s.status IN ('active','archived')`,
-      [userId,spaceId]);
-    if(!access.rowCount) throw new NotFoundException('Event not found.');
-    const counts=await this.db.query(
-      `SELECT count(*) FILTER(WHERE response='going')::int going,
-              count(*) FILTER(WHERE response='interested')::int interested,
-              count(*) FILTER(WHERE response='declined')::int declined,
-              COALESCE(sum(guest_count) FILTER(WHERE response='going'),0)::int additional_guests
-       FROM event_rsvps WHERE space_id=$1`,[spaceId]);
-    const result={...counts.rows[0]};
-    if(['owner','admin','moderator'].includes(String(access.rows[0].role))) {
-      const attendees=await this.db.query(
-        `SELECT r.user_id,up.display_name,r.response,r.guest_count,r.note,r.responded_at
-         FROM event_rsvps r LEFT JOIN user_profiles up ON up.user_id=r.user_id
-         WHERE r.space_id=$1 ORDER BY
-           CASE r.response WHEN 'going' THEN 0 WHEN 'interested' THEN 1 ELSE 2 END,
-           r.responded_at DESC`,[spaceId]);
-      return {...result,attendees:attendees.rows};
-    }
-    return result;
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const access=await client.query(
+        `SELECT sm.role FROM spaces s
+         JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
+         WHERE s.id=$2 AND s.type='EVENT' AND s.status IN ('active','archived')`,
+        [userId,spaceId]);
+      if(!access.rowCount) throw new NotFoundException('Event not found.');
+      const counts=await client.query(
+        `SELECT count(*) FILTER(WHERE r.response='going')::int going,
+                count(*) FILTER(WHERE r.response='interested')::int interested,
+                count(*) FILTER(WHERE r.response='declined')::int declined,
+                COALESCE(sum(r.guest_count) FILTER(WHERE r.response='going'),0)::int additional_guests
+         FROM event_rsvps r JOIN users u ON u.id=r.user_id AND u.status='active'
+         WHERE r.space_id=$1`,[spaceId]);
+      const result={...counts.rows[0]};
+      if(['owner','admin','moderator'].includes(String(access.rows[0].role))) {
+        const attendees=await client.query(
+          `SELECT r.user_id,up.display_name,r.response,r.guest_count,r.note,r.responded_at
+           FROM event_rsvps r JOIN users u ON u.id=r.user_id AND u.status='active'
+           LEFT JOIN user_profiles up ON up.user_id=r.user_id
+           WHERE r.space_id=$1 ORDER BY
+             CASE r.response WHEN 'going' THEN 0 WHEN 'interested' THEN 1 ELSE 2 END,
+             r.responded_at DESC`,[spaceId]);
+        return {...result,attendees:attendees.rows};
+      }
+      return result;
+    });
   }
 
   async remove(userId: string, spaceId: string) {
