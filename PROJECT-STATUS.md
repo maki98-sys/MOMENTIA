@@ -512,3 +512,43 @@ Issue #3 permanece **abierta** deliberadamente. Faltan pruebas específicas de r
 7. Ejecutar una auditoría final de regresión sobre el head final después de las próximas correcciones.
 
 **Estado:** CI de este corte completamente verde; base de datos y conjunto actual de pruebas aprobados. Backend todavía no certificado al 100%. No se asigna porcentaje global sin inventario ponderado verificable. PR #2 sigue abierto y no fusionado.
+
+
+---
+
+## Continuación de auditoría — verificación de snapshots y billing — 2026-11-22 (01:44 UTC)
+
+**Head verificado:** `832047aadfe4a1697b1de3c5a0be6b9153082ff2`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44972599693` | **success** |
+| API Coverage | `44972599728` | **success** |
+| Database Check | `44972599743` | **success** |
+
+- Unit tests: **180/180**, 25 suites.
+- PostgreSQL E2E de snapshots: **19/19**.
+- TypeScript, build y contenedor de producción: aprobados.
+- Database migrations, repetición/idempotencia, ledger, integridad, planes de consulta, timeline 10k, backup/restore, SQLite y concurrencia COUPLE: aprobados.
+- Cobertura global: statements **28.53%**, branches **26.13%**, functions **28.70%**, lines **30.50%**.
+- `billing-webhook.service.ts`: 80.18% statements y 94.11% lines.
+
+### Casos nuevos de seguridad aprobados
+
+- Revalidación de álbum después de revocar membresía del espacio.
+- Revalidación de diario COUPLE después de archivar el espacio. La base de datos exige exactamente dos miembros activos en espacios COUPLE, por lo que la revocación de acceso se modela mediante archivo, no dejando un espacio COUPLE con un único miembro.
+- Bloqueo concurrente de cambio de visibilidad de perfil.
+- El resto de pruebas de snapshots cubre membership, unfollow, block, cambio de audiencia, autor suspendido, timeline archivado, orden de bloqueos, cursor inicial, payload histórico sin datos, release, expiry, aislamiento y límite de sesiones.
+
+**Issue #3 cerrada** tras pasar estos criterios y CI. El bloqueo global es correcto según las pruebas, pero la medición de contención y su futura granularización siguen siendo una tarea de escalabilidad.
+
+### Siguiente bloque de auditoría
+
+1. Auditoría y pruebas de `MediaProcessingService`: leases, retries, escaneo, variantes, finalize, cleanup y cola de eliminación de objetos.
+2. Revisar y reforzar consultas de listado de álbumes para mantener la autorización estable durante lecturas concurrentes; impedir crear o añadir elementos en espacios archivados.
+3. Aumentar pruebas de `SessionTokenService`, privacidad, notificaciones, espacios, invitaciones y servicios de álbumes.
+4. Completar la revisión de todos los servicios/controladores no auditados integralmente.
+5. Resolver integraciones externas pendientes (proveedor de billing, proveedor musical, push/Web Push) cuando se definan proveedores y credenciales.
+6. Ejecutar la auditoría de producción y regresión final después de las correcciones restantes.
+
+No se declara terminado el backend completo ni se asigna porcentaje global de implementación. PR #2 sigue abierto y sin fusionar. Frontend continúa excluido.
