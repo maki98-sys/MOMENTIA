@@ -31,16 +31,21 @@ describe('SocialService',()=>{
   expect(query).not.toHaveBeenCalled();
  });
  it('does not remove a reaction when the caller cannot view the post',async()=>{
-  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.removeReaction('u1','private-post')).rejects.toBeInstanceOf(NotFoundException);
-  expect(query).toHaveBeenCalledTimes(1);
-  expect(query.mock.calls[0][0]).toContain('SELECT 1 FROM posts');
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+  expect(clientQuery.mock.calls[1][0]).toContain('SELECT 1 FROM posts');
  });
  it('authorizes visibility before deleting a reaction',async()=>{
-  query.mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]}).mockResolvedValueOnce({rowCount:1,rows:[]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.removeReaction('u1','visible-post')).resolves.toEqual({removed:true});
-  expect(query).toHaveBeenCalledTimes(2);
-  expect(query.mock.calls[1][0]).toContain('DELETE FROM content_reactions');
+  expect(clientQuery).toHaveBeenCalledTimes(3);
+  expect(clientQuery.mock.calls[2][0]).toContain('DELETE FROM content_reactions');
  });
  it('returns comments even when the author has no profile row',async()=>{
   const clientQuery=jest.fn()
@@ -107,16 +112,18 @@ describe('SocialService',()=>{
   expect(clientQuery.mock.calls[2][1]).toEqual(['visible-post','u1']);
  });
  it('rejects reactions to comments from blocked authors',async()=>{
-  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.reactToComment('u1','blocked-comment','like')).rejects.toBeInstanceOf(NotFoundException);
-  expect(query).toHaveBeenCalledTimes(1);
-  expect(query.mock.calls[0][0]).toContain('user_blocks');
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
  });
  it('rejects reaction removal against comments from blocked authors',async()=>{
-  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.removeCommentReaction('u1','blocked-comment')).rejects.toBeInstanceOf(NotFoundException);
-  expect(query).toHaveBeenCalledTimes(1);
-  expect(query.mock.calls[0][0]).toContain('user_blocks');
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
  });
 
 });
