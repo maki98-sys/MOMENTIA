@@ -25,6 +25,7 @@ export class DeviceSessionService {
       throw new BadRequestException('Platform must be ios, android or web.');
     }
     const pushToken = value.pushToken ?? null;
+    if (value.platform === 'web' && pushToken !== null) throw new BadRequestException('Web push delivery is not configured yet.');
     if (pushToken !== null && (typeof pushToken !== 'string' || pushToken.length > 4096 || !pushToken.trim())) {
       throw new BadRequestException('Invalid push token.');
     }
@@ -34,6 +35,8 @@ export class DeviceSessionService {
       catch { throw new BadRequestException('Push token encryption is not configured.'); }
     }
     return this.db.transaction(async client => {
+      const account=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[userId]);
+      if(!account.rowCount) throw new NotFoundException('Active account not found.');
       const result = await client.query(
         `INSERT INTO devices(user_id, platform, push_token_encrypted, last_seen_at)
          VALUES($1,$2,$3,now())
