@@ -119,7 +119,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       const target=safePath(storageKey);
       await storage.ensureParent(storageKey);
       try {
-        const output=await sharp(source,{failOn:'error'})
+        const output=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true})
           .rotate()
           .resize({width:definition.width,height:definition.width,fit:'inside',withoutEnlargement:true})
           .webp({quality:82,effort:4})
@@ -151,7 +151,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
     const info=await stat(target);
     if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
     const checksumSha256=await sha256(target);
-    await storage.commit(storageKey,target);
+    await storage.commit(storageKey,target,checksumSha256);
     return [{
       variantType:'video_poster',storageKey,mimeType:'image/jpeg',
       sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256,
