@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
-import { createReadStream } from 'fs';
-import { mkdtemp, rm, stat, writeFile } from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
+import { mkdtemp, rm, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import { MediaStorage } from './media-storage.service';
 import { DatabaseService } from '../database/database.service';
 
@@ -298,16 +300,33 @@ export class MediaService {
       let total=0;
       for(let i=0;i<parts.length;i++) {
         const part=parts[i];
-        const bytes=await this.storage.read(String(part.storage_key),String(part.storage_provider));
-        if(bytes.length!==Number(part.byte_size)||createHash('sha256').update(bytes).digest('hex')!==String(part.checksum_sha256)) {
+        const expectedPartBytes=Number(part.byte_size);
+        const opened=await this.storage.openReadStream(String(part.storage_key),expectedPartBytes,String(part.storage_provider));
+        if(opened.sizeBytes!==expectedPartBytes) throw new ConflictException('A stored upload part failed integrity verification.');
+        const partDigest=createHash('sha256');
+        let partBytes=0;
+        const verifier=new Transform({
+          transform(chunk:Buffer|string,_encoding,callback) {
+            const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+            partBytes+=bytes.length;
+            total+=bytes.length;
+            if(total>totalExpected||total>MAX_UPLOAD_BYTES) {
+              callback(new PayloadTooLargeException('Upload parts exceed the declared file size.'));
+              return;
+            }
+            partDigest.update(bytes);
+            fullDigest.update(bytes);
+            callback(null,bytes);
+          },
+        });
+        await pipeline(
+          opened.stream,
+          verifier,
+          createWriteStream(stagedFile,{flags:i===0?'wx':'a',mode:0o600}),
+        );
+        if(partBytes!==expectedPartBytes||partDigest.digest('hex')!==String(part.checksum_sha256)) {
           throw new ConflictException('A stored upload part failed integrity verification.');
         }
-        total+=bytes.length;
-        if(total>totalExpected||total>MAX_UPLOAD_BYTES) {
-          throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
-        }
-        fullDigest.update(bytes);
-        await writeFile(stagedFile,bytes,{flag:i===0?'wx':'a',mode:0o600});
       }
       if(total!==totalExpected) throw new ConflictException('Received parts do not match the declared file size.');
       if(fullDigest.digest('hex')!==String(prepared.upload.checksum_sha256).toLowerCase()) {
