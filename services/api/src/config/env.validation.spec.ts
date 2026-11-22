@@ -78,7 +78,14 @@ describe('environmentSchema', () => {
     expect(environmentSchema.validate(base).error).toBeDefined();
     expect(environmentSchema.validate({
       ...base,
+      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
+      PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+    }).error).toBeDefined();
+    expect(environmentSchema.validate({
+      ...base,
       MEDIA_WORKER_TOKEN: 'm'.repeat(32),
+      NOTIFICATION_WORKER_TOKEN: 'n'.repeat(32),
+      PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
     }).error).toBeUndefined();
   });
 
