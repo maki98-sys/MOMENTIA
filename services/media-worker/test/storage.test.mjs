@@ -67,6 +67,35 @@ test('local provider validates keys and confines filesystem operations to its ro
   });
 });
 
+test('local provider verifies staged variant checksums and atomically publishes files', async () => {
+  await withCleanEnv(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'momentia-local-commit-'));
+    process.env.MEDIA_STORAGE_DIR = root;
+    try {
+      const storage = new LocalMediaWorkerStorage();
+      const target = await storage.ensureParent('variants/asset/video_poster.jpg');
+      await writeFile(target, 'previous-valid-poster');
+      const staged = await storage.ensureParent('variants/asset/video_poster.jpg.tmp-job');
+      await writeFile(staged, 'new-poster');
+      const checksum = createHash('sha256').update('new-poster').digest('hex');
+      await storage.commit('variants/asset/video_poster.jpg', staged, checksum);
+      assert.equal(await readFile(target, 'utf8'), 'new-poster');
+      await assert.rejects(readFile(staged));
+
+      const badStaged = await storage.ensureParent('variants/asset/video_poster.jpg.tmp-bad');
+      await writeFile(badStaged, 'corrupt-poster');
+      await assert.rejects(
+        storage.commit('variants/asset/video_poster.jpg', badStaged, checksum),
+        /failed SHA-256 verification/,
+      );
+      assert.equal(await readFile(target, 'utf8'), 'new-poster');
+      assert.equal(await readFile(badStaged, 'utf8'), 'corrupt-poster');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 test('local provider refuses symlinked parent directories and symlinked files', async () => {
   await withCleanEnv(async () => {
     const root = await mkdtemp(join(tmpdir(), 'momentia-symlink-root-'));
