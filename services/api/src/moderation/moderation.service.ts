@@ -115,6 +115,15 @@ export class ModerationService {
       if(target!=='user') throw new BadRequestException('Account suspension applies only to users.');
       const r=await client.query(`UPDATE users SET status=$2 WHERE id=$1 AND status IN ('active','suspended') RETURNING id`,[id,action==='suspend_user'?'suspended':'active']);
       if(!r.rowCount) throw new NotFoundException('User target not found or cannot change status.');
+      if(action==='suspend_user') {
+        await client.query(
+          `UPDATE auth_sessions SET revoked_at=now()
+           WHERE user_id=$1 AND revoked_at IS NULL`,[id]);
+        await client.query(
+          `UPDATE notification_outbox SET status='cancelled',processing_started_at=NULL,
+             last_error_code='ACCOUNT_SUSPENDED'
+           WHERE user_id=$1 AND channel='push' AND status IN ('pending','failed','processing')`,[id]);
+      }
       return;
     }
     if(action==='remove_media') {
