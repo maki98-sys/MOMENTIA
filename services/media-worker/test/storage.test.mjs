@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -61,6 +61,26 @@ test('local provider validates keys and confines filesystem operations to its ro
       await assert.rejects(readFile(target));
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+test('local provider refuses symlinked parent directories and symlinked files', async () => {
+  await withCleanEnv(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'momentia-symlink-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'momentia-symlink-outside-'));
+    process.env.MEDIA_STORAGE_DIR = root;
+    try {
+      const storage = new LocalMediaWorkerStorage();
+      await symlink(outside, join(root, 'escape'), 'dir');
+      await assert.rejects(storage.ensureParent('escape/payload.bin'), /Symbolic links/);
+      await writeFile(join(outside, 'secret.bin'), 'secret');
+      await symlink(join(outside, 'secret.bin'), join(root, 'secret-link.bin'));
+      await assert.rejects(storage.stat('secret-link.bin'), /Symbolic links/);
+      await assert.rejects(storage.remove('secret-link.bin'), /Symbolic links/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 });
