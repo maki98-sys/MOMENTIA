@@ -87,6 +87,7 @@ export class CoupleInvitationsService {
     }
     const hash=createHash('sha256').update(token).digest('hex');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const found=await client.query(
         `SELECT id,inviter_user_id,invitee_user_id,expires_at,accepted_at,revoked_at
          FROM couple_space_invitations WHERE token_hash=$1 FOR UPDATE`,[hash]);
