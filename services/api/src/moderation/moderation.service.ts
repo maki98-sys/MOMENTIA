@@ -93,9 +93,21 @@ export class ModerationService {
       };
       const spec=states[target];
       if(!spec) throw new BadRequestException('Hide/restore is not supported for this target.');
+      if(target==='space'&&action==='restore') {
+        const prior=await client.query(
+          `SELECT action FROM moderation_audit_events
+           WHERE target_type='space' AND target_id=$1
+           ORDER BY created_at DESC,id DESC LIMIT 1`,[id]);
+        if(prior.rows[0]?.action!=='hide') {
+          throw new BadRequestException('Only a space archived by moderation can be restored by moderation.');
+        }
+      }
+      const expected=action==='hide'?spec.visible:spec.hidden;
       const value=action==='hide'?spec.hidden:spec.visible;
-      const r=await client.query(`UPDATE ${spec.table} SET ${spec.column}=$2 WHERE id=$1 RETURNING id`,[id,value]);
-      if(!r.rowCount) throw new NotFoundException('Moderation target not found.');
+      const r=await client.query(
+        `UPDATE ${spec.table} SET ${spec.column}=$2
+         WHERE id=$1 AND ${spec.column}=$3 RETURNING id`,[id,value,expected]);
+      if(!r.rowCount) throw new NotFoundException('Moderation target not found or not in a restorable state.');
       return;
     }
     if(action==='suspend_user'||action==='unsuspend_user') {
@@ -106,8 +118,50 @@ export class ModerationService {
     }
     if(action==='remove_media') {
       if(target!=='media') throw new BadRequestException('Media removal applies only to media targets.');
-      const r=await client.query(`UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1 AND status<>'deleted' RETURNING id`,[id]);
-      if(!r.rowCount) throw new NotFoundException('Media target not found or already deleted.');
+      const asset=await client.query(
+        `SELECT id,owner_id,size_bytes,storage_key_original,storage_provider,status
+         FROM media_assets WHERE id=$1 AND status<>'deleted' FOR UPDATE`,[id]);
+      if(!asset.rowCount) throw new NotFoundException('Media target not found or already deleted.');
+      const variants=await client.query(
+        `SELECT storage_key,size_bytes,storage_provider FROM media_variants
+         WHERE media_asset_id=$1 FOR UPDATE`,[id]);
+      const objects=[
+        {storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},
+        ...variants.rows,
+      ];
+      for(const object of objects) {
+        await client.query(
+          `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
+           VALUES($1,$2,$3) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+          [id,object.storage_key,object.storage_provider]);
+      }
+      await client.query(
+        `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
+         WHERE media_asset_id=$1 AND status IN ('pending','processing','failed')`,[id]);
+      await client.query(
+        `UPDATE posts SET status='removed',updated_at=now()
+         WHERE media_asset_id=$1 AND status<>'removed'`,[id]);
+      await client.query(
+        `UPDATE space_album_items SET status='removed',removed_at=now()
+         WHERE media_asset_id=$1 AND status='active'`,[id]);
+      await client.query(
+        `DELETE FROM timeline_entries WHERE media_asset_id=$1
+          OR post_id IN (SELECT id FROM posts WHERE media_asset_id=$1)`,[id]);
+      await client.query(
+        `UPDATE user_profiles SET avatar_media_id=NULL,updated_at=now()
+         WHERE avatar_media_id=$1`,[id]);
+      await client.query(
+        `UPDATE media_assets SET status='deleted',deleted_at=now() WHERE id=$1`,[id]);
+      await client.query(
+        `UPDATE media_uploads SET state='cancelled',updated_at=now()
+         WHERE media_asset_id=$1 AND state NOT IN ('completed','failed','cancelled')`,[id]);
+      const deletedBytes=Number(asset.rows[0].size_bytes)+variants.rows.reduce(
+        (sum:number,row:{size_bytes:string|number})=>sum+Number(row.size_bytes),0);
+      await client.query(
+        `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+         VALUES($1,$2,'deleted',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
+        [asset.rows[0].owner_id,id,-deletedBytes,'moderation-delete:'+id]);
     }
   }
+}
 }
