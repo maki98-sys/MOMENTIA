@@ -60,7 +60,9 @@ export class AlbumsService {
     if (cursorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cursorId)) {
       throw new BadRequestException('cursorId must be a UUID.');
     }
-    const access=await this.db.query(
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const access=await client.query(
       `SELECT a.id,a.visibility,sm.role FROM space_albums a
        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        WHERE a.id=$2 AND a.space_id=$3`,
@@ -69,7 +71,7 @@ export class AlbumsService {
     if(access.rows[0].visibility==='admins'&&!['owner','admin','moderator'].includes(String(access.rows[0].role))) {
       throw new NotFoundException('Album not found.');
     }
-    const result=await this.db.query(
+      const result=await client.query(
       `SELECT i.id,i.album_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.created_at,
               m.mime_type_detected,m.width,m.height,m.size_bytes
        FROM space_album_items i
@@ -81,10 +83,11 @@ export class AlbumsService {
     const hasMore=result.rows.length>pageSize;
     const items=result.rows.slice(0,pageSize);
     const last=items[items.length-1] as Record<string,unknown>|undefined;
-    return {
-      items,
-      nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
-    };
+      return {
+        items,
+        nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
+      };
+    });
   }
 
   async addItem(userId:string,spaceId:string,albumId:string,input:unknown) {
