@@ -59,7 +59,7 @@ export async function runFfmpeg(
       timedOut = true;
       child.kill('SIGTERM');
       forceKill = setTimeout(() => {
-        if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       }, terminationGraceMs);
     }, timeoutMs);
     timeout.unref?.();
