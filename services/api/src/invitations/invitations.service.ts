@@ -119,6 +119,7 @@ export class InvitationsService {
     }
     const tokenHash = createHash('sha256').update(token).digest('hex');
     return this.database.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const invitation = await client.query(
         `SELECT i.id, i.space_id, i.role, i.expires_at, i.max_uses, i.uses,
                 i.approval_required, i.revoked_at, s.type, s.status
