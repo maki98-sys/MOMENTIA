@@ -122,3 +122,12 @@ These tables are part of the current migration chain and must be included in the
 - Retention periods and deletion/anonymization behavior must be approved for each jurisdiction before policies are enabled.
 - The schema prepares Social Audio state; synchronized playback still depends on a licensed music provider and its platform SDK/terms.
 - Subscription and payment tables do not mean a payment provider has been selected or connected.
+
+
+## Authorization and device lifecycle extensions (0064–0066)
+
+- Migration 0064 adds transaction-level authorization write locks to changes that can alter access to shared content: memberships, relationships, blocks, spaces, posts, comments, albums, album items, media ownership/status and account status.
+- Migration 0065 adds the same lock for profile visibility changes, which affect follow authorization.
+- These triggers use the shared authorization advisory-lock key. Snapshot and read paths hold the shared lock while permission-sensitive data is read; mutation paths acquire the exclusive lock before row locks and permission checks.
+- Migration 0066 adds nullable `devices.device_key` with a unique partial index. New device registrations must provide a stable installation UUID. Re-registering a key updates the device; transferring it to another account revokes the previous account's sessions and pending push deliveries.
+- The authorization lock is deliberately global for correctness in this phase. It may serialize unrelated permission mutations; a per-user/per-resource epoch design remains a future scalability optimization.
