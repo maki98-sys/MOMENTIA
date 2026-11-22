@@ -378,7 +378,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
       expect(settled).toBe(false);
       await holder.query('COMMIT');
       committed=true;
-      await expect(mutation).resolves.toMatchObject({removed:true});
+      await expect(mutation).resolves.toMatchObject({user_id:viewerId,state:'removed'});
       expect(settled).toBe(true);
     } finally {
       if(!committed) await holder.query('ROLLBACK');
