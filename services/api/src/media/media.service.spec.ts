@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -67,4 +67,12 @@ describe('MediaService',()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:100,checksumSha256:'bad'},'key')).rejects.toBeInstanceOf(BadRequestException);
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('does not expose shared media owned by suspended accounts',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect((service as any).findViewableAsset('viewer-1','asset-1')).rejects.toBeInstanceOf(NotFoundException);
+  expect(query.mock.calls[0][0]).toContain("asset_owner.status='active'");
+  expect(query.mock.calls[0][0]).toContain("post_author.status='active'");
+  expect(query.mock.calls[0][0]).toContain("album_adder.status='active'");
+ });
+
 });
