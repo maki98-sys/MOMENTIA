@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types';
 import type { AudioService } from './audio.service';
 import type { AudioGateway } from './audio.gateway';
 jest.mock('../auth/oidc-bearer.guard',()=>({OidcBearerGuard:class OidcBearerGuard{}}));
+jest.mock('./audio.gateway',()=>({AudioGateway:class AudioGateway{}}));
 import { AudioController } from './audio.controller';
 
 describe('AudioController',()=>{
