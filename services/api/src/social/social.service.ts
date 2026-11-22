@@ -172,15 +172,18 @@ export class SocialService {
   }
 
   async comments(userId: string, postId: string) {
-    await this.assertCanView(userId,postId);
-    const r=await this.db.query(`SELECT c.id,c.post_id,c.author_id,c.body,c.created_at,up.display_name
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      await this.assertCanView(userId,postId,client);
+      const r=await client.query(`SELECT c.id,c.post_id,c.author_id,c.body,c.created_at,up.display_name
       FROM post_comments c LEFT JOIN user_profiles up ON up.user_id=c.author_id
       WHERE c.post_id=$1 AND c.status='visible'
         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
           (b.blocker_id=$2 AND b.blocked_id=c.author_id)
           OR (b.blocker_id=c.author_id AND b.blocked_id=$2))
       ORDER BY c.created_at ASC LIMIT 200`,[postId,userId]);
-    return r.rows;
+      return r.rows;
+    });
   }
 
   async addComment(userId: string, postId: string, body: unknown) {
@@ -282,8 +285,8 @@ export class SocialService {
     return { removed:true };
   }
 
-  private async assertCanInteract(userId: string, postId: string) {
-    const result=await this.db.query(`SELECT p.audience,p.space_id,sm.role
+  private async assertCanInteract(userId: string, postId: string, executor: {query:(sql:string,values?:unknown[])=>Promise<any>} = this.db) {
+    const result=await executor.query(`SELECT p.audience,p.space_id,sm.role
       FROM posts p LEFT JOIN space_memberships sm
         ON sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'
       WHERE p.id=$2`,[userId,postId]);
@@ -293,8 +296,8 @@ export class SocialService {
     }
   }
 
-  private async assertCanView(userId: string, postId: string) {
-    const r=await this.db.query(`SELECT 1 FROM posts p WHERE p.id=$2 AND p.status='published'
+  private async assertCanView(userId: string, postId: string, executor: {query:(sql:string,values?:unknown[])=>Promise<any>} = this.db) {
+    const r=await executor.query(`SELECT 1 FROM posts p WHERE p.id=$2 AND p.status='published'
       AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
         (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
       AND (p.author_id=$1 OR p.audience='public'
