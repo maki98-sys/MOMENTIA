@@ -31,6 +31,18 @@ describe('SessionTokenService',()=>{
 
   beforeEach(()=>{query.mockReset();transaction.mockReset();});
 
+  it('fails fast when the session signing secret is missing or shorter than 32 bytes',()=>{
+    const invalidConfig={get:jest.fn().mockReturnValue('short')} as unknown as ConfigService;
+    expect(()=>new SessionTokenService(db,invalidConfig)).toThrow('MOMENTIA_SESSION_SECRET must contain at least 32 bytes.');
+    const missingConfig={get:jest.fn().mockReturnValue(undefined)} as unknown as ConfigService;
+    expect(()=>new SessionTokenService(db,missingConfig)).toThrow('MOMENTIA_SESSION_SECRET must contain at least 32 bytes.');
+  });
+
+  it('accepts a signing secret of at least 32 UTF-8 bytes',()=>{
+    const validConfig={get:jest.fn().mockReturnValue('s'.repeat(32))} as unknown as ConfigService;
+    expect(()=>new SessionTokenService(db,validConfig)).not.toThrow();
+  });
+
   it('creates an access and refresh token only for an active account',async()=>{
     const clientQuery=jest.fn()
       .mockResolvedValueOnce({rows:[{id:userId}],rowCount:1})
