@@ -111,8 +111,7 @@ export class CoupleInvitationsService {
       const ownerPlan=await client.query(
         `SELECT p.features,COALESCE((p.features->>'max_spaces')::integer,5) max_spaces,
                 (SELECT count(*)::integer FROM spaces s
-                 JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1 AND sm.state='active'
-                 WHERE s.status IN ('active','archived')) owned_spaces
+                 WHERE s.owner_id=$1 AND s.status IN ('active','archived')) owned_spaces
          FROM subscription_plans p
          LEFT JOIN LATERAL (
            SELECT us.plan_id FROM user_subscriptions us
