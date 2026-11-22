@@ -13,6 +13,9 @@ export class OidcIdentityService {
   constructor(private readonly database: DatabaseService) {}
 
   async resolveOrProvision(principal: OidcPrincipal): Promise<ResolvedIdentity> {
+    if (!principal.issuer || !principal.subject || principal.subject.length > 512) {
+      throw new UnauthorizedException('The external identity proof is invalid.');
+    }
     return this.database.transaction(async (client) => {
       // Serialize first-login attempts for the same external identity.
       await client.query(
@@ -37,6 +40,9 @@ export class OidcIdentityService {
       if (!email || email.length > 320) {
         throw new UnauthorizedException('The identity provider returned an invalid email address.');
       }
+
+      // Serialize different external identities claiming the same verified email.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`email:${email}`]);
 
       // Existing accounts must use an authenticated account-linking flow.
       // Matching email alone is deliberately not sufficient to link identities.
