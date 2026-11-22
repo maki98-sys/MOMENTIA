@@ -64,4 +64,11 @@ describe('ModerationService',()=>{
   it('rejects moderation actions from non-moderators',async()=>{
     await expect(service.queue('ordinary-user')).rejects.toBeInstanceOf(ForbiddenException);
   });
+  it('does not apply enforcement actions when a report is dismissed',async()=>{
+    await expect(service.review('moderator-1','00000000-0000-4000-8000-000000000040',{
+      decision:'dismiss',action:'hide',
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
 });
