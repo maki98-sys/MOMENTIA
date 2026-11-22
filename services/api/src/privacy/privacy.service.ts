@@ -100,7 +100,7 @@ export class PrivacyService {
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$1,'account.deletion_requested','account',$1,
-           jsonb_build_object('requestId',$2,'scheduledFor',$3))`,
+           jsonb_build_object('requestId',$2::text,'scheduledFor',$3::timestamptz))`,
         [userId,inserted.rows[0].id,inserted.rows[0].scheduled_for]);
       return { ...inserted.rows[0], gracePeriodDays: 30, sessionsRevoked: true };
     });
@@ -454,7 +454,7 @@ export class PrivacyService {
          RETURNING id,status,completed_at`, [requestId,workerId]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'account.deletion_completed','account',$1,jsonb_build_object('requestId',$2))`,
+         VALUES($1,$1,'account.deletion_completed','account',$1,jsonb_build_object('requestId',$2::text))`,
         [request.user_id,requestId]);
       return completed.rows[0];
     });
@@ -488,7 +488,7 @@ export class PrivacyService {
         `UPDATE users SET status='active',deletion_requested_at=NULL WHERE id=$1`,[userId]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'account.deletion_cancelled','account',$1,jsonb_build_object('requestId',$2))`,
+         VALUES($1,$1,'account.deletion_cancelled','account',$1,jsonb_build_object('requestId',$2::text))`,
         [userId,request.rows[0].id]);
       return { cancelled: true, requestId: request.rows[0].id };
     });
