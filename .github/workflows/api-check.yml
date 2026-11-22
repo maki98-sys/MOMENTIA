@@ -14,6 +14,7 @@ on:
   pull_request:
     paths:
       - "services/api/**"
+      - "services/media-worker/**"
       - "database/**"
       - ".github/workflows/api-check.yml"
   workflow_dispatch:
