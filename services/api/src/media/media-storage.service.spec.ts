@@ -114,6 +114,23 @@ describe('S3MediaStorage server-side encryption', () => {
     expect(command.input.ServerSideEncryption).toBe('AES256');
   });
 
+  it('streams staged files to S3 with a fixed content length and server-side encryption', async () => {
+    const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-staged-'));
+    const source = join(stage, 'upload.bin');
+    const payload = Buffer.from('streamed-s3-content');
+    await writeFile(source, payload);
+    try {
+      const storage = new S3MediaStorage();
+      await storage.putFile('users/u1/streamed.bin', source, payload.length);
+      const command = sendSpy.mock.calls[0][0] as PutObjectCommand;
+      expect(command.input.ContentLength).toBe(payload.length);
+      expect(command.input.Body).toBeDefined();
+      expect(command.input.ServerSideEncryption).toBe('AES256');
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  });
+
   it('uses the configured customer-managed KMS key when provided', async () => {
     process.env.MEDIA_S3_SSE_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/momentia';
     const storage = new S3MediaStorage();
