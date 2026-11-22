@@ -29,6 +29,7 @@ export class SocialService {
   async follow(actorId: string, targetId: string) {
     this.assertDifferentUsers(actorId, targetId);
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const target = await client.query(
         `SELECT u.id, p.visibility FROM users u
          JOIN user_profiles p ON p.user_id=u.id
@@ -95,6 +96,7 @@ export class SocialService {
   async block(actorId: string, targetId: string) {
     this.assertDifferentUsers(actorId,targetId);
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const target=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[targetId]);
       if(!target.rowCount) throw new NotFoundException('User not found.');
       await client.query(
@@ -120,6 +122,7 @@ export class SocialService {
   async create(userId: string, input: unknown) {
     const v = this.validatePost(input);
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       if (v.mediaAssetId) {
         const media = await client.query(`SELECT id FROM media_assets WHERE id=$1 AND owner_id=$2 AND status='ready'`, [v.mediaAssetId,userId]);
         if (!media.rowCount) throw new NotFoundException('Media asset not found.');
