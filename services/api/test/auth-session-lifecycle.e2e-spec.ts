@@ -1,3 +1,16 @@
+jest.mock('jose', () => ({
+  SignJWT: class {
+    setProtectedHeader() { return this; }
+    setIssuer() { return this; }
+    setAudience() { return this; }
+    setSubject() { return this; }
+    setIssuedAt() { return this; }
+    setExpirationTime() { return this; }
+    async sign() { return 'mock.signed.access.token'; }
+  },
+  jwtVerify: jest.fn(),
+}));
+
 import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
