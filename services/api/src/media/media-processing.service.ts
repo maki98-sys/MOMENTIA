@@ -239,6 +239,7 @@ export class MediaProcessingService {
          SELECT d.id FROM media_storage_deletions d
          JOIN media_assets a ON a.id=d.media_asset_id
          WHERE d.status IN ('pending','failed') AND d.available_at<=now()
+           AND d.attempts<d.max_attempts AND d.dead_lettered_at IS NULL
            AND ($3::uuid IS NULL OR a.owner_id=$3)
          ORDER BY d.available_at,d.created_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
        )
@@ -260,9 +261,17 @@ export class MediaProcessingService {
     }
     const result=await this.db.query(
       `UPDATE media_storage_deletions SET status=$3,locked_at=NULL,locked_by=NULL,
-         last_error_code=$4,available_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+         last_error_code=CASE
+           WHEN $3='completed' THEN NULL
+           WHEN attempts>=max_attempts THEN 'RETRY_EXHAUSTED:'||left($4,96)
+           ELSE $4
+         END,
+         dead_lettered_at=CASE WHEN $3='failed' AND attempts>=max_attempts THEN now() ELSE NULL END,
+         available_at=CASE WHEN $3='failed'
+           THEN now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+           ELSE now() END
        WHERE id=$1 AND status='processing' AND locked_by=$2
-       RETURNING id,status,media_asset_id`,
+       RETURNING id,status,media_asset_id,dead_lettered_at`,
       [deletionId,workerId,value.success?'completed':'failed',value.success?null:String(value.errorCode??'STORAGE_DELETE_FAILED').slice(0,120)]);
     if(!result.rowCount) throw new NotFoundException('Storage deletion task not found or not owned by this worker.');
     return result.rows[0];
