@@ -367,7 +367,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
   });
 
 
-  it('revalidates couple journal access after partner membership is revoked', async () => {
+  it('revalidates couple journal access after the couple space is archived', async () => {
     const coupleSpaceId=randomUUID();
     const client=await pool.connect();
     try {
@@ -402,9 +402,8 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
       expect(first.hasMore).toBe(true);
       if(!first.snapshotId) throw new Error('Expected couple journal snapshot id.');
       await pool.query(
-        `UPDATE space_memberships SET state='left',left_at=now()
-         WHERE space_id=$1 AND user_id=$2 AND state='active'`,
-        [coupleSpaceId,viewerId],
+        `UPDATE spaces SET status='archived' WHERE id=$1 AND status='active'`,
+        [coupleSpaceId],
       );
       const next=await sync.snapshot(viewerId,{
         snapshotId:first.snapshotId,sections:['coupleJournal'],limit:1,offsets:first.nextOffsets,
