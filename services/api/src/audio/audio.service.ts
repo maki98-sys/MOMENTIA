@@ -241,7 +241,7 @@ export class AudioService {
       if (role === 'host') {
         await client.query(
           `UPDATE audio_sessions
-           SET state='ended',playback_state='ended',position_ms=0,
+           SET state='ended',playback_state='ended',position_ms=0,current_item_id=NULL,
                server_version=server_version+1,updated_at=now()
            WHERE id=$1 AND state IN ('created','playing','paused')`,
           [sessionId],
@@ -342,14 +342,15 @@ export class AudioService {
       }
       const state = action === 'end' ? 'ended' : action === 'play' || (action === 'next' && itemId !== null) ? 'playing' : action === 'pause' ? 'paused' : action === 'next' && itemId === null ? 'ended' : undefined;
       const playback = action === 'end' ? 'ended' : action === 'play' || (action === 'next' && itemId !== null) ? 'playing' : action === 'pause' ? 'paused' : action === 'next' && itemId === null ? 'ended' : undefined;
-      const resetPosition = action === 'next';
+      const resetPosition = action === 'next' || action === 'end';
+      const clearCurrentItem = action === 'end' || (action === 'next' && itemId === null);
       const r = await client.query(`UPDATE audio_sessions SET
         state=COALESCE($2,state),playback_state=COALESCE($3,playback_state),
         position_ms=CASE WHEN $4 THEN $5 WHEN $8 THEN 0 ELSE position_ms END,
         current_item_id=CASE WHEN $7 THEN $6 ELSE COALESCE($6,current_item_id) END,
         server_version=server_version+1,updated_at=now()
         WHERE id=$1 RETURNING id,state,playback_state,position_ms,current_item_id,server_version,updated_at`,
-        [sessionId,state ?? null,playback ?? null,action==='seek',position,itemId,action==='next' && itemId===null,resetPosition]);
+        [sessionId,state ?? null,playback ?? null,action==='seek',position,itemId,clearCurrentItem,resetPosition]);
       if (itemId !== null) await client.query(`UPDATE audio_queue_items SET state=CASE WHEN id=$1 THEN 'current' WHEN state='current' THEN 'played' ELSE state END WHERE session_id=$2 AND state IN ('queued','current')`, [itemId,sessionId]);
       if (action === 'end' || (action === 'next' && itemId === null)) await client.query(`UPDATE audio_queue_items SET state='played' WHERE session_id=$1 AND state IN ('queued','current')`, [sessionId]);
       return r.rows[0];
