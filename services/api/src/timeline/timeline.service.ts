@@ -47,9 +47,10 @@ export class TimelineService {
              OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
          ))
          AND (t.media_asset_id IS NULL OR (
-           m.id IS NOT NULL AND media_owner.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
-             (b.blocker_id=$1 AND b.blocked_id=m.owner_id)
-             OR (b.blocker_id=m.owner_id AND b.blocked_id=$1))
+           m.id IS NOT NULL AND media_owner.id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM user_blocks media_block WHERE
+             (media_block.blocker_id=$1 AND media_block.blocked_id=m.owner_id)
+             OR (media_block.blocker_id=m.owner_id AND media_block.blocked_id=$1))
          ))
        ORDER BY t.occurred_at DESC,t.id DESC LIMIT $5`,
       [userId,spaceId,cursor??null,cursorId??null,n]);
