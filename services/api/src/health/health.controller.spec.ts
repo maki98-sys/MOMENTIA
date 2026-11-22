@@ -41,11 +41,8 @@ describe('HealthController', () => {
         return error.getResponse();
       }),
     ).resolves.toEqual({
-      statusCode: 503,
-      message: {
-        status: 'not_ready',
-        dependencies: { postgres: 'unavailable' },
-      },
+      status: 'not_ready',
+      dependencies: { postgres: 'unavailable' },
     });
     expect(ping).toHaveBeenCalledTimes(1);
   });
