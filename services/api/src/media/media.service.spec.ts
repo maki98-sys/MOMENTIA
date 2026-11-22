@@ -19,6 +19,15 @@ describe('MediaService',()=>{
   await expect(service.createUpload('u',{fileName:'photo.jpg',sizeBytes:50*1024*1024+1,checksumSha256:'a'.repeat(64)},'key')).rejects.toBeInstanceOf(BadRequestException);
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('checks upload ownership before accepting a request body',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.assertUploadOwner('attacker','123e4567-e89b-42d3-a456-426614174000'))
+   .rejects.toBeInstanceOf(NotFoundException);
+  expect(query).toHaveBeenCalledWith(
+   'SELECT 1 FROM media_uploads WHERE id=$1 AND uploader_id=$2',
+   ['123e4567-e89b-42d3-a456-426614174000','attacker'],
+  );
+ });
  it('rejects malformed upload ids before querying storage',async()=>{
   await expect(service.receiveUpload('u','not-a-uuid',Buffer.from('x'))).rejects.toBeInstanceOf(BadRequestException);
   expect(query).not.toHaveBeenCalled();
