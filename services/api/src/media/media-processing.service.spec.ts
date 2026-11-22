@@ -44,7 +44,8 @@ describe('MediaProcessingService',()=>{
     await expect(service.complete(worker,jobId,{success:true,scanVerdict:'clean'}))
       .resolves.toMatchObject({jobId,status:'completed',mediaAssetId:assetId,nextStage:'variants'});
     expect(clientQuery.mock.calls[2][0]).toContain('moderation_scan_status');
-    expect(clientQuery.mock.calls[3][0]).toContain("'image_variants'");
+    expect(clientQuery.mock.calls[3][0]).toContain('VALUES($1,$2)');
+    expect(clientQuery.mock.calls[3][1]).toEqual([assetId,'image_variants']);
     expect(clientQuery.mock.calls[4][0]).toContain("status='completed'");
   });
 
