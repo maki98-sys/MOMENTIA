@@ -15,6 +15,8 @@ describe('NotificationsService', () => {
     const result = await service.list('user-1', undefined, 100);
 
     expect(query.mock.calls[0][1]).toEqual(['user-1', null, null, false, 100]);
+    expect(query.mock.calls[0][0]).toContain('user_blocks');
+    expect(query.mock.calls[1][0]).toContain('user_blocks');
     expect(result.unreadCount).toBe(4);
     expect(result.items).toHaveLength(100);
     expect(result.nextCursor).toBeTruthy();
@@ -66,6 +68,19 @@ describe('NotificationsService', () => {
     await expect(createService.createForUser('user-1','social.comment',{postId:'p1'}))
       .rejects.toThrow('Notification recipient is not active.');
     expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels pending push notifications from an actor the recipient has blocked',async()=>{
+    const transaction=jest.fn();
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[{id:'outbox-2',notification_id:'n2',user_id:'user-1',device_id:'device-2',attempts:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'outbox-2',notification_id:'n2',user_id:'user-1',device_id:'device-2',attempts:1,platform:'ios',push_token_encrypted:'encrypted',category:'social.comment',payload:{actorId:'blocked-user'}}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    const dispatchService=new NotificationsService({query,transaction} as unknown as DatabaseService);
+    query.mockResolvedValueOnce({rows:[{revoked_at:null,platform:'ios',push_token_encrypted:'encrypted',push_enabled:true,actor_blocked:true}],rowCount:1});
+    query.mockResolvedValueOnce({rows:[],rowCount:1});
+    await expect(dispatchService.dispatchPushBatch(1)).resolves.toEqual({claimed:1,delivered:0,failed:0});
+    expect(query.mock.calls[1][1][1]).toBe('ACTOR_BLOCKED');
   });
 
 });
