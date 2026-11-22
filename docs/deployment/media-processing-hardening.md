@@ -6,6 +6,7 @@ This runbook describes the operational controls required by the API and media wo
 
 - `MEDIA_FFMPEG_TIMEOUT_MS`: worker-enforced FFmpeg wall-clock limit, clamped to 1,000–300,000 ms; default 120,000 ms.
 - `MEDIA_MAX_IMAGE_PIXELS`: Sharp decoded-pixel limit, clamped to 1,000,000–100,000,000; default 40,000,000.
+- Original object downloads are capped at the 200 MiB platform ceiling. S3 objects are preflighted with `HeadObject` against the database-declared size before `GetObject`; the download stream independently enforces the byte ceiling and declared length, deleting partial staging files on mismatch.
 - FFmpeg poster extraction is restricted to `file,pipe` protocols, caps a single allocation at 64 MiB, and caps poster output at 20 MiB.
 - FFmpeg diagnostics are retained in a bounded buffer. A timeout sends SIGTERM and escalates to SIGKILL if the child does not exit.
 - ClamAV results are accepted only as complete `stream: OK` or `stream: ... FOUND` responses. Scanner errors, timeouts, and premature disconnects fail closed. An unavailable scanner leaves the asset quarantined and retries the scan with bounded backoff; it never schedules image/video variants.
