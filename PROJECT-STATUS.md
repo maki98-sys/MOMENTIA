@@ -432,8 +432,8 @@ No se modifica el avance global ni el avance ponderado de backend en esta actual
 
 - Migraciones corregidas o añadidas: `0036`, `0039`, `0056`, `0061`–`0066`.
 - Última verificación de base de datos completada: workflow `44969542443`, commit `a728f08`, resultado **success**. Aplicación de migraciones, repetición/idempotencia, ledger, integridad, smoke test de timeline, backup/restore, SQLite y prueba de membresía COUPLE.
-- Última cobertura completada disponible en el corte anterior: workflow `44969387684`, commit `0fc`; **164/164 pruebas unitarias, 23 suites**.
-- Cobertura en ese corte: statements **29,47%**, branches **27,78%**, functions **28,33%**, lines **31,28%**. La siguiente ejecución está en curso tras añadir más pruebas y correcciones; estos valores no se presentan como resultado del head actual.
+- Última cobertura completada disponible: workflow `44969699881`, commit `ef7ac503`; **168/168 pruebas unitarias, 24 suites**.
+- Cobertura en ese corte: statements **30,29%**, branches **28,13%**, functions **29,24%**, lines **32,26%**. La siguiente ejecución está en curso tras añadir más pruebas y correcciones; estos valores no se presentan como resultado del head actual.
 - Se añadieron pruebas PostgreSQL para revocación entre páginas, unfollow, bloqueo, cambio de audiencia, autor suspendido, timeline archivado, cursor, redacción de payloads de pull, expiración, liberación, aislamiento por usuario y límite de sesiones. También se añadió una prueba de serialización de revocación de membresía; su CI está pendiente.
 - PR #2 permanece abierto y sin fusionar.
 
