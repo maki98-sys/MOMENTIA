@@ -41,6 +41,11 @@ export class SessionTokenService {
     const refreshHash = this.hash(refreshToken);
     const familyId = randomUUID();
     const session = await this.db.transaction(async client => {
+      const account = await client.query(
+        `SELECT id FROM users WHERE id=$1 AND status='active' FOR UPDATE`,
+        [userId],
+      );
+      if (!account.rowCount) throw new UnauthorizedException('MOMENTIA account is not active.');
       if (deviceId) {
         const device = await client.query(
           `SELECT id FROM devices WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR UPDATE`,
