@@ -20,8 +20,16 @@ export const environmentSchema = Joi.object({
     then: Joi.string().min(32).required(),
     otherwise: Joi.string().min(32),
   }),
-  ACCOUNT_DELETION_WORKER_TOKEN: Joi.string().min(32),
-  AUTH_SESSION_WORKER_TOKEN: Joi.string().min(32),
+  ACCOUNT_DELETION_WORKER_TOKEN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32),
+  }),
+  AUTH_SESSION_WORKER_TOKEN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32),
+  }),
   MEDIA_STORAGE_PROVIDER: Joi.string().valid('local','s3').default('local'),
   MEDIA_UPLOAD_STAGING_MAX_CONCURRENT: Joi.number().integer().min(1).max(32).default(4),
   MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT: Joi.number().integer().min(1).max(8).default(2),
@@ -36,9 +44,21 @@ export const environmentSchema = Joi.object({
     then: Joi.string().min(32).required(),
     otherwise: Joi.string().min(32),
   }),
-  EVENTS_WORKER_TOKEN: Joi.string().min(32),
-  AUDIO_WORKER_TOKEN: Joi.string().min(32),
-  BILLING_WORKER_TOKEN: Joi.string().min(32),
+  EVENTS_WORKER_TOKEN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32),
+  }),
+  AUDIO_WORKER_TOKEN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32),
+  }),
+  BILLING_WORKER_TOKEN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32),
+  }),
   PUSH_TOKEN_ENCRYPTION_KEY: Joi.when('NODE_ENV', {
     is: 'production',
     then: Joi.string().base64().custom((value, helpers) => Buffer.from(value, 'base64').length === 32 ? value : helpers.error('any.invalid')).required(),
