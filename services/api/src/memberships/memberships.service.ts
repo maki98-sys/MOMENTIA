@@ -40,7 +40,7 @@ export class MembershipsService {
            AND (target.role<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
              WHERE owner.space_id=target.space_id AND owner.user_id=$1
                AND owner.state='active' AND owner.role='owner'))
-           AND ($4<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
+           AND ($4::text<>'admin' OR EXISTS (SELECT 1 FROM space_memberships owner
              WHERE owner.space_id=target.space_id AND owner.user_id=$1
                AND owner.state='active' AND owner.role='owner'))
          FOR UPDATE OF target`,
