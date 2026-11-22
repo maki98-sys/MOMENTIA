@@ -257,6 +257,7 @@ export class MediaService {
     await this.storage.put(String(row.storage_key_original), bytes, String(row.storage_provider));
     try {
       await this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
         const updated=await client.query(
           `UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
            WHERE id=$2 AND uploader_id=$3
@@ -288,6 +289,7 @@ export class MediaService {
       throw new BadRequestException('Invalid upload id.');
     }
     return this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result=await client.query(
         `SELECT u.id,u.state,u.media_asset_id,a.status asset_status,a.storage_provider
          FROM media_uploads u
@@ -440,6 +442,7 @@ export class MediaService {
   async deleteAsset(userId:string,assetId:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException('Invalid media asset id.');
     return this.db.transaction(async client=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const asset=await client.query(
         `SELECT id,status,size_bytes,storage_key_original,storage_provider FROM media_assets
          WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[assetId,userId]);
