@@ -9,7 +9,7 @@ import { AudioService } from './audio.service';
 describe('AudioGateway', () => {
   const verifier = { verifyAccessToken: jest.fn() } as unknown as OidcTokenVerifier;
   const identities = { resolveOrProvision: jest.fn() } as unknown as OidcIdentityService;
-  const audio = { getSession: jest.fn(), heartbeat: jest.fn() } as unknown as AudioService;
+  const audio = { getSession: jest.fn(), join: jest.fn(), leave: jest.fn(), heartbeat: jest.fn() } as unknown as AudioService;
   let gateway: AudioGateway;
 
   beforeEach(() => {
@@ -34,6 +34,7 @@ describe('AudioGateway', () => {
   });
 
   it('does not join a session room when membership lookup fails', async () => {
+    (audio.join as jest.Mock).mockResolvedValue({joined:true});
     (audio.getSession as jest.Mock).mockRejectedValue(new Error('not a member'));
     const socket = { data: { userId: 'user-123' }, join: jest.fn(), emit: jest.fn() } as any;
     const result = await gateway.join(socket, { sessionId: '11111111-1111-4111-8111-111111111111' });
@@ -43,9 +44,12 @@ describe('AudioGateway', () => {
 
   it('joins only an authorized session and emits its initial snapshot', async () => {
     const snapshot = { id: '11111111-1111-4111-8111-111111111111', server_version: 4 };
+    (audio.join as jest.Mock).mockResolvedValue({joined:true});
     (audio.getSession as jest.Mock).mockResolvedValue(snapshot);
+    gateway.server = {to:jest.fn(()=>({emit:jest.fn()}))} as any;
     const socket = { data: { userId: 'user-123' }, join: jest.fn(), emit: jest.fn() } as any;
     const result = await gateway.join(socket, { sessionId: snapshot.id });
+    expect(audio.join).toHaveBeenCalledWith('user-123',snapshot.id);
     expect(socket.join).toHaveBeenCalledWith(`audio-session:${snapshot.id}`);
     expect(socket.emit).toHaveBeenCalledWith('audio:snapshot', snapshot);
     expect(result).toEqual({ event: 'audio:joined', data: { sessionId: snapshot.id, serverVersion: 4 } });
