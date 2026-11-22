@@ -36,6 +36,14 @@ describe('LocalMediaStorage symlink path hardening', () => {
     await expect(readFile(join(root, 'users/u1/photo.bin'))).rejects.toBeDefined();
   });
 
+  it('streams a staged file into local storage without constructing a media Buffer', async () => {
+    const source = join(root, 'staged-upload.bin');
+    const payload = Buffer.from('streamed-media-content');
+    await writeFile(source, payload);
+    await storage.putFile('users/u1/streamed.bin', source, payload.length);
+    expect(await readFile(join(root, 'users/u1/streamed.bin'))).toEqual(payload);
+  });
+
   it('rejects symlinked parent directories before writes', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'momentia-api-outside-'));
     try {
