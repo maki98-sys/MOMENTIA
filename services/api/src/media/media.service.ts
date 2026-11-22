@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException, TooManyRequestsException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ServiceUnavailableException, PayloadTooLargeException, HttpException, HttpStatus } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
@@ -266,7 +266,7 @@ export class MediaService {
 
   async completeResumableUpload(userId:string,uploadId:string) {
     if(activeUploadAssemblies>=MAX_CONCURRENT_UPLOAD_ASSEMBLIES) {
-      throw new TooManyRequestsException('Resumable upload assembly is at capacity. Retry shortly.');
+      throw new HttpException('Resumable upload assembly is at capacity. Retry shortly.', HttpStatus.TOO_MANY_REQUESTS);
     }
     activeUploadAssemblies++;
     try {
