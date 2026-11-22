@@ -1,4 +1,5 @@
 import { createWriteStream, createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { lstat, mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -16,7 +17,7 @@ export abstract class MediaWorkerStorage {
   abstract pathFor(storageKey: string): string;
   abstract ensureParent(storageKey: string): Promise<string>;
   abstract materialize(storageKey: string): Promise<string>;
-  abstract commit(storageKey: string, localPath: string): Promise<void>;
+  abstract commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void>;
   abstract release(storageKey: string): Promise<void>;
   abstract remove(storageKey: string): Promise<void>;
   abstract stat(storageKey: string): Promise<{ size: number; isFile: boolean }>;
@@ -66,7 +67,7 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
     await assertNoSymlinkPath(this.root, target);
     return target;
   }
-  async commit(_storageKey: string, _localPath: string): Promise<void> {}
+  async commit(_storageKey: string, _localPath: string, _checksumSha256?: string): Promise<void> {}
   async release(_storageKey: string): Promise<void> {}
   async remove(storageKey: string): Promise<void> {
     const target = this.pathFor(storageKey);
@@ -110,13 +111,24 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
     await pipeline(Readable.from(response.Body as AsyncIterable<Uint8Array>), createWriteStream(target, { mode: 0o600 }));
     return target;
   }
-  async commit(storageKey: string, localPath: string): Promise<void> {
+  async commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void> {
     validateKey(storageKey);
+    if (!checksumSha256 || !/^[a-f0-9]{64}$/i.test(checksumSha256)) {
+      throw new Error('A SHA-256 checksum is required before committing a media object');
+    }
     const info = await stat(localPath);
+    const expectedChecksum = Buffer.from(checksumSha256, 'hex').toString('base64');
     await this.client.send(new PutObjectCommand({
       Bucket: this.bucket, Key: storageKey, Body: createReadStream(localPath), ContentLength: info.size,
+      ChecksumSHA256: expectedChecksum,
       ...s3EncryptionParams(),
     }));
+    const stored = await this.client.send(new HeadObjectCommand({
+      Bucket: this.bucket, Key: storageKey, ChecksumMode: 'ENABLED',
+    }));
+    if (Number(stored.ContentLength) !== info.size || stored.ChecksumSHA256 !== expectedChecksum) {
+      throw new Error('Uploaded media object failed size or SHA-256 verification');
+    }
   }
   async release(storageKey: string): Promise<void> {
     const target = this.pathFor(storageKey);
