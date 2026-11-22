@@ -96,6 +96,37 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
   });
 
 
+  it('lists only identities belonging to the authenticated account', async () => {
+    const ownSubject = subject();
+    const foreignSubject = subject();
+    await pool.query(
+      'INSERT INTO auth_identities(user_id,provider,provider_subject) VALUES($1,$2,$3),($4,$2,$5)',
+      [userId,provider,ownSubject,otherUserId,foreignSubject],
+    );
+    const result = await identities.listAuthenticatedIdentities(userId);
+    expect(result.identities).toHaveLength(1);
+    expect(result.identities[0].provider).toBe(provider);
+    expect(result.canUnlink).toBe(false);
+  });
+
+  it('does not allow another account to unlink an identity it does not own', async () => {
+    const externalSubject = subject();
+    await pool.query(
+      'INSERT INTO auth_identities(user_id,provider,provider_subject) VALUES($1,$2,$3)',
+      [userId,provider,externalSubject],
+    );
+    await expect(identities.unlinkAuthenticatedIdentity(otherUserId,{
+      issuer:provider,subject:externalSubject,audience:['momentia-api'],
+    })).rejects.toThrow('not linked to the current account');
+    const stored = await pool.query(
+      'SELECT user_id FROM auth_identities WHERE provider=$1 AND provider_subject=$2',
+      [provider,externalSubject],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0].user_id).toBe(userId);
+  });
+
+
   it('serializes concurrent attempts to claim the same external identity', async () => {
     const externalSubject = subject();
     const attempts = await Promise.allSettled([
