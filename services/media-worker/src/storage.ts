@@ -5,6 +5,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
+function s3EncryptionParams(): { ServerSideEncryption: 'AES256' | 'aws:kms'; SSEKMSKeyId?: string } {
+  const kmsKeyId = process.env.MEDIA_S3_SSE_KMS_KEY_ID?.trim();
+  return kmsKeyId
+    ? { ServerSideEncryption: 'aws:kms', SSEKMSKeyId: kmsKeyId }
+    : { ServerSideEncryption: 'AES256' };
+}
+
 export abstract class MediaWorkerStorage {
   abstract pathFor(storageKey: string): string;
   abstract ensureParent(storageKey: string): Promise<string>;
@@ -108,6 +115,7 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
     const info = await stat(localPath);
     await this.client.send(new PutObjectCommand({
       Bucket: this.bucket, Key: storageKey, Body: createReadStream(localPath), ContentLength: info.size,
+      ...s3EncryptionParams(),
     }));
   }
   async release(storageKey: string): Promise<void> {
