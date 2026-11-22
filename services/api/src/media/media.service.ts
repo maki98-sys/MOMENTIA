@@ -395,6 +395,7 @@ export class MediaService {
                    AND timeline_post.space_id=te.space_id
                    AND timeline_post.status='published' AND timeline_post.audience='space'
                  JOIN users timeline_author ON timeline_author.id=timeline_post.author_id AND timeline_author.status='active'
+                 JOIN spaces timeline_space ON timeline_space.id=te.space_id AND timeline_space.status IN ('active','archived')
                  JOIN space_memberships sm ON sm.space_id=te.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE te.media_asset_id=a.id
                    AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
