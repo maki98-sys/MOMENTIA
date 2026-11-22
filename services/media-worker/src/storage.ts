@@ -122,11 +122,16 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
       ChecksumSHA256: expectedChecksum,
       ...s3EncryptionParams(),
     }));
-    const stored = await this.client.send(new HeadObjectCommand({
-      Bucket: this.bucket, Key: storageKey, ChecksumMode: 'ENABLED',
-    }));
-    if (Number(stored.ContentLength) !== info.size || stored.ChecksumSHA256 !== expectedChecksum) {
-      throw new Error('Uploaded media object failed size or SHA-256 verification');
+    try {
+      const stored = await this.client.send(new HeadObjectCommand({
+        Bucket: this.bucket, Key: storageKey, ChecksumMode: 'ENABLED',
+      }));
+      if (Number(stored.ContentLength) !== info.size || stored.ChecksumSHA256 !== expectedChecksum) {
+        throw new Error('Uploaded media object failed size or SHA-256 verification');
+      }
+    } catch (error) {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey })).catch(() => undefined);
+      throw error;
     }
   }
   async release(storageKey: string): Promise<void> {
