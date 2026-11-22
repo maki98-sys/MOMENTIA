@@ -14,6 +14,8 @@ describe('AlbumsService',()=>{
   await expect(service.listItems('u1','s1','a1')).resolves.toMatchObject({items:[],nextCursor:null});
   expect(clientQuery.mock.calls[1][0]).toContain("sm.state='active'");
   expect(clientQuery.mock.calls[2][0]).toContain("m.status='ready'");
+  expect(clientQuery.mock.calls[2][0]).toContain("added_by.status='active'");
+  expect(clientQuery.mock.calls[2][0]).toContain("media_owner.status='active'");
  });
  it('rejects malformed album item cursors',async()=>{
   await expect(service.listItems('u1','s1','a1','bad','not-a-uuid')).rejects.toBeInstanceOf(BadRequestException);
