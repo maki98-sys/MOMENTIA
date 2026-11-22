@@ -737,7 +737,13 @@ export class SyncService {
                 i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
          FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
          LEFT JOIN space_album_items i ON i.album_id=a.id AND i.status='active'
-           AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready')
+           AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+             (b.blocker_id=$1 AND b.blocked_id=i.added_by)
+             OR (b.blocker_id=i.added_by AND b.blocked_id=$1))
+           AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready'
+             AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+               (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
+               OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1)))
          WHERE m.user_id=$1 AND m.state='active'
            AND (a.visibility='members' OR m.role IN ('owner','admin','moderator'))
          ORDER BY a.created_at DESC,i.occurred_at DESC NULLS LAST,i.id`, [userId]);
