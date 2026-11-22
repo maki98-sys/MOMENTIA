@@ -6,21 +6,21 @@ export class MembershipsService {
   constructor(private readonly database: DatabaseService) {}
 
   async list(userId: string, spaceId: string) {
-    const access = await this.database.query(
-      `SELECT 1 FROM space_memberships WHERE space_id = $1 AND user_id = $2 AND state = 'active'`,
-      [spaceId, userId],
-    );
-    if (!access.rowCount) throw new NotFoundException('Space not found.');
     const result = await this.database.query(
       `SELECT sm.user_id, sm.role, sm.state, sm.joined_at,
               p.display_name, p.avatar_media_id
        FROM space_memberships sm
        JOIN users u ON u.id = sm.user_id
        LEFT JOIN user_profiles p ON p.user_id = sm.user_id
-       WHERE sm.space_id = $1 AND sm.state = 'active'
-       ORDER BY CASE sm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, sm.joined_at`,
-      [spaceId],
+       WHERE sm.space_id = $1
+         AND EXISTS (
+           SELECT 1 FROM space_memberships caller
+           WHERE caller.space_id = $1 AND caller.user_id = $2 AND caller.state = 'active'
+         )
+       ORDER BY sm.joined_at ASC, sm.user_id ASC`,
+      [spaceId, userId],
     );
+    if (!result.rowCount) throw new NotFoundException('Space not found.');
     return result.rows;
   }
 
