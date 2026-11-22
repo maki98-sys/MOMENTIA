@@ -39,7 +39,7 @@ export class EventRsvpsService {
         [spaceId,userId,value.response,guestCount,note]);
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,'event.rsvp_updated','event_rsvp',$3,jsonb_build_object('response',$4,'guestCount',$5))`,
+         VALUES($1,$2,'event.rsvp_updated','event_rsvp',$3,jsonb_build_object('response',$4::text,'guestCount',$5::integer))`,
         [spaceId,userId,result.rows[0].id,value.response,guestCount]);
       return result.rows[0];
     });
