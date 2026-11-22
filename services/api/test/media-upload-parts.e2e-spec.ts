@@ -232,7 +232,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     let releaseRead!: () => void;
     const readStarted = new Promise<void>(resolve => { markReadStarted = resolve; });
     const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
-    storage.read.mockImplementationOnce(async (key: string) => {
+    (storage.read as jest.Mock).mockImplementationOnce(async (key: string) => {
       markReadStarted();
       await readGate;
       const value = objects.get(key);
