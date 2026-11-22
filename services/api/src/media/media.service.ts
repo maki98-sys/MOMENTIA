@@ -193,17 +193,17 @@ export class MediaService {
     }
     const prepared=await this.db.transaction(async client=>{
       const upload=await client.query(
-        \`SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256,a.storage_provider
+        `SELECT u.state,u.uploader_id,a.size_bytes,a.checksum_sha256,a.storage_provider
          FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
-         WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u\`,[uploadId,userId]);
+         WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u`,[uploadId,userId]);
       if(!upload.rowCount) throw new NotFoundException('Upload not found.');
       if(['uploaded','processing','completed'].includes(String(upload.rows[0].state))) return {alreadyComplete:true,upload:upload.rows[0],parts:[]};
       if(upload.rows[0].state==='assembling') throw new ConflictException('Upload assembly is already in progress.');
       if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not available for assembly.');
-      await client.query(\`UPDATE media_uploads SET state='assembling',updated_at=now() WHERE id=$1\`,[uploadId]);
+      await client.query(`UPDATE media_uploads SET state='assembling',updated_at=now() WHERE id=$1`,[uploadId]);
       const parts=await client.query(
-        \`SELECT part_number,byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts
-         WHERE upload_id=$1 ORDER BY part_number ASC\`,[uploadId]);
+        `SELECT part_number,byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts
+         WHERE upload_id=$1 ORDER BY part_number ASC`,[uploadId]);
       return {alreadyComplete:false,upload:upload.rows[0],parts:parts.rows};
     });
     if(prepared.alreadyComplete) {
@@ -245,8 +245,8 @@ export class MediaService {
       return result;
     } catch(error) {
       await this.db.query(
-        \`UPDATE media_uploads SET state='uploading',updated_at=now()
-         WHERE id=$1 AND uploader_id=$2 AND state='assembling'\`,[uploadId,userId],
+        `UPDATE media_uploads SET state='uploading',updated_at=now()
+         WHERE id=$1 AND uploader_id=$2 AND state='assembling'`,[uploadId,userId],
       ).catch(()=>undefined);
       throw error;
     } finally {
@@ -263,10 +263,10 @@ export class MediaService {
       throw new BadRequestException('Invalid staged upload size.');
     }
     const found=await this.db.query(
-      \`SELECT u.id,u.state,u.uploader_id,a.id media_asset_id,a.size_bytes,a.checksum_sha256,
+      `SELECT u.id,u.state,u.uploader_id,a.id media_asset_id,a.size_bytes,a.checksum_sha256,
               a.storage_key_original,a.storage_provider,u.declared_mime_type
        FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
-       WHERE u.id=$1 AND u.uploader_id=$2\`,
+       WHERE u.id=$1 AND u.uploader_id=$2`,
       [uploadId,userId]);
     if (!found.rowCount) throw new NotFoundException('Upload not found.');
     const row=found.rows[0];
@@ -300,22 +300,22 @@ export class MediaService {
       await this.db.transaction(async client=>{
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
         const updated=await client.query(
-          \`UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
+          `UPDATE media_uploads SET state='uploaded',bytes_received=$1,updated_at=now()
            WHERE id=$2 AND uploader_id=$3
-             AND (($4::boolean AND state='assembling') OR (NOT $4::boolean AND state IN ('created','uploading')))\`,
+             AND (($4::boolean AND state='assembling') OR (NOT $4::boolean AND state IN ('created','uploading')))`,
           [info.size,uploadId,userId,assembling]);
         if(!updated.rowCount) throw new ConflictException('Upload state changed while receiving content.');
         await client.query(
-          \`UPDATE media_assets SET status='quarantined',mime_type_detected=$1 WHERE id=$2 AND owner_id=$3\`,
+          `UPDATE media_assets SET status='quarantined',mime_type_detected=$1 WHERE id=$2 AND owner_id=$3`,
           [row.declared_mime_type,row.media_asset_id,userId]);
         await client.query(
-          \`INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
-           VALUES($1,$2,'uploaded',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING\`,
+          `INSERT INTO storage_usage_events(user_id,media_asset_id,event_type,bytes_delta,idempotency_key)
+           VALUES($1,$2,'uploaded',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING`,
           [userId,row.media_asset_id,info.size,'media-upload:'+uploadId]);
         await client.query(
-          \`INSERT INTO media_processing_jobs(media_asset_id,job_type)
+          `INSERT INTO media_processing_jobs(media_asset_id,job_type)
            VALUES($1,'inspect'),($1,'virus_scan')
-           ON CONFLICT(media_asset_id,job_type) DO NOTHING\`,
+           ON CONFLICT(media_asset_id,job_type) DO NOTHING`,
           [row.media_asset_id]);
       });
     } catch(error) {
