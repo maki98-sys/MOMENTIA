@@ -8,17 +8,19 @@ export class AlbumsService {
   private validate(input:unknown) {
     if(!input||typeof input!=='object'||Array.isArray(input)) throw new BadRequestException('Album data is required.');
     const v=input as Record<string,unknown>;
-    if(Object.keys(v).some(k=>!['name','description','visibility','eventStartsAt','eventEndsAt'].includes(k))) throw new BadRequestException('Unsupported album fields.');
+    if(Object.keys(v).some(k=>!['name','description','visibility','eventStartsAt','eventEndsAt','sortMode'].includes(k))) throw new BadRequestException('Unsupported album fields.');
     const name=typeof v.name==='string'?v.name.trim():'';
     if(!name||name.length>120) throw new BadRequestException('Album name must contain 1 to 120 characters.');
     const description=v.description??null;
     if(description!==null&&(typeof description!=='string'||description.length>500)) throw new BadRequestException('Invalid album description.');
     const visibility=v.visibility??'members';
     if(!['members','admins'].includes(String(visibility))) throw new BadRequestException('Album visibility must be members or admins.');
+    const sortMode=v.sortMode??'added_at';
+    if(!['captured_at','uploaded_at','added_at'].includes(String(sortMode))) throw new BadRequestException('sortMode must be captured_at, uploaded_at or added_at.');
     const start=v.eventStartsAt??null,end=v.eventEndsAt??null;
     for(const d of [start,end]) if(d!==null&&(typeof d!=='string'||Number.isNaN(Date.parse(d)))) throw new BadRequestException('Album event dates must be valid ISO date-times.');
     if(start&&end&&Date.parse(String(end))<Date.parse(String(start))) throw new BadRequestException('Event end cannot be earlier than its start.');
-    return {name,description:description as string|null,visibility:String(visibility),start:start as string|null,end:end as string|null};
+    return {name,description:description as string|null,visibility:String(visibility),sortMode:String(sortMode),start:start as string|null,end:end as string|null};
   }
 
   async create(userId:string,spaceId:string,input:unknown) {
@@ -28,10 +30,10 @@ export class AlbumsService {
       const member=await client.query(`SELECT sm.role FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status='active' WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,[spaceId,userId]);
       if(!member.rowCount||!['owner','admin','moderator'].includes(String(member.rows[0].role))) throw new NotFoundException('Space not found.');
       const result=await client.query(
-        `INSERT INTO space_albums(space_id,created_by,name,description,visibility,event_starts_at,event_ends_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7)
-         RETURNING id,space_id,created_by,name,description,visibility,event_starts_at,event_ends_at,created_at`,
-        [spaceId,userId,v.name,v.description,v.visibility,v.start,v.end]);
+        `INSERT INTO space_albums(space_id,created_by,name,description,visibility,event_starts_at,event_ends_at,sort_mode)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id,space_id,created_by,name,description,visibility,event_starts_at,event_ends_at,sort_mode,created_at`,
+        [spaceId,userId,v.name,v.description,v.visibility,v.start,v.end,v.sortMode]);
       await client.query(`INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id)
         VALUES($1,$2,'album.created','album',$3)`,[spaceId,userId,result.rows[0].id]);
       return result.rows[0];
@@ -42,7 +44,7 @@ export class AlbumsService {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       const r=await client.query(
-        `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.created_at,
+        `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.sort_mode,a.created_at,
           (SELECT count(*)::int FROM space_album_items i
             JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
             JOIN media_assets ma ON ma.id=i.media_asset_id AND ma.status='ready'
@@ -82,7 +84,7 @@ export class AlbumsService {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       const access=await client.query(
-      `SELECT a.id,a.visibility,sm.role FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
+      `SELECT a.id,a.visibility,a.sort_mode,sm.role FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
        WHERE a.id=$2 AND a.space_id=$3`,
@@ -93,9 +95,17 @@ export class AlbumsService {
     }
       const result=await client.query(
       `SELECT i.id,i.album_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.created_at,
-              m.mime_type_detected,m.width,m.height,m.size_bytes
+              m.mime_type_detected,m.width,m.height,m.size_bytes,
+              mm.captured_at,mm.captured_timezone,mm.uploaded_at,
+              CASE a.sort_mode
+                WHEN 'captured_at' THEN COALESCE(mm.captured_at,i.occurred_at)
+                WHEN 'uploaded_at' THEN COALESCE(mm.uploaded_at,i.created_at)
+                ELSE i.created_at
+              END AS sort_at
        FROM space_album_items i
+       JOIN space_albums a ON a.id=i.album_id
        JOIN media_assets m ON m.id=i.media_asset_id AND m.status='ready'
+       LEFT JOIN media_metadata mm ON mm.media_asset_id=m.id
        JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
        JOIN users media_owner ON media_owner.id=m.owner_id AND media_owner.status='active'
        WHERE i.album_id=$1 AND i.status='active'
@@ -105,15 +115,19 @@ export class AlbumsService {
          AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$5 AND b.blocked_id=m.owner_id)
            OR (b.blocker_id=m.owner_id AND b.blocked_id=$5))
-         AND ($2::timestamptz IS NULL OR (i.created_at,i.id)<($2::timestamptz,$3::uuid))
-       ORDER BY i.created_at DESC,i.id DESC LIMIT $4`,
+         AND ($2::timestamptz IS NULL OR
+           ((CASE a.sort_mode
+              WHEN 'captured_at' THEN COALESCE(mm.captured_at,i.occurred_at)
+              WHEN 'uploaded_at' THEN COALESCE(mm.uploaded_at,i.created_at)
+              ELSE i.created_at END),i.id)<($2::timestamptz,$3::uuid))
+       ORDER BY sort_at DESC,i.id DESC LIMIT $4`,
       [albumId,cursor??null,cursorId??null,pageSize+1,userId]);
     const hasMore=result.rows.length>pageSize;
     const items=result.rows.slice(0,pageSize);
     const last=items[items.length-1] as Record<string,unknown>|undefined;
       return {
         items,
-        nextCursor:hasMore&&last?{createdAt:last.created_at,id:last.id}:null,
+        nextCursor:hasMore&&last?{createdAt:last.sort_at,id:last.id}:null,
       };
     });
   }

@@ -68,4 +68,23 @@ describe('AlbumsService',()=>{
   expect(clientQuery.mock.calls[1][0]).toContain("s.status='active'");
  });
 
+
+ it('accepts all supported album sort modes and rejects unknown modes',async()=>{
+  await expect(service.create('u1','s1',{name:'Event',sortMode:'wrong'})).rejects.toBeInstanceOf(BadRequestException);
+  expect(transaction).not.toHaveBeenCalled();
+ });
+ it('uses captured, uploaded or added timestamps for stable album item pagination',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
+   .mockResolvedValueOnce({rows:[{id:'a1',visibility:'members',sort_mode:'captured_at',role:'member'}],rowCount:1})
+   .mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.listItems('u1','s1','a1')).resolves.toMatchObject({items:[],nextCursor:null});
+  const sql=clientQuery.mock.calls[2][0];
+  expect(sql).toContain('LEFT JOIN media_metadata');
+  expect(sql).toContain("WHEN 'captured_at' THEN COALESCE(mm.captured_at,i.occurred_at)");
+  expect(sql).toContain("WHEN 'uploaded_at' THEN COALESCE(mm.uploaded_at,i.created_at)");
+  expect(sql).toContain('ORDER BY sort_at DESC,i.id DESC');
+ });
+
 });
