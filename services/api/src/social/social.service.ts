@@ -58,7 +58,10 @@ export class SocialService {
 
   async unfollow(actorId: string, targetId: string) {
     this.assertDifferentUsers(actorId,targetId);
-    await this.db.query(`DELETE FROM user_relationships WHERE requester_id=$1 AND target_id=$2`,[actorId,targetId]);
+    await this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      await client.query(`DELETE FROM user_relationships WHERE requester_id=$1 AND target_id=$2`,[actorId,targetId]);
+    });
     return { following:false };
   }
 
@@ -80,7 +83,9 @@ export class SocialService {
 
   async respondToFollowRequest(actorId: string, requesterId: string, decision: 'accepted'|'rejected') {
     this.assertDifferentUsers(actorId,requesterId);
-    const result=await this.db.query(
+    const result=await this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      return client.query(
       `UPDATE user_relationships r SET state=$3,updated_at=now()
        WHERE r.requester_id=$2 AND r.target_id=$1 AND r.state='pending'
          AND NOT EXISTS (SELECT 1 FROM user_blocks b
@@ -115,7 +120,10 @@ export class SocialService {
 
   async unblock(actorId: string, targetId: string) {
     this.assertDifferentUsers(actorId,targetId);
-    await this.db.query(`DELETE FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2`,[actorId,targetId]);
+    await this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      await client.query(`DELETE FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2`,[actorId,targetId]);
+    });
     return { blocked:false };
   }
 
