@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ModerationService } from './moderation.service';
 import { DatabaseService } from '../database/database.service';
 
@@ -57,10 +57,11 @@ describe('ModerationService',()=>{
     const sql=clientQuery.mock.calls.map((call:any[])=>String(call[0]));
     expect(sql.some((statement:string)=>statement.includes('INSERT INTO media_storage_deletions'))).toBe(true);
     expect(sql.some((statement:string)=>statement.includes('UPDATE media_assets SET status=\'deleted\''))).toBe(true);
-    expect(sql.some((statement:string)=>statement.includes('moderation-delete:'))).toBe(true);
+    const usageCall=clientQuery.mock.calls.find((call:any[])=>String(call[0]).includes('INSERT INTO storage_usage_events'));
+    expect(usageCall?.[1]?.[3]).toBe('moderation-delete:'+mediaId);
   });
 
   it('rejects moderation actions from non-moderators',async()=>{
-    await expect(service.queue('ordinary-user')).rejects.toBeInstanceOf(NotFoundException).catch(()=>undefined);
+    await expect(service.queue('ordinary-user')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
