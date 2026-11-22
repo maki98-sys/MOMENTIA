@@ -70,4 +70,15 @@ describe('AudioService', () => {
       .rejects.toBeInstanceOf(BadRequestException);
     expect(transaction).not.toHaveBeenCalled();
   });
+  it('requires an active account, membership and fresh heartbeat for socket participation', async () => {
+    query.mockResolvedValueOnce({rows:[{ok:1}],rowCount:1});
+    await expect(service.isActiveParticipant(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    )).resolves.toBe(true);
+    expect(query.mock.calls[0][0]).toContain("u.status='active'");
+    expect(query.mock.calls[0][0]).toContain("sm.state='active'");
+    expect(query.mock.calls[0][0]).toContain('last_heartbeat_at');
+  });
+
 });
