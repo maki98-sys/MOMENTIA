@@ -164,7 +164,7 @@ export class MembershipsService {
       await client.query(
         `INSERT INTO space_audit_events
            (space_id, actor_id, action, resource_type, resource_id, metadata)
-         VALUES ($1, $2, 'ownership.transferred', 'space', $1, jsonb_build_object('newOwnerId', $3))`,
+         VALUES ($1, $2, 'ownership.transferred', 'space', $1, jsonb_build_object('newOwnerId', $3::text))`,
         [spaceId, actorId, targetId],
       );
       return { spaceId, previousOwnerId: actorId, ownerId: targetId };
