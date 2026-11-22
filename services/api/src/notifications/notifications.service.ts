@@ -48,18 +48,24 @@ export class NotificationsService {
            SELECT 1 FROM notification_preferences np
            WHERE np.user_id=n.user_id AND np.category=n.category AND np.in_app_enabled=false
          )
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=n.user_id AND b.blocked_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))
+           OR (b.blocked_id=n.user_id AND b.blocker_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId')))
        ORDER BY n.created_at DESC, n.id DESC
        LIMIT $5`,
       [userId, decoded?.createdAt ?? null, decoded?.id ?? null, unreadOnly, pageSize],
     );
 
     const unread = await this.db.query(
-      `SELECT count(*)::int AS count FROM notifications
-       WHERE user_id = $1 AND read_at IS NULL
+      `SELECT count(*)::int AS count FROM notifications n
+       WHERE n.user_id = $1 AND n.read_at IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM notification_preferences np
-           WHERE np.user_id=notifications.user_id AND np.category=notifications.category AND np.in_app_enabled=false
-         )`,
+           WHERE np.user_id=n.user_id AND np.category=n.category AND np.in_app_enabled=false
+         )
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           (b.blocker_id=n.user_id AND b.blocked_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId'))
+           OR (b.blocked_id=n.user_id AND b.blocker_id::text=COALESCE(n.payload->>'actorId',n.payload->>'memberId')))`,
       [userId],
     );
     const last = result.rows[result.rows.length - 1] as Record<string, unknown> | undefined;
