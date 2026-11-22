@@ -2,7 +2,7 @@ import { createWriteStream, createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
@@ -13,10 +13,12 @@ function s3EncryptionParams(): { ServerSideEncryption: 'AES256' | 'aws:kms'; SSE
     : { ServerSideEncryption: 'AES256' };
 }
 
+const MAX_MEDIA_OBJECT_BYTES = 200 * 1024 * 1024;
+
 export abstract class MediaWorkerStorage {
   abstract pathFor(storageKey: string): string;
   abstract ensureParent(storageKey: string): Promise<string>;
-  abstract materialize(storageKey: string): Promise<string>;
+  abstract materialize(storageKey: string, expectedSize?: number): Promise<string>;
   abstract commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void>;
   abstract release(storageKey: string): Promise<void>;
   abstract remove(storageKey: string): Promise<void>;
@@ -62,9 +64,12 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
     await assertNoSymlinkPath(this.root, target, true);
     return target;
   }
-  async materialize(storageKey: string): Promise<string> {
+  async materialize(storageKey: string, expectedSize?: number): Promise<string> {
     const target = this.pathFor(storageKey);
     await assertNoSymlinkPath(this.root, target);
+    const info = await stat(target);
+    if (info.size > MAX_MEDIA_OBJECT_BYTES) throw new Error('Stored media object exceeds the worker size limit');
+    if (expectedSize !== undefined && info.size !== expectedSize) throw new Error('Stored media object size differs from the declared size');
     return target;
   }
   async commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void> {
@@ -122,12 +127,48 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
     await assertNoSymlinkPath(this.stageRoot, target, true);
     return target;
   }
-  async materialize(storageKey: string): Promise<string> {
+  async materialize(storageKey: string, expectedSize?: number): Promise<string> {
     const target = await this.ensureParent(storageKey);
+    if (expectedSize !== undefined &&
+        (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > MAX_MEDIA_OBJECT_BYTES)) {
+      throw new Error('Declared media object size is outside the worker limit');
+    }
+    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: storageKey }));
+    const contentLength = Number(head.ContentLength);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_MEDIA_OBJECT_BYTES) {
+      throw new Error('Remote media object size is outside the worker limit');
+    }
+    if (expectedSize !== undefined && contentLength !== expectedSize) {
+      throw new Error('Remote media object size differs from the declared size');
+    }
     const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }));
     if (!response.Body) throw new Error('Remote object body is missing');
-    await pipeline(Readable.from(response.Body as AsyncIterable<Uint8Array>), createWriteStream(target, { mode: 0o600 }));
-    return target;
+    let received = 0;
+    const limiter = new Transform({
+      transform(chunk: Buffer | Uint8Array, _encoding, callback) {
+        received += chunk.length;
+        if (received > MAX_MEDIA_OBJECT_BYTES ||
+            (expectedSize !== undefined && received > expectedSize)) {
+          callback(new Error('Remote media stream exceeded its declared size or worker limit'));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    try {
+      await pipeline(
+        Readable.from(response.Body as AsyncIterable<Uint8Array>),
+        limiter,
+        createWriteStream(target, { flags: 'wx', mode: 0o600 }),
+      );
+      if (received !== contentLength || (expectedSize !== undefined && received !== expectedSize)) {
+        throw new Error('Downloaded media object size does not match its HEAD metadata');
+      }
+      return target;
+    } catch (error) {
+      await rm(target, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
   async commit(storageKey: string, localPath: string, checksumSha256?: string): Promise<void> {
     validateKey(storageKey);
