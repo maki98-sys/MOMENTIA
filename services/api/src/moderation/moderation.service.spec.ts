@@ -51,7 +51,9 @@ describe('ModerationService',()=>{
       .mockResolvedValueOnce({rows:[{id:reportId,target_type:'media',target_id:mediaId,status:'open'}],rowCount:1})
       .mockResolvedValueOnce({rows:[{id:mediaId,owner_id:'owner-1',size_bytes:100,storage_key_original:'original/a',storage_provider:'local'}],rowCount:1})
       .mockResolvedValueOnce({rows:[{storage_key:'variants/a',size_bytes:20,storage_provider:'local'}],rowCount:1})
-      .mockResolvedValue({rows:[],rowCount:1});
+      .mockImplementation(async(sql:string)=>String(sql).includes('UPDATE user_reports')
+        ? {rows:[{id:reportId,status:'resolved'}],rowCount:1}
+        : {rows:[],rowCount:1});
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.review('moderator-1',reportId,{decision:'resolve',action:'remove_media'})).resolves.toMatchObject({status:'resolved'});
     const sql=clientQuery.mock.calls.map((call:any[])=>String(call[0]));
