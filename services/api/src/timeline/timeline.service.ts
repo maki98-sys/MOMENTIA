@@ -54,7 +54,7 @@ export class TimelineService {
        ORDER BY t.occurred_at DESC,t.id DESC LIMIT $5`,
       [userId,spaceId,cursor??null,cursorId??null,n]);
     if(!r.rowCount) {
-      const member=await this.db.query(
+      const member=await client.query(
         `SELECT 1 FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status IN ('active','archived')
          JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
          WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,[spaceId,userId]);
