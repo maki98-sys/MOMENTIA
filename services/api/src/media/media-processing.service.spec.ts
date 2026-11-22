@@ -49,7 +49,7 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery.mock.calls[4][0]).toContain("status='completed'");
   });
 
-  it('keeps media quarantined and reports blocked when virus scanning is unavailable',async()=>{
+  it('keeps media quarantined and retries when virus scanning is unavailable',async()=>{
     const clientQuery=jest.fn()
       .mockResolvedValueOnce({rows:[],rowCount:0})
       .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'virus_scan',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'quarantined'}],rowCount:1})
@@ -57,11 +57,25 @@ describe('MediaProcessingService',()=>{
       .mockResolvedValueOnce({rows:[],rowCount:1});
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.complete(worker,jobId,{success:true,scanVerdict:'unavailable'}))
-      .resolves.toMatchObject({jobId,status:'completed',mediaAssetId:assetId,nextStage:'blocked'});
-    expect(clientQuery.mock.calls[2][0]).toContain("CASE WHEN $2='rejected' THEN 'quarantined' ELSE status END");
-    expect(clientQuery.mock.calls[2][1]).toEqual([assetId,'unavailable']);
-    expect(clientQuery.mock.calls[3][0]).toContain("status='completed'");
+      .resolves.toMatchObject({jobId,status:'failed',retryable:true,mediaAssetId:assetId,nextStage:'blocked'});
+    expect(clientQuery.mock.calls[2][0]).toContain("moderation_scan_status='unavailable'");
+    expect(clientQuery.mock.calls[2][0]).toContain("THEN 'quarantined'");
+    expect(clientQuery.mock.calls[3][0]).toContain("last_error_code='SCANNER_UNAVAILABLE'");
+    expect(clientQuery.mock.calls[3][0]).toContain("status='failed'");
     expect(clientQuery.mock.calls.some(call=>String(call[0]).includes('INSERT INTO media_processing_jobs'))).toBe(false);
+  });
+
+  it('stops retrying an unavailable scanner after the configured attempt limit',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'virus_scan',attempts:5,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'quarantined'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,scanVerdict:'unavailable'}))
+      .resolves.toMatchObject({jobId,status:'failed',retryable:false,nextStage:'blocked'});
+    expect(clientQuery.mock.calls[3][0]).toContain("last_error_code='SCANNER_UNAVAILABLE'");
+    expect(clientQuery.mock.calls[3][0]).toContain("status='failed'");
   });
 
   it('rejects a variant result with unsafe storage keys',async()=>{
