@@ -4,7 +4,11 @@ export type ClamVerdict = 'clean' | 'rejected' | 'pending';
 
 /** Accept only a complete clamd INSTREAM terminal response, never a substring. */
 export function parseClamAvResponse(response: string): ClamVerdict {
-  const normalized = response.replace(/\0/g, '').trim();
+  const terminator = response.indexOf('\0');
+  if (terminator < 0) return 'pending';
+  const normalized = response.slice(0, terminator).trim();
+  const trailing = response.slice(terminator + 1).replace(/\0/g, '').trim();
+  if (trailing) throw new Error('ClamAV returned data after its terminal verdict');
   if (!normalized) return 'pending';
   if (/^stream:\s*OK$/i.test(normalized)) return 'clean';
   if (/^stream:\s*.+\sFOUND$/i.test(normalized)) return 'rejected';
