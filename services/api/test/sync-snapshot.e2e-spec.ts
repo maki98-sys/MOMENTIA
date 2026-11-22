@@ -322,4 +322,39 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(pulled.refreshRequired).toBe(true);
   });
 
+
+  it('releases a snapshot and rejects continuation after release', async () => {
+    const snapshot = await sync.snapshot(viewerId, { sections: ['profile'] });
+    await expect(sync.releaseSnapshot(viewerId,snapshot.snapshotId)).resolves.toEqual({released:true});
+    await expect(sync.snapshot(viewerId,{snapshotId:snapshot.snapshotId}))
+      .rejects.toThrow('Snapshot session not found or expired.');
+  });
+
+  it('rejects a snapshot continuation from another user', async () => {
+    const snapshot = await sync.snapshot(viewerId, { sections: ['profile'] });
+    await expect(sync.snapshot(ownerId,{snapshotId:snapshot.snapshotId}))
+      .rejects.toThrow('Snapshot session not found or expired.');
+  });
+
+  it('rejects continuation after snapshot expiry', async () => {
+    const snapshot = await sync.snapshot(viewerId, { sections: ['profile'] });
+    await pool.query(
+      `UPDATE sync_snapshot_sessions SET expires_at=now()-interval '1 minute' WHERE id=$1`,
+      [snapshot.snapshotId],
+    );
+    await expect(sync.snapshot(viewerId,{snapshotId:snapshot.snapshotId}))
+      .rejects.toThrow('Snapshot session not found or expired.');
+  });
+
+  it('keeps at most two active snapshot sessions per user', async () => {
+    await sync.snapshot(viewerId,{sections:['profile']});
+    await sync.snapshot(viewerId,{sections:['profile']});
+    await sync.snapshot(viewerId,{sections:['profile']});
+    const count=await pool.query(
+      `SELECT count(*)::int AS count FROM sync_snapshot_sessions WHERE user_id=$1`,
+      [viewerId],
+    );
+    expect(count.rows[0].count).toBe(2);
+  });
+
 });
