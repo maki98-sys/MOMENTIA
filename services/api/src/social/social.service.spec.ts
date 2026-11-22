@@ -156,4 +156,29 @@ describe('SocialService',()=>{
   expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
  });
 
+
+ it('returns post details only after the shared authorization lock and visibility check', async () => {
+  const post={id:'p1',author_id:'u2',body:'hello',audience:'followers',reaction_count:3,comment_count:2,my_reaction:'like'};
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]})
+   .mockResolvedValueOnce({rowCount:1,rows:[post]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.getPost('u1','p1')).resolves.toEqual(post);
+  expect(clientQuery).toHaveBeenCalledTimes(3);
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock_shared');
+  expect(clientQuery.mock.calls[1][0]).toContain('SELECT 1 FROM posts');
+  expect(clientQuery.mock.calls[2][0]).toContain('my_reaction');
+  expect(clientQuery.mock.calls[2][0]).toContain('reaction_count');
+  expect(clientQuery.mock.calls[2][0]).toContain('comment_count');
+ });
+ it('does not disclose a post detail when the viewer is unauthorized', async () => {
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.getPost('u1','private-post')).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+ });
+
 });

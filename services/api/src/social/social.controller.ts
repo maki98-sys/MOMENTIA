@@ -54,6 +54,11 @@ export class SocialController {
     return this.social.create(req.userId!, body);
   }
 
+  @Get('posts/:postId')
+  getPost(@Req() req: Request & AuthenticatedRequest, @Param('postId') id: string) {
+    return this.social.getPost(req.userId!, id);
+  }
+
   @Get('posts/:postId/comments')
   comments(@Req() req: Request & AuthenticatedRequest, @Param('postId') id: string) {
     return this.social.comments(req.userId!, id);
