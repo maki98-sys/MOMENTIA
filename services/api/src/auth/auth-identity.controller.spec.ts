@@ -2,6 +2,7 @@ import type { Request } from 'express';
 import type { AuthenticatedRequest } from './auth.types';
 import { OidcIdentityService } from './oidc-identity.service';
 import { OidcTokenVerifier } from './oidc-token-verifier.service';
+jest.mock('jose',()=>({createRemoteJWKSet:jest.fn(),jwtVerify:jest.fn(),errors:{},SignJWT:jest.fn()}));
 jest.mock('./oidc-bearer.guard',()=>({OidcBearerGuard:class OidcBearerGuard{}}));
 import { AuthIdentityController } from './auth-identity.controller';
 
