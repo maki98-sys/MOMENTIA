@@ -190,4 +190,44 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(nextPage.hasMore).toBe(false);
   });
 
+
+  it('orders authorization mutations after an in-flight snapshot read lock', async () => {
+    const snapshotClient = await pool.connect();
+    let mutation: Promise<any> | undefined;
+    try {
+      await snapshotClient.query('BEGIN');
+      await snapshotClient.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))",
+      );
+
+      mutation = pool.query(
+        `UPDATE space_memberships SET state='left',left_at=now()
+         WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+        [spaceId, viewerId],
+      );
+
+      let waiting = false;
+      const deadline = Date.now() + 3000;
+      while (!waiting && Date.now() < deadline) {
+        const locks = await pool.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_locks l
+             JOIN pg_stat_activity a ON a.pid=l.pid
+             WHERE l.locktype='advisory' AND NOT l.granted
+               AND a.query LIKE 'UPDATE space_memberships SET state%'
+           ) AS waiting`,
+        );
+        waiting = locks.rows[0].waiting === true;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+    } finally {
+      await snapshotClient.query('COMMIT').catch(() => undefined);
+      snapshotClient.release();
+    }
+
+    const changed = await mutation;
+    expect(changed.rowCount).toBe(1);
+  });
+
 });
