@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { TimelineService } from './timeline.service';
 import { DatabaseService } from '../database/database.service';
 
@@ -18,4 +18,21 @@ describe('TimelineService',()=>{
  it('rejects invalid event time',async()=>{
   await expect(service.add('u','s',{mediaAssetId:'m',occurredAt:'yesterday-ish'})).rejects.toBeInstanceOf(BadRequestException);
  });
+ it('filters blocked authors and inaccessible media from timeline reads',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{ok:1}]});
+  await expect(service.list('u1','s1')).resolves.toEqual([]);
+  expect(query.mock.calls[0][0]).toContain('user_blocks');
+  expect(query.mock.calls[0][0]).toContain("p.audience='public'");
+  expect(query.mock.calls[0][1]).toEqual(['u1','s1',null,null,30]);
+ });
+ it('rejects adding a post with an incompatible audience or blocked author',async()=>{
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:1,rows:[{role:'member'}]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+  await expect(service.add('u1','s1',{postId:'post-id'})).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery.mock.calls[1][0]).toContain("audience='space'");
+  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
+ });
+
 });
