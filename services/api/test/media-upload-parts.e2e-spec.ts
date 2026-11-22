@@ -142,7 +142,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     const [task] = await processing.claimDeletions(workerId, 10);
     expect(task).toMatchObject({ storage_key: storageKey, attempts: 12 });
 
-    await expect(processing.completeDeletion(workerId, task.id, {
+    await expect(processing.completeDeletion(workerId, String(task.id), {
       success: false,
       errorCode: 'STORAGE_UNAVAILABLE',
     })).resolves.toMatchObject({ status: 'failed' });
