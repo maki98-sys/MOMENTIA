@@ -87,17 +87,20 @@ export class ProfileService {
   }
 
   async updateMyProfile(userId: string, input: UpdateProfileInput): Promise<MyAccount['profile']> {
-    const result = await this.database.query(
-      `INSERT INTO user_profiles (user_id, display_name, bio, visibility)
-       SELECT id, $2, $3, $4 FROM users WHERE id = $1 AND status = 'active'
-       ON CONFLICT (user_id) DO UPDATE
-         SET display_name = EXCLUDED.display_name,
-             bio = EXCLUDED.bio,
-             visibility = EXCLUDED.visibility,
-             updated_at = now()
-       RETURNING display_name, bio, visibility`,
-      [userId, input.displayName, input.bio, input.visibility],
-    );
+    const result = await this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
+      return client.query(
+        `INSERT INTO user_profiles (user_id, display_name, bio, visibility)
+         SELECT id, $2, $3, $4 FROM users WHERE id = $1 AND status = 'active'
+         ON CONFLICT (user_id) DO UPDATE
+           SET display_name = EXCLUDED.display_name,
+               bio = EXCLUDED.bio,
+               visibility = EXCLUDED.visibility,
+               updated_at = now()
+         RETURNING display_name, bio, visibility`,
+        [userId, input.displayName, input.bio, input.visibility],
+      );
+    });
     const row = result.rows[0] as Record<string, unknown> | undefined;
     if (!row) throw new NotFoundException('MOMENTIA account was not found or is not active.');
     return {
