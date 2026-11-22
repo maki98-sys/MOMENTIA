@@ -42,6 +42,6 @@ describe('CoupleInvitationsService',()=>{
   const cq=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{id:'i1',inviter_user_id:'00000000-0000-4000-8000-000000000001',invitee_user_id:'00000000-0000-4000-8000-000000000002',expires_at:new Date(Date.now()+60000).toISOString(),accepted_at:null,revoked_at:null}]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.accept('00000000-0000-4000-8000-000000000003','b'.repeat(43))).rejects.toBeInstanceOf(ForbiddenException);
-  expect(cq).toHaveBeenCalledTimes(1);
+  expect(cq).toHaveBeenCalledTimes(2);
  });
 });
