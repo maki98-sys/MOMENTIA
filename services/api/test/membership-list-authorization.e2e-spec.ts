@@ -16,11 +16,14 @@ describe('Space membership list authorization (PostgreSQL)', () => {
   let spaceId: string;
 
   beforeEach(async () => {
+    const client = await pool.connect();
+    await client.query('BEGIN');
+    try {
     ownerId = randomUUID();
     viewerId = randomUUID();
     blockedId = randomUUID();
     spaceId = randomUUID();
-    await pool.query(
+    await client.query(
       `INSERT INTO users(id,email_normalized,status)
        VALUES($1,$2,'active'),($3,$4,'active'),($5,$6,'active')`,
       [
@@ -29,19 +32,25 @@ describe('Space membership list authorization (PostgreSQL)', () => {
         blockedId, `member-blocked-${blockedId}@momentia.test`,
       ],
     );
-    await pool.query(
+    await client.query(
       `INSERT INTO spaces(id,type,owner_id,name,visibility,status)
        VALUES($1,'CIRCLE',$2,'Membership authorization test','private','active')`,
       [spaceId, ownerId],
     );
-    await pool.query('INSERT INTO circle_details(space_id) VALUES($1)', [spaceId]);
-    await pool.query(
+    await client.query('INSERT INTO circle_details(space_id) VALUES($1)', [spaceId]);
+    await client.query(
       `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
        VALUES($1,$2,'owner','active',now()),($1,$3,'member','active',now()),($1,$4,'member','active',now())`,
       [spaceId, ownerId, viewerId, blockedId],
     );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
-
   afterEach(async () => {
     await pool.query('DELETE FROM spaces WHERE id=$1', [spaceId]);
     await pool.query(
