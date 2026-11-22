@@ -185,22 +185,25 @@ export class AudioService {
 
   async heartbeat(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
-    await this.assertAudioEntitlement(this.db,userId);
-    const r = await this.db.query(`UPDATE audio_participants p
-      SET last_heartbeat_at=now()
-      FROM audio_sessions s
-      JOIN space_memberships sm ON sm.space_id=s.space_id AND sm.user_id=$2 AND sm.state='active'
-      WHERE p.session_id=s.id AND p.session_id=$1 AND p.user_id=$2
-        AND p.left_at IS NULL AND s.state IN ('created','playing','paused')
-      RETURNING p.session_id,p.last_heartbeat_at`, [sessionId,userId]);
-    if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
-    return { sessionId: r.rows[0].session_id, heartbeatAt: r.rows[0].last_heartbeat_at };
+    return this.db.transaction(async client => {
+      await this.lockAuthorizationRead(client);
+      await this.assertAudioEntitlement(client,userId);
+      const r = await client.query(`UPDATE audio_participants p
+        SET last_heartbeat_at=now()
+        FROM audio_sessions s
+        JOIN space_memberships sm ON sm.space_id=s.space_id AND sm.user_id=$2 AND sm.state='active'
+        WHERE p.session_id=s.id AND p.session_id=$1 AND p.user_id=$2
+          AND p.left_at IS NULL AND s.state IN ('created','playing','paused')
+        RETURNING p.session_id,p.last_heartbeat_at`, [sessionId,userId]);
+      if (!r.rowCount) throw new NotFoundException('Active audio participation not found.');
+      return { sessionId: r.rows[0].session_id, heartbeatAt: r.rows[0].last_heartbeat_at };
+    });
   }
 
   async leave(userId: string, sessionId: string) {
     this.id(sessionId, 'session id');
-    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
       const participation = await client.query(
         `SELECT p.id,p.role,a.state
@@ -263,8 +266,8 @@ export class AudioService {
 
   async removeQueueItem(userId: string, sessionId: string, itemId: string) {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
-    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
       const r = await client.query(`UPDATE audio_queue_items q SET state='removed' FROM audio_sessions a
         JOIN spaces sp ON sp.id=a.space_id AND sp.status='active'
@@ -292,8 +295,8 @@ export class AudioService {
     if (input.expectedVersion !== undefined && (!Number.isSafeInteger(Number(input.expectedVersion)) || Number(input.expectedVersion) < 1)) throw new BadRequestException('Invalid expected version.');
     let itemId = input.currentItemId ?? null;
     if (itemId !== null) this.id(String(itemId), 'queue item id');
-    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
       const s = await client.query(`SELECT a.id,a.host_user_id,a.state,a.server_version FROM audio_sessions a
         JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$2 AND sm.state='active'
@@ -339,8 +342,8 @@ export class AudioService {
     this.id(sessionId, 'session id'); this.id(itemId, 'queue item id');
     const value = Number(vote);
     if (value !== -1 && value !== 1) throw new BadRequestException('Vote must be -1 or 1.');
-    await this.assertAudioEntitlement(this.db,userId);
     return this.db.transaction(async client => {
+      await this.assertAudioEntitlement(client,userId);
       await this.lockAuthorizationRead(client);
       const allowed = await client.query(`SELECT 1 FROM audio_queue_items q
         JOIN audio_participants p ON p.session_id=q.session_id
