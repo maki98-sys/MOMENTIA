@@ -18,9 +18,11 @@ export class DeviceSessionService {
       throw new BadRequestException('Device data is required.');
     }
     const value = input as Record<string, unknown>;
-    if (Object.keys(value).some(key => !['platform', 'pushToken'].includes(key))) {
+    if (Object.keys(value).some(key => !['deviceKey', 'platform', 'pushToken'].includes(key))) {
       throw new BadRequestException('Unsupported device fields.');
     }
+    if (typeof value.deviceKey !== 'string') throw new BadRequestException('deviceKey must be a UUID.');
+    assertUuid(value.deviceKey,'deviceKey');
     if (!PLATFORMS.includes(value.platform as DevicePlatform)) {
       throw new BadRequestException('Platform must be ios, android or web.');
     }
@@ -37,12 +39,42 @@ export class DeviceSessionService {
     return this.db.transaction(async client => {
       const account=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[userId]);
       if(!account.rowCount) throw new NotFoundException('Active account not found.');
-      const result = await client.query(
-        `INSERT INTO devices(user_id, platform, push_token_encrypted, last_seen_at)
-         VALUES($1,$2,$3,now())
-         RETURNING id, platform, last_seen_at, created_at`,
-        [userId, value.platform, encryptedPushToken],
+      const existing=await client.query(
+        `SELECT id,user_id FROM devices WHERE device_key=$1 FOR UPDATE`,
+        [value.deviceKey],
       );
+      let result;
+      if(existing.rowCount) {
+        const deviceId=existing.rows[0].id;
+        const previousUserId=String(existing.rows[0].user_id);
+        if(previousUserId!==userId) {
+          await client.query(
+            `UPDATE auth_sessions SET revoked_at=now()
+             WHERE device_id=$1 AND user_id=$2 AND revoked_at IS NULL`,
+            [deviceId,previousUserId],
+          );
+          await client.query(
+            `UPDATE notification_outbox SET status='cancelled',processing_started_at=NULL,
+                    last_error_code='DEVICE_ACCOUNT_CHANGED'
+             WHERE device_id=$1 AND user_id=$2 AND channel='push'
+               AND status IN ('pending','failed','processing')`,
+            [deviceId,previousUserId],
+          );
+        }
+        result=await client.query(
+          `UPDATE devices SET user_id=$2,platform=$3,push_token_encrypted=$4,
+             last_seen_at=now(),revoked_at=NULL
+           WHERE id=$1 RETURNING id,platform,last_seen_at,created_at`,
+          [deviceId,userId,value.platform,encryptedPushToken],
+        );
+      } else {
+        result=await client.query(
+          `INSERT INTO devices(user_id,device_key,platform,push_token_encrypted,last_seen_at)
+           VALUES($1,$2,$3,$4,now())
+           RETURNING id,platform,last_seen_at,created_at`,
+          [userId,value.deviceKey,value.platform,encryptedPushToken],
+        );
+      }
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$1,'auth.device.registered','device',$2,jsonb_build_object('platform',$3))`,
