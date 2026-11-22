@@ -1,3 +1,4 @@
+jest.mock('../auth/oidc-bearer.guard', () => ({ OidcBearerGuard: class OidcBearerGuard {} }));
 import { readFile, stat } from 'fs/promises';
 import { Readable } from 'stream';
 import { MediaController } from './media.controller';
