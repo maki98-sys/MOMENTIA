@@ -34,7 +34,7 @@ The migration runner currently applies the complete ordered migration set **0001
 - the local SQLite schema checks pass;
 - the concurrent COUPLE membership invariant is preserved.
 
-The latest completed database verification at the time of this update is workflow run `44969387624` on commit `0fc`, which completed successfully and included migrations through `0066_device_installation_identity`. A newer verification is running on the current PR head; check the PR checks before treating that newer head as approved.
+The latest completed database verification at the time of this update is workflow run `44969542443` on commit `a728f08`, which completed successfully and included migrations through `0066_device_installation_identity`. A newer verification is running on the current PR head; check the PR checks before treating that newer head as approved.
 
 Recent database corrections:
 
