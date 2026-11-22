@@ -19,6 +19,8 @@ This runbook describes the operational controls required by the API and media wo
 - Local storage copies staged files through streams and atomically renames the completed temporary object. S3 uploads use a file stream and an explicit content length.
 - Resumable assembly reads one stored part stream at a time, verifies each part checksum, writes incrementally to a staged file and verifies the final whole-file checksum. It does not concatenate the full upload in memory.
 - Staging files are created under the operating system temporary directory (Node.js `os.tmpdir()`; typically controlled by `TMPDIR`) and removed after the request or assembly completes, including error paths.
+- `MEDIA_UPLOAD_STAGING_MAX_CONCURRENT` caps active direct/multipart request staging per API process (default 4; allowed 1–32). `MEDIA_UPLOAD_ASSEMBLY_MAX_CONCURRENT` caps active resumable assemblies per API process (default 2; allowed 1–8). Excess requests receive HTTP 429 and can retry.
+- These are per-process limits, not a cluster-wide quota. Multiply by the number of API replicas when sizing disk and setting deployment limits.
 - Provision a private, writable temporary filesystem with enough free space for concurrent upload staging and resumable assembly. Apply container/host disk quotas, alert on free space and clean abandoned `momentia-upload-` / `momentia-assembly-` directories after unclean process termination. Per-request size limits do not by themselves cap aggregate concurrent disk use.
 
 ## Required deployment configuration
