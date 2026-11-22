@@ -901,7 +901,7 @@ export class SyncService {
       snapshotAt = saved.rows[0].created_at;
       const excess = await client.query(
         `SELECT id FROM sync_snapshot_sessions WHERE user_id=$1 AND id<>$2
-         ORDER BY created_at DESC OFFSET 2`,
+         ORDER BY created_at DESC OFFSET 1`,
         [userId,activeSnapshotId],
       );
       if (excess.rowCount) await client.query(
