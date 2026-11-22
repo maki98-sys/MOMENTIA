@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import { parseClamAvResponse, runFfmpeg as executeFfmpeg } from './process-utils';
 import { createMediaWorkerStorage } from './storage';
 import { renderImageVariant } from './image-processing';
+import { assertFileIntegrity } from './file-integrity';
 import sharp from 'sharp';
 
 const API_URL = required('MEDIA_API_URL').replace(/\/$/, '');
@@ -111,10 +112,12 @@ async function runFfmpeg(args: string[]): Promise<void> {
 async function makeImageVariants(job: Job): Promise<Variant[]> {
   const source=await storage.materialize(job.storage_key_original);
   try {
+    await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
     const meta=await sharp(source,{failOn:'error',limitInputPixels:MAX_IMAGE_PIXELS,sequentialRead:true}).metadata();
     if(!meta.width||!meta.height) throw new Error('Image dimensions could not be read');
     const definitions=[{type:'thumbnail' as const,width:320},{type:'preview' as const,width:1280},{type:'display' as const,width:2048}];
     const variants:Variant[]=[];
+    try {
     for(const definition of definitions) {
       const storageKey=`variants/${job.media_asset_id}/${definition.type}.webp`;
       const target=safePath(storageKey);
@@ -132,6 +135,12 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
       }
     }
     return variants;
+    } catch(error) {
+      // If a later derivative fails, remove every earlier derivative committed
+      // by this job so a partial image set cannot be mistaken for a complete one.
+      await Promise.all(variants.map(variant=>storage.remove(variant.storageKey).catch(()=>undefined)));
+      throw error;
+    }
   } finally {
     await storage.release(job.storage_key_original).catch(()=>undefined);
   }
@@ -142,6 +151,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const storageKey=`variants/${job.media_asset_id}/video_poster.jpg`;
   const target=safePath(storageKey);
   try {
+    await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
     await storage.ensureParent(storageKey);
     await runFfmpeg(['-nostdin','-y','-protocol_whitelist','file,pipe','-max_alloc','67108864','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3','-fs','20971520',target]);
     const meta=await sharp(target).metadata();
@@ -164,8 +174,7 @@ async function processJob(job: Job): Promise<Record<string,unknown>> {
     const source=await storage.materialize(job.storage_key_original);
     try {
       const info=await stat(source);
-      if(info.size!==Number(job.size_bytes)) throw new Error('Stored file size differs from the declared size');
-      if(await sha256(source)!==job.checksum_sha256) throw new Error('Stored file checksum mismatch');
+      await assertFileIntegrity(source,Number(job.size_bytes),job.checksum_sha256);
       return {success:true,result:{bytes:info.size}};
     } finally { await storage.release(job.storage_key_original).catch(()=>undefined); }
   }
