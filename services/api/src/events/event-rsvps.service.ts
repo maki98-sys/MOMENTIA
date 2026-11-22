@@ -16,6 +16,9 @@ export class EventRsvpsService {
     if (note!==null&&(typeof note!=='string'||note.length>500)) throw new BadRequestException('note must be at most 500 characters.');
     if (value.response!=='going'&&Number(guestCount)!==0) throw new BadRequestException('Only a going RSVP can include guests.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const account=await client.query("SELECT 1 FROM users WHERE id=$1 AND status='active'",[userId]);
+      if(!account.rowCount) throw new NotFoundException('Event not found.');
       const event=await client.query(
         `SELECT s.id,ed.starts_at,ed.ends_at,sm.role
          FROM spaces s JOIN event_details ed ON ed.space_id=s.id
@@ -74,13 +77,17 @@ export class EventRsvpsService {
   }
 
   async remove(userId: string, spaceId: string) {
-    const result=await this.db.query(
-      `DELETE FROM event_rsvps r USING spaces s,space_memberships sm
-       WHERE r.space_id=$1 AND r.user_id=$2
-         AND s.id=r.space_id AND s.type='EVENT'
-         AND sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
-       RETURNING r.id`,[spaceId,userId]);
-    if(!result.rowCount) throw new NotFoundException('RSVP not found.');
-    return {removed:true};
+    return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const result=await client.query(
+        `DELETE FROM event_rsvps r USING spaces s,space_memberships sm,users u
+         WHERE r.space_id=$1 AND r.user_id=$2
+           AND s.id=r.space_id AND s.type='EVENT'
+           AND sm.space_id=s.id AND sm.user_id=$2 AND sm.state='active'
+           AND u.id=$2 AND u.status='active'
+         RETURNING r.id`,[spaceId,userId]);
+      if(!result.rowCount) throw new NotFoundException('RSVP not found.');
+      return {removed:true};
+    });
   }
 }
