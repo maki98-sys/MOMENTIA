@@ -68,6 +68,7 @@ export class ModerationService {
     if(Object.keys(v).some(k=>!['decision','action','note'].includes(k))) throw new BadRequestException('Unsupported review fields.');
     if(!['reviewing','resolve','dismiss'].includes(String(v.decision))) throw new BadRequestException('Invalid moderation decision.');
     if(v.action!==undefined&&!['none','hide','restore','suspend_user','unsuspend_user','remove_media'].includes(String(v.action))) throw new BadRequestException('Invalid moderation action.');
+    if(v.decision!=='resolve'&&v.action!==undefined&&v.action!=='none') throw new BadRequestException('Moderation actions can only be applied when resolving a report.');
     if(v.note!==undefined&&(typeof v.note!=='string'||v.note.length>2000)) throw new BadRequestException('note must not exceed 2000 characters.');
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
