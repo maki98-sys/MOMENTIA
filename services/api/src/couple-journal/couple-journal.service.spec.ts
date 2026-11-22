@@ -12,6 +12,7 @@ describe('CoupleJournalService',()=>{
  it('audits encrypted journal entry creation',async()=>{
   const transaction=jest.fn();
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
    .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
    .mockResolvedValueOnce({rows:[{id:'space'}],rowCount:1})
    .mockResolvedValueOnce({rows:[{total:2}],rowCount:1})
@@ -22,12 +23,14 @@ describe('CoupleJournalService',()=>{
   await expect(audited.create('space','user',{
    ciphertext:Buffer.alloc(16).toString('base64'),nonce:Buffer.alloc(12).toString('base64'),
   })).resolves.toMatchObject({id:'entry'});
-  expect(clientQuery.mock.calls[4][0]).toContain('couple.journal_entry.created');
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock_shared');
+  expect(clientQuery.mock.calls[5][0]).toContain('couple.journal_entry.created');
  });
 
  it('audits encrypted journal entry deletion',async()=>{
   const transaction=jest.fn();
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rows:[],rowCount:0})
    .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
    .mockResolvedValueOnce({rows:[{id:'space'}],rowCount:1})
    .mockResolvedValueOnce({rows:[{id:'entry'}],rowCount:1})
@@ -35,7 +38,8 @@ describe('CoupleJournalService',()=>{
   transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
   const audited=new CoupleJournalService({transaction} as unknown as DatabaseService);
   await expect(audited.remove('space','entry','user')).resolves.toEqual({deleted:true,id:'entry'});
-  expect(clientQuery.mock.calls[3][0]).toContain('couple.journal_entry.deleted');
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock_shared');
+  expect(clientQuery.mock.calls[4][0]).toContain('couple.journal_entry.deleted');
  });
 
 });
