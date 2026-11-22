@@ -24,6 +24,8 @@ describe('CoupleJournalService',()=>{
    ciphertext:Buffer.alloc(16).toString('base64'),nonce:Buffer.alloc(12).toString('base64'),
   })).resolves.toMatchObject({id:'entry'});
   expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock_shared');
+  expect(clientQuery.mock.calls[2][0]).toContain("me.status='active'");
+  expect(clientQuery.mock.calls[2][0]).toContain('user_blocks');
   expect(clientQuery.mock.calls[5][0]).toContain('couple.journal_entry.created');
  });
 

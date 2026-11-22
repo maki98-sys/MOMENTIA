@@ -6,22 +6,32 @@ export class MembershipsService {
   constructor(private readonly database: DatabaseService) {}
 
   async list(userId: string, spaceId: string) {
-    const result = await this.database.query(
-      `SELECT sm.user_id, sm.role, sm.state, sm.joined_at,
-              p.display_name, p.avatar_media_id
-       FROM space_memberships sm
-       JOIN users u ON u.id = sm.user_id
-       LEFT JOIN user_profiles p ON p.user_id = sm.user_id
-       WHERE sm.space_id = $1
-         AND EXISTS (
-           SELECT 1 FROM space_memberships caller
-           WHERE caller.space_id = $1 AND caller.user_id = $2 AND caller.state = 'active'
-         )
-       ORDER BY sm.joined_at ASC, sm.user_id ASC`,
-      [spaceId, userId],
-    );
-    if (!result.rowCount) throw new NotFoundException('Space not found.');
-    return result.rows;
+    return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const result = await client.query(
+        `SELECT sm.user_id, sm.role, sm.state, sm.joined_at,
+                p.display_name, p.avatar_media_id
+         FROM space_memberships sm
+         JOIN users u ON u.id = sm.user_id AND u.status = 'active'
+         JOIN spaces s ON s.id = sm.space_id AND s.status IN ('active','archived')
+         LEFT JOIN user_profiles p ON p.user_id = sm.user_id
+         WHERE sm.space_id = $1
+           AND EXISTS (
+             SELECT 1 FROM space_memberships caller
+             JOIN users caller_user ON caller_user.id=caller.user_id AND caller_user.status='active'
+             WHERE caller.space_id = $1 AND caller.user_id = $2 AND caller.state = 'active'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM user_blocks b
+             WHERE (b.blocker_id=$2 AND b.blocked_id=sm.user_id)
+                OR (b.blocker_id=sm.user_id AND b.blocked_id=$2)
+           )
+         ORDER BY sm.joined_at ASC, sm.user_id ASC`,
+        [spaceId, userId],
+      );
+      if (!result.rowCount) throw new NotFoundException('Space not found.');
+      return result.rows;
+    });
   }
 
   async changeRole(actorId: string, spaceId: string, targetId: string, role: unknown) {

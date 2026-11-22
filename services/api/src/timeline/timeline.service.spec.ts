@@ -19,13 +19,18 @@ describe('TimelineService',()=>{
   await expect(service.add('u','s',{mediaAssetId:'m',occurredAt:'yesterday-ish'})).rejects.toBeInstanceOf(BadRequestException);
  });
  it('filters blocked authors and inaccessible media from timeline reads',async()=>{
-  query.mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{ok:1}]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:1,rows:[]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{ok:1}]});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
   await expect(service.list('u1','s1')).resolves.toEqual([]);
-  expect(query.mock.calls[0][0]).toContain('user_blocks');
-  expect(query.mock.calls[0][0]).toContain('post_author.id IS NOT NULL');
-  expect(query.mock.calls[0][0]).toContain('media_owner.id IS NOT NULL');
-  expect(query.mock.calls[0][0]).toContain("p.audience='public'");
-  expect(query.mock.calls[0][1]).toEqual(['u1','s1',null,null,30]);
+  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
+  expect(clientQuery.mock.calls[1][0]).toContain('post_author.id IS NOT NULL');
+  expect(clientQuery.mock.calls[1][0]).toContain('media_owner.id IS NOT NULL');
+  expect(clientQuery.mock.calls[1][0]).toContain("p.audience='public'");
+  expect(clientQuery.mock.calls[1][1]).toEqual(['u1','s1',null,null,30]);
+  expect(clientQuery.mock.calls[2][0]).toContain("viewer.status='active'");
  });
  it('rejects adding a post with an incompatible audience or blocked author',async()=>{
   const clientQuery=jest.fn()

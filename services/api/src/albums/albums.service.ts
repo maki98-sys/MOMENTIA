@@ -56,6 +56,7 @@ export class AlbumsService {
                 OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1))) item_count
          FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+         JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
          WHERE a.space_id=$2 AND (a.visibility='members' OR sm.role IN ('owner','admin','moderator'))
          ORDER BY a.created_at DESC`,[userId,spaceId]);
       if(!r.rowCount) {
@@ -83,6 +84,7 @@ export class AlbumsService {
       const access=await client.query(
       `SELECT a.id,a.visibility,sm.role FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+       JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
        WHERE a.id=$2 AND a.space_id=$3`,
       [userId,albumId,spaceId]);
     if(!access.rowCount) throw new NotFoundException('Album not found.');
@@ -131,6 +133,7 @@ export class AlbumsService {
         `SELECT a.id,a.visibility,sm.role FROM space_albums a
          JOIN spaces s ON s.id=a.space_id AND s.status='active'
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+         JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
          WHERE a.id=$2 AND a.space_id=$3 FOR UPDATE`,[userId,albumId,spaceId]);
       if(!album.rowCount) throw new NotFoundException('Album not found.');
       if(album.rows[0].role==='guest') throw new NotFoundException('Album not found.');
@@ -158,7 +161,9 @@ export class AlbumsService {
       const result=await client.query(
         `SELECT i.id,i.added_by,sm.role FROM space_album_items i
          JOIN space_albums a ON a.id=i.album_id
+         JOIN spaces s ON s.id=a.space_id AND s.status='active'
          JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+         JOIN users viewer ON viewer.id=sm.user_id AND viewer.status='active'
          WHERE i.id=$2 AND i.album_id=$3 AND a.space_id=$4 AND i.status='active' FOR UPDATE`,
         [userId,itemId,albumId,spaceId]);
       if(!result.rowCount) throw new NotFoundException('Album item not found.');

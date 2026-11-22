@@ -123,7 +123,8 @@ export class InvitationsService {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const invitation = await client.query(
         `SELECT i.id, i.space_id, i.role, i.expires_at, i.max_uses, i.uses,
-                i.approval_required, i.revoked_at, s.type, s.status
+                i.approval_required, i.revoked_at, i.created_by,
+                s.type, s.status, s.owner_id
          FROM space_invitations i
          JOIN spaces s ON s.id = i.space_id
          WHERE i.token_hash = $1
@@ -139,6 +140,20 @@ export class InvitationsService {
       }
       if (invite.type === 'COUPLE') {
         throw new BadRequestException('Couple invitations require the dedicated mutual-consent flow.');
+      }
+      const eligibleUser = await client.query(
+        `SELECT u.id FROM users u
+         WHERE u.id=$1 AND u.status='active'
+           AND NOT EXISTS (
+             SELECT 1 FROM user_blocks b
+             WHERE (b.blocker_id IN ($2::uuid,$3::uuid) AND b.blocked_id=u.id)
+                OR (b.blocker_id=u.id AND b.blocked_id IN ($2::uuid,$3::uuid))
+           )
+         FOR SHARE OF u`,
+        [userId, invite.owner_id, invite.created_by],
+      );
+      if (!eligibleUser.rowCount) {
+        throw new NotFoundException('Invitation is invalid or unavailable.');
       }
       const existing = await client.query(
         `SELECT state FROM space_memberships WHERE space_id = $1 AND user_id = $2 FOR UPDATE`,

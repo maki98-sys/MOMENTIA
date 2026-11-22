@@ -358,7 +358,9 @@ export class MediaService {
       `SELECT a.id,a.status,a.owner_id,a.storage_key_original,a.storage_provider,a.mime_type_detected,
               a.original_filename,a.size_bytes,a.width,a.height,a.created_at,
               a.processing_completed_at,a.moderation_scan_status
-       FROM media_assets a JOIN users asset_owner ON asset_owner.id=a.owner_id AND asset_owner.status='active'
+       FROM media_assets a
+       JOIN users asset_owner ON asset_owner.id=a.owner_id AND asset_owner.status='active'
+       JOIN users media_viewer ON media_viewer.id=$2 AND media_viewer.status='active'
        WHERE a.id=$1 AND a.status='ready'
          AND (
            a.owner_id=$2
@@ -390,6 +392,9 @@ export class MediaService {
                  JOIN space_memberships sm ON sm.space_id=al.space_id AND sm.user_id=$2 AND sm.state='active'
                  WHERE i.media_asset_id=a.id AND i.status='active'
                    AND (al.visibility='members' OR sm.role IN ('owner','admin','moderator'))
+                   AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                     (b.blocker_id=$2 AND b.blocked_id=i.added_by)
+                     OR (b.blocker_id=i.added_by AND b.blocked_id=$2))
                )
                OR EXISTS (
                  SELECT 1 FROM timeline_entries te
