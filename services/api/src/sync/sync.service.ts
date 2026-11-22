@@ -671,7 +671,7 @@ export class SyncService {
     if (has('posts')) {
       const r = await client.query(
         `SELECT p.id,p.author_id,p.space_id,p.media_asset_id,p.body,p.audience,p.status,p.created_at,p.published_at,p.updated_at
-         FROM posts p
+         FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
          WHERE p.status='published' AND (
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
@@ -686,7 +686,8 @@ export class SyncService {
     if (has('comments')) {
       const r = await client.query(
         `SELECT c.id,c.post_id,c.author_id,c.body,c.status,c.created_at
-         FROM post_comments c JOIN posts p ON p.id=c.post_id
+         FROM post_comments c JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+         JOIN posts p ON p.id=c.post_id JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
          WHERE c.status='visible' AND p.status='published' AND (
            p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(
@@ -737,10 +738,12 @@ export class SyncService {
                 i.id AS item_id,i.media_asset_id,i.added_by,i.caption,i.occurred_at,i.status,i.created_at
          FROM space_albums a JOIN space_memberships m ON m.space_id=a.space_id
          LEFT JOIN space_album_items i ON i.album_id=a.id AND i.status='active'
+           AND EXISTS(SELECT 1 FROM users added_by WHERE added_by.id=i.added_by AND added_by.status='active')
            AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
              (b.blocker_id=$1 AND b.blocked_id=i.added_by)
              OR (b.blocker_id=i.added_by AND b.blocked_id=$1))
-           AND EXISTS(SELECT 1 FROM media_assets ma WHERE ma.id=i.media_asset_id AND ma.status='ready'
+           AND EXISTS(SELECT 1 FROM media_assets ma JOIN users media_owner ON media_owner.id=ma.owner_id AND media_owner.status='active'
+             WHERE ma.id=i.media_asset_id AND ma.status='ready'
              AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
                OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1)))
@@ -813,7 +816,7 @@ export class SyncService {
         `SELECT r.id,r.target_type,r.target_id,r.reaction_type,r.created_at
          FROM content_reactions r
          WHERE r.user_id=$1 AND (
-           (r.target_type='post' AND EXISTS(SELECT 1 FROM posts p WHERE p.id=r.target_id AND p.status='published'
+           (r.target_type='post' AND EXISTS(SELECT 1 FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active' WHERE p.id=r.target_id AND p.status='published'
              AND (p.author_id=$1 OR p.audience='public'
                OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                  WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
