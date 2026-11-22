@@ -301,7 +301,7 @@ export class NotificationsService {
     for (const item of deliveries) {
       try {
         const deliveryState = await this.db.query(
-          `SELECT d.revoked_at,d.push_token_encrypted,
+          `SELECT d.revoked_at,d.platform,d.push_token_encrypted,
                   COALESCE(np.push_enabled,true) AS push_enabled
            FROM devices d JOIN users u ON u.id=d.user_id AND u.status='active'
            JOIN notifications n ON n.id=$1 AND n.user_id=d.user_id
@@ -319,7 +319,7 @@ export class NotificationsService {
           );
           continue;
         }
-        if (item.platform !== 'ios' && item.platform !== 'android') {
+        if (state.platform !== 'ios' && state.platform !== 'android') {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
         const token = decryptPushToken(String(state.push_token_encrypted));
