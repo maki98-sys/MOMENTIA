@@ -24,6 +24,7 @@ export class TimelineService {
        LEFT JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
        LEFT JOIN user_profiles up ON up.user_id=p.author_id
        LEFT JOIN media_assets m ON m.id=t.media_asset_id AND m.status='ready'
+       LEFT JOIN users media_owner ON media_owner.id=m.owner_id AND media_owner.status='active'
        LEFT JOIN user_profiles pu ON pu.user_id=m.owner_id
        WHERE t.space_id=$2
          AND ($3::timestamptz IS NULL OR (t.occurred_at,t.id)<($3::timestamptz,$4::uuid))
@@ -42,7 +43,7 @@ export class TimelineService {
              OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
          ))
          AND (t.media_asset_id IS NULL OR (
-           m.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+           m.id IS NOT NULL AND media_owner.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
              (b.blocker_id=$1 AND b.blocked_id=m.owner_id)
              OR (b.blocker_id=m.owner_id AND b.blocked_id=$1))
          ))
