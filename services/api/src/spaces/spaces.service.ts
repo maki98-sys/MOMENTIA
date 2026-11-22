@@ -215,7 +215,7 @@ export class SpacesService {
       }
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4,'newStatus',$5))`,
+         VALUES($1,$2,$3,'space',$1,jsonb_build_object('previousStatus',$4::text,'newStatus',$5::text))`,
         [spaceId,userId,`space.${action}`,status,next]);
       return updated.rows[0];
     });
@@ -263,7 +263,7 @@ export class SpacesService {
         );
         await client.query(
           `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-           VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3))`,
+           VALUES($1,$2,'event.auto_archived','space',$1,jsonb_build_object('graceHours',$3::integer))`,
           [event.id,event.owner_id,grace],
         );
       }
