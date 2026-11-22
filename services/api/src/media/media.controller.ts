@@ -72,7 +72,8 @@ export class MediaController {
   try {
    return await this.media.receiveUploadFile(req.userId!,id,staged.filePath,staged.sizeBytes);
   } finally {
-   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);\n   staged.release();
+   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);
+   staged.release();
   }
  }
  @Put('uploads/:uploadId/parts/:partNumber')
