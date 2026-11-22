@@ -15,27 +15,36 @@ describe('Space invitation authorization (PostgreSQL)', () => {
   let spaceId: string;
 
   beforeEach(async () => {
+    const client = await pool.connect();
+    await client.query('BEGIN');
+    try {
     ownerId = randomUUID();
     inviteeId = randomUUID();
     spaceId = randomUUID();
-    await pool.query(
+    await client.query(
       `INSERT INTO users(id,email_normalized,status)
        VALUES($1,$2,'active'),($3,$4,'active')`,
       [ownerId, `invite-owner-${ownerId}@momentia.test`, inviteeId, `invite-user-${inviteeId}@momentia.test`],
     );
-    await pool.query(
+    await client.query(
       `INSERT INTO spaces(id,type,owner_id,name,visibility,status)
        VALUES($1,'EVENT',$2,'Invitation authorization test','private','active')`,
       [spaceId, ownerId],
     );
-    await pool.query('INSERT INTO event_details(space_id,timezone) VALUES($1,\'UTC\')', [spaceId]);
-    await pool.query(
+    await client.query('INSERT INTO event_details(space_id,timezone) VALUES($1,\'UTC\')', [spaceId]);
+    await client.query(
       `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
        VALUES($1,$2,'owner','active',now())`,
       [spaceId, ownerId],
     );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
-
   afterEach(async () => {
     await pool.query('DELETE FROM spaces WHERE id=$1', [spaceId]);
     await pool.query(
