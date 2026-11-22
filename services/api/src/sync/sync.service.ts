@@ -307,7 +307,14 @@ export class SyncService {
     if (membership.rows[0].role === 'guest') throw new Error('INTERACTION_NOT_ALLOWED');
     if (postId) {
       if (typeof postId !== 'string' || !UUID.test(postId)) throw new Error('INVALID_POST_ID');
-      const post = await client.query(`SELECT id FROM posts WHERE id=$1 AND space_id=$2 AND status='published'`, [postId,spaceId]);
+      const post = await client.query(
+        `SELECT p.id FROM posts p WHERE p.id=$1 AND p.space_id=$2
+           AND p.status='published' AND p.audience='space'
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+             (b.blocker_id=$3 AND b.blocked_id=p.author_id)
+             OR (b.blocker_id=p.author_id AND b.blocked_id=$3))`,
+        [postId,spaceId,userId],
+      );
       if (!post.rowCount) throw new Error('POST_NOT_FOUND');
     }
     if (mediaAssetId) {
@@ -714,7 +721,12 @@ export class SyncService {
                  (b.blocker_id=$1 AND b.blocked_id=p.author_id)
                  OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
            ))
-           AND (t.media_asset_id IS NULL OR EXISTS(SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'))
+           AND (t.media_asset_id IS NULL OR EXISTS(
+             SELECT 1 FROM media_assets a WHERE a.id=t.media_asset_id AND a.status='ready'
+               AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
+                 (b.blocker_id=$1 AND b.blocked_id=a.owner_id)
+                 OR (b.blocker_id=a.owner_id AND b.blocked_id=$1))
+           ))
          ORDER BY t.occurred_at DESC,t.id`, [userId]);
       data.timeline = r.rows;
     }
