@@ -43,7 +43,7 @@ export class DeviceSessionService {
         `SELECT id,user_id FROM devices WHERE device_key=$1 FOR UPDATE`,
         [value.deviceKey],
       );
-      let result;
+      let result: any;
       if(existing.rowCount) {
         const deviceId=existing.rows[0].id;
         const previousUserId=String(existing.rows[0].user_id);
