@@ -377,7 +377,8 @@ export class MediaService {
                      OR (p.audience='followers' AND EXISTS (
                        SELECT 1 FROM user_relationships ur
                        WHERE ur.requester_id=$2 AND ur.target_id=p.author_id AND ur.state='accepted'))
-                     OR (p.audience='space' AND EXISTS (
+                     OR (p.audience='space' AND EXISTS (SELECT 1 FROM spaces post_space WHERE post_space.id=p.space_id AND post_space.status IN ('active','archived'))
+                       AND EXISTS (
                        SELECT 1 FROM space_memberships sm
                        WHERE sm.space_id=p.space_id AND sm.user_id=$2 AND sm.state='active')))
                )
