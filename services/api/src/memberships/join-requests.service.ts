@@ -51,6 +51,7 @@ export class JoinRequestsService {
 
   async review(actorId:string,spaceId:string,requestId:string,decision:'approved'|'rejected') {
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const request=await client.query(
         `SELECT r.id,r.requester_id,r.status,s.id AS space_id
          FROM space_join_requests r JOIN spaces s ON s.id=r.space_id
