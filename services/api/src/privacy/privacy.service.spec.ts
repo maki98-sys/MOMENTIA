@@ -108,7 +108,7 @@ describe('PrivacyService',()=>{
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.completeDeletionRequest(worker,requestId,{success:true,purged:true}))
       .rejects.toBeInstanceOf(ConflictException);
-    expect(clientQuery).toHaveBeenCalledTimes(3);
+    expect(clientQuery).toHaveBeenCalledTimes(5);
   });
 
   it('completes a purge only after all media and storage tasks are cleared',async()=>{
