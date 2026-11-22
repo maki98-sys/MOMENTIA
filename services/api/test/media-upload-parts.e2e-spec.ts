@@ -19,9 +19,9 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
   const objects = new Map<string, Buffer>();
   const storage = {
     put: jest.fn(async (key: string, bytes: Buffer) => { objects.set(key, Buffer.from(bytes)); }),
-    putFile: jest.fn(async (key: string, filePath: string, expectedSize: number) => {
+    putFile: jest.fn(async (key: string, filePath: string, expectedSize: number, checksum: string) => {
       const value = await readFile(filePath);
-      if (value.length !== expectedSize) throw new Error('Staged object size mismatch');
+      if (value.length !== expectedSize || sha256(value) !== checksum) throw new Error('Staged object integrity mismatch');
       objects.set(key, Buffer.from(value));
     }),
     read: jest.fn(async (key: string) => {
