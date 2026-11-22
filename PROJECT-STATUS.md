@@ -404,7 +404,9 @@ No se asigna un nuevo porcentaje global hasta recalcular las tareas ponderadas y
 - Las pruebas se ejecutaron en CI y pasaron.
 - Esto mejora la validación de entrada; no certifica la autorización, persistencia, orden, reintentos ni sincronización completa del cliente.
 
-### Hallazgo de seguridad pendiente — snapshots de sincronización
+### Hallazgo histórico de seguridad — snapshots de sincronización
+
+**Estado del hallazgo original:** identificado el 21 de noviembre y parcialmente corregido en la actualización del 22 de noviembre que aparece más abajo. El texto siguiente describe el riesgo original; no debe interpretarse como descripción del código actual.
 
 La inspección estática de `SyncService.snapshot()` identificó un riesgo que requiere resolver antes de certificar snapshots paginados como seguros: al crear el snapshot, se materializa información autorizada y se persiste en `sync_snapshot_sessions.data`. Las páginas posteriores recuperan ese contenido congelado por `snapshotId` y `user_id`, sin volver a evaluar todos los permisos de origen. Si después de crear el snapshot se revoca una membresía o cambia una relación/bloqueo/visibilidad, el contenido materializado podría seguir disponible hasta la expiración de la sesión (30 minutos).
 
