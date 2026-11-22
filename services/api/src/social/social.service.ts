@@ -188,7 +188,8 @@ export class SocialService {
          AND (p.author_id=$1 OR p.audience='public'
            OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships ur
                WHERE ur.requester_id=$1 AND ur.target_id=p.author_id AND ur.state='accepted'))
-           OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+           OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+               AND EXISTS(SELECT 1 FROM space_memberships sm
                WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))
            OR p.audience='private' AND p.author_id=$1)
        ORDER BY p.published_at DESC,p.id DESC LIMIT $4`,
