@@ -6,6 +6,9 @@ export const environmentSchema = Joi.object({
   DATABASE_URL: Joi.string().uri({ scheme: ['postgres', 'postgresql'] }).required(),
   DATABASE_SSL: Joi.boolean().truthy('true').falsy('false').default(false),
   DATABASE_POOL_MAX: Joi.number().integer().min(1).max(50).default(10),
+  DATABASE_STATEMENT_TIMEOUT_MS: Joi.number().integer().min(1000).max(180000).default(60000),
+  DATABASE_QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).max(240000).default(65000),
+  DATABASE_IDLE_TRANSACTION_TIMEOUT_MS: Joi.number().integer().min(1000).max(300000).default(30000),
   CORS_ORIGINS: Joi.string().allow('').default(''),
   MOMENTIA_MODERATOR_USER_IDS: Joi.string().allow('').default('').custom((value, helpers) => {
     const ids = value.split(',').map((entry: string) => entry.trim()).filter(Boolean);
