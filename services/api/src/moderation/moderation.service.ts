@@ -70,6 +70,7 @@ export class ModerationService {
     if(v.action!==undefined&&!['none','hide','restore','suspend_user','unsuspend_user','remove_media'].includes(String(v.action))) throw new BadRequestException('Invalid moderation action.');
     if(v.note!==undefined&&(typeof v.note!=='string'||v.note.length>2000)) throw new BadRequestException('note must not exceed 2000 characters.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const found=await client.query(`SELECT * FROM user_reports WHERE id=$1 FOR UPDATE`,[reportId]);
       if(!found.rowCount) throw new NotFoundException('Report not found.');
       const report=found.rows[0] as Record<string,any>;
