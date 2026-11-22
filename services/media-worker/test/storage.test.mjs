@@ -161,7 +161,9 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
     try {
       const storage = new S3MediaWorkerStorage();
       const key = 'users/u1/media.bin';
-      const local = await storage.materialize(key);
+      await assert.rejects(storage.materialize(key, remote.length + 1), /differs from the declared size/);
+      assert.equal(calls.filter(command => command instanceof GetObjectCommand).length, 0);
+      const local = await storage.materialize(key, remote.length);
       assert.deepEqual(await readFile(local), remote);
       assert.deepEqual(await storage.stat(key), { size: remote.length, isFile: true });
 
