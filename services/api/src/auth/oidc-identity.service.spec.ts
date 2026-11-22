@@ -60,10 +60,11 @@ describe('OidcIdentityService', () => {
     h.query
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // identity not found
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // verified-email advisory lock
       .mockResolvedValueOnce({ rows: [{ id: 'existing-user' }], rowCount: 1 }); // email already owned
 
     await expect(h.service.resolveOrProvision(principal)).rejects.toBeInstanceOf(ConflictException);
-    expect(h.query).toHaveBeenCalledTimes(3);
+    expect(h.query).toHaveBeenCalledTimes(4);
   });
 
   it('creates a user and external identity in the same transaction', async () => {
@@ -71,6 +72,7 @@ describe('OidcIdentityService', () => {
     h.query
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // advisory transaction lock
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // identity not found
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // verified-email advisory lock
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // email available
       .mockResolvedValueOnce({ rows: [{ id: 'new-user' }], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // user profile
@@ -80,7 +82,7 @@ describe('OidcIdentityService', () => {
       userId: 'new-user',
       created: true,
     });
-    expect(h.query.mock.calls[3][0]).toContain('INSERT INTO users');
-    expect(h.query.mock.calls[5][0]).toContain('INSERT INTO auth_identities');
+    expect(h.query.mock.calls[4][0]).toContain('INSERT INTO users');
+    expect(h.query.mock.calls[6][0]).toContain('INSERT INTO auth_identities');
   });
 });
