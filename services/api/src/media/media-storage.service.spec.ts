@@ -155,6 +155,20 @@ describe('S3MediaStorage server-side encryption', () => {
     }
   });
 
+  it('does not delete an existing S3 key when pre-upload checksum validation fails', async () => {
+    const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-invalid-checksum-'));
+    const source = join(stage, 'upload.bin');
+    await writeFile(source, Buffer.from('payload'));
+    try {
+      const storage = new S3MediaStorage();
+      await expect(storage.putFile('users/u1/existing.bin', source, 7, 'invalid-checksum'))
+        .rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(sendSpy).not.toHaveBeenCalled();
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  });
+
   it('deletes an S3 object when its post-upload checksum does not match', async () => {
     const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-checksum-mismatch-'));
     const source = join(stage, 'upload.bin');
