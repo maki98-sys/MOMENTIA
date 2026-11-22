@@ -30,6 +30,15 @@ describe('SocialService',()=>{
   await expect(service.feed('u1','not-a-date')).rejects.toBeInstanceOf(BadRequestException);
   expect(query).not.toHaveBeenCalled();
  });
+ it('uses a composite timestamp and UUID cursor for stable feed pagination',async()=>{
+  const cursorId='00000000-0000-4000-8000-000000000099';
+  const cursorAt='2026-11-21T10:00:00.000Z';
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.feed('u1',cursorAt+'|'+cursorId,10)).resolves.toEqual([]);
+  expect(query.mock.calls[0][0]).toContain('(p.published_at,p.id)<($2::timestamptz,$3::uuid)');
+  expect(query.mock.calls[0][1]).toEqual(['u1',cursorAt,cursorId,10]);
+ });
+
  it('does not remove a reaction when the caller cannot view the post',async()=>{
   const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:0,rows:[]});
   transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
