@@ -292,9 +292,11 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
       })),
     };
     const recordingSync = new SyncService(recordingDatabase as any);
-    await recordingSync.snapshot(viewerId, { sections: ['timeline'], limit: 100 });
+    const snapshot = await recordingSync.snapshot(viewerId, { sections: ['timeline'], limit: 100 });
+    const saved = await pool.query('SELECT data FROM sync_snapshot_sessions WHERE id=$1',[snapshot.snapshotId]);
+    expect(saved.rows[0].data).toEqual({});
 
-    const cursorIndex = statements.findIndex(sql => sql.includes('MAX(sequence_id)'));
+    const cursorIndex = statements.findIndex(sql => sql.includes('MAX(sequence_id'));
     const timelineIndex = statements.findIndex(sql => sql.includes('FROM timeline_entries t'));
     expect(cursorIndex).toBeGreaterThanOrEqual(0);
     expect(timelineIndex).toBeGreaterThan(cursorIndex);
