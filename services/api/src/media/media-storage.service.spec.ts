@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -43,6 +43,15 @@ describe('LocalMediaStorage symlink path hardening', () => {
     await writeFile(source, payload);
     await storage.putFile('users/u1/streamed.bin', source, payload.length, createHash('sha256').update(payload).digest('hex'));
     expect(await readFile(join(root, 'users/u1/streamed.bin'))).toEqual(payload);
+  });
+
+  it('does not publish a local staged object when its checksum differs', async () => {
+    const source = join(root, 'bad-staged-upload.bin');
+    const payload = Buffer.from('tampered-media');
+    await writeFile(source, payload);
+    await expect(storage.putFile('users/u1/tampered.bin', source, payload.length, '0'.repeat(64)))
+      .rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(readFile(join(root, 'users/u1/tampered.bin'))).rejects.toBeDefined();
   });
 
   it('rejects symlinked parent directories before writes', async () => {
@@ -141,6 +150,32 @@ describe('S3MediaStorage server-side encryption', () => {
       expect(command.input.Body).toBeDefined();
       expect(command.input.ServerSideEncryption).toBe('AES256');
       expect(sendSpy.mock.calls[1][0]).toBeInstanceOf(HeadObjectCommand);
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  });
+
+  it('deletes an S3 object when its post-upload checksum does not match', async () => {
+    const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-checksum-mismatch-'));
+    const source = join(stage, 'upload.bin');
+    const payload = Buffer.from('streamed-s3-content');
+    await writeFile(source, payload);
+    sendSpy.mockImplementation(async (command: any) => {
+      if (command instanceof PutObjectCommand) {
+        for await (const _chunk of command.input.Body) { /* consume upload stream */ }
+        return {} as never;
+      }
+      if (command instanceof HeadObjectCommand) {
+        return { ContentLength: payload.length, ChecksumSHA256: 'mismatched' } as never;
+      }
+      return {} as never;
+    });
+    try {
+      const storage = new S3MediaStorage();
+      const checksum = createHash('sha256').update(payload).digest('hex');
+      await expect(storage.putFile('users/u1/mismatch.bin', source, payload.length, checksum))
+        .rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(sendSpy.mock.calls.some(([command]) => command instanceof DeleteObjectCommand)).toBe(true);
     } finally {
       await rm(stage, { recursive: true, force: true });
     }
