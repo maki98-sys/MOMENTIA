@@ -80,6 +80,21 @@ export class MediaProcessingService {
       }
       if(job.job_type==='virus_scan') {
         const verdict=String(value.scanVerdict??'unavailable');
+        if(verdict==='unavailable') {
+          // A scanner outage is not a clean verdict. Keep the asset private and
+          // retry the scan with bounded backoff instead of completing the job.
+          await client.query(
+            `UPDATE media_assets SET moderation_scan_status='unavailable',
+               status=CASE WHEN status IN ('pending','processing') THEN 'quarantined' ELSE status END
+             WHERE id=$1`,[job.media_asset_id]);
+          const terminal=Number(job.attempts)>=Number(job.max_attempts);
+          await client.query(
+            `UPDATE media_processing_jobs SET status='failed',last_error_code='SCANNER_UNAVAILABLE',
+               available_at=now()+make_interval(secs=>LEAST(1800,15*(2^LEAST(attempts,7))::integer)),
+               locked_at=NULL,locked_by=NULL,updated_at=now()
+             WHERE id=$1`,[jobId]);
+          return {jobId,status:'failed',retryable:!terminal,mediaAssetId:job.media_asset_id,nextStage:'blocked'};
+        }
         await client.query(
           `UPDATE media_assets SET moderation_scan_status=$2,
              status=CASE WHEN $2='rejected' THEN 'quarantined' ELSE status END
