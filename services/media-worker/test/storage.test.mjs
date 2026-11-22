@@ -195,6 +195,36 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
   });
 });
 
+test('S3 downloads reject truncated and oversized streams and remove partial staging files', async () => {
+  await withCleanEnv(async () => {
+    const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-download-limits-'));
+    const originalSend = S3Client.prototype.send;
+    let payload = Buffer.from('short');
+    S3Client.prototype.send = async function(command) {
+      if (command instanceof HeadObjectCommand) return { ContentLength: 5 };
+      if (command instanceof GetObjectCommand) return { Body: Readable.from([payload]) };
+      throw new Error('Unexpected S3 command');
+    };
+    process.env.MEDIA_S3_BUCKET = 'momentia-test';
+    process.env.MEDIA_WORKER_TEMP_DIR = stage;
+    try {
+      const storage = new S3MediaWorkerStorage();
+      const truncatedKey = 'users/u1/truncated.bin';
+      payload = Buffer.from('four');
+      await assert.rejects(storage.materialize(truncatedKey, 5), /does not match its HEAD metadata/);
+      await assert.rejects(readFile(storage.pathFor(truncatedKey)));
+
+      const oversizedKey = 'users/u1/oversized.bin';
+      payload = Buffer.from('sixsix');
+      await assert.rejects(storage.materialize(oversizedKey, 5), /exceeded its declared size/);
+      await assert.rejects(readFile(storage.pathFor(oversizedKey)));
+    } finally {
+      S3Client.prototype.send = originalSend;
+      await rm(stage, { recursive: true, force: true });
+    }
+  });
+});
+
 test('S3 adapter deletes an object when post-upload checksum verification fails', async () => {
   await withCleanEnv(async () => {
     const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-checksum-failure-'));
