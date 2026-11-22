@@ -119,7 +119,7 @@ export class SessionTokenService {
                 d.id device_id_found,d.revoked_at device_revoked_at
          FROM auth_sessions s JOIN users u ON u.id=s.user_id
          LEFT JOIN devices d ON d.id=s.device_id
-         WHERE s.id=$1 AND s.family_id=$2 FOR UPDATE OF s,u`,
+         WHERE s.id=$1 AND s.family_id=$2 AND s.revoked_at IS NULL FOR UPDATE OF s,u`,
         [row.session_id,row.family_id],
       );
       if (!session.rowCount || session.rows[0].status!=='active' ||
