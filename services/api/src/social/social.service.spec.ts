@@ -89,4 +89,23 @@ describe('SocialService',()=>{
   await expect(service.follow('u1','u2')).rejects.toBeInstanceOf(NotFoundException);
   expect(clientQuery).toHaveBeenCalledTimes(1);
  });
+ it('filters comments authored by users blocked in either direction',async()=>{
+  query.mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]}).mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.comments('u1','visible-post')).resolves.toEqual([]);
+  expect(query.mock.calls[1][0]).toContain('NOT EXISTS (SELECT 1 FROM user_blocks');
+  expect(query.mock.calls[1][1]).toEqual(['visible-post','u1']);
+ });
+ it('rejects reactions to comments from blocked authors',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.reactToComment('u1','blocked-comment','like')).rejects.toBeInstanceOf(NotFoundException);
+  expect(query).toHaveBeenCalledTimes(1);
+  expect(query.mock.calls[0][0]).toContain('user_blocks');
+ });
+ it('rejects reaction removal against comments from blocked authors',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.removeCommentReaction('u1','blocked-comment')).rejects.toBeInstanceOf(NotFoundException);
+  expect(query).toHaveBeenCalledTimes(1);
+  expect(query.mock.calls[0][0]).toContain('user_blocks');
+ });
+
 });
