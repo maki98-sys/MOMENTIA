@@ -42,7 +42,9 @@ export class AlbumsService {
     const r=await this.db.query(
       `SELECT a.id,a.space_id,a.created_by,a.name,a.description,a.visibility,a.event_starts_at,a.event_ends_at,a.created_at,
         (SELECT count(*)::int FROM space_album_items i
+          JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
           JOIN media_assets ma ON ma.id=i.media_asset_id AND ma.status='ready'
+          JOIN users media_owner ON media_owner.id=ma.owner_id AND media_owner.status='active'
           WHERE i.album_id=a.id AND i.status='active'
             AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
               (b.blocker_id=$1 AND b.blocked_id=i.added_by)
@@ -84,6 +86,8 @@ export class AlbumsService {
               m.mime_type_detected,m.width,m.height,m.size_bytes
        FROM space_album_items i
        JOIN media_assets m ON m.id=i.media_asset_id AND m.status='ready'
+       JOIN users added_by ON added_by.id=i.added_by AND added_by.status='active'
+       JOIN users media_owner ON media_owner.id=m.owner_id AND media_owner.status='active'
        WHERE i.album_id=$1 AND i.status='active'
          AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
            (b.blocker_id=$5 AND b.blocked_id=i.added_by)
