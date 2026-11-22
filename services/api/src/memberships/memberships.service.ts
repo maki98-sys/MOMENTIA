@@ -29,6 +29,7 @@ export class MembershipsService {
       throw new BadRequestException('Unsupported membership role.');
     }
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const current=await client.query(
         `SELECT target.role FROM space_memberships target
          WHERE target.space_id=$2 AND target.user_id=$3 AND target.state='active'
@@ -88,6 +89,7 @@ export class MembershipsService {
   async remove(actorId: string, spaceId: string, targetId: string) {
     if (actorId === targetId) throw new BadRequestException('Use the leave endpoint to remove yourself.');
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result = await client.query(
         `UPDATE space_memberships target SET state = 'removed', left_at = now()
          WHERE target.space_id = $2 AND target.user_id = $3 AND target.state = 'active'
@@ -126,6 +128,7 @@ export class MembershipsService {
       throw new BadRequestException('Ownership must be transferred to another active member.');
     }
     return this.database.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const locked = await client.query(
         `SELECT id FROM spaces
          WHERE id = $1 AND owner_id = $2 AND status = 'active'
@@ -170,6 +173,7 @@ export class MembershipsService {
 
   async leave(userId: string, spaceId: string) {
     return this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const result = await client.query(
         `UPDATE space_memberships SET state = 'left', left_at = now()
          WHERE space_id = $1 AND user_id = $2 AND state = 'active' AND role <> 'owner'
