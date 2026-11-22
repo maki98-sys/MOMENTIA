@@ -11,10 +11,29 @@ import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
-const MAX_UPLOAD_PART_BYTES = 8 * 1024 * 1024;\nconst MAX_CONCURRENT_UPLOAD_STAGING = Math.min(Math.max(Number(process.env.MEDIA_UPLOAD_STAGING_MAX_CONCURRENT) || 4, 1), 32);\nlet activeUploadStaging = 0;
+const MAX_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+const MAX_CONCURRENT_UPLOAD_STAGING = Math.min(Math.max(Number(process.env.MEDIA_UPLOAD_STAGING_MAX_CONCURRENT) || 4, 1), 32);
+let activeUploadStaging = 0;
 
-async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number }> {
- const directory = await mkdtemp(join(tmpdir(), 'momentia-upload-'));
+async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number; release: () => void }> {
+ if (activeUploadStaging >= MAX_CONCURRENT_UPLOAD_STAGING) {
+  throw new TooManyRequestsException('Upload staging is at capacity. Retry shortly.');
+ }
+ activeUploadStaging++;
+ let released = false;
+ const release = () => {
+  if (!released) {
+   released = true;
+   activeUploadStaging = Math.max(0, activeUploadStaging - 1);
+  }
+ };
+ let directory: string;
+ try {
+  directory = await mkdtemp(join(tmpdir(), 'momentia-upload-'));
+ } catch (error) {
+  release();
+  throw error;
+ }
  const filePath = join(directory, 'request-body.bin');
  let total = 0;
  const limiter = new Transform({
@@ -34,6 +53,7 @@ async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): P
   return { directory, filePath, sizeBytes: total, release };
  } catch (error) {
   await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  release();
   throw error;
  }
 }
