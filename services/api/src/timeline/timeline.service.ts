@@ -19,6 +19,7 @@ export class TimelineService {
               m.mime_type_detected,m.width,m.height,m.size_bytes,
               COALESCE(up.display_name,pu.display_name) display_name
        FROM timeline_entries t
+       JOIN spaces s ON s.id=t.space_id AND s.status IN ('active','archived')
        JOIN space_memberships sm ON sm.space_id=t.space_id AND sm.user_id=$1 AND sm.state='active'
        LEFT JOIN posts p ON p.id=t.post_id AND p.space_id=t.space_id AND p.status='published'
        LEFT JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
@@ -50,7 +51,9 @@ export class TimelineService {
        ORDER BY t.occurred_at DESC,t.id DESC LIMIT $5`,
       [userId,spaceId,cursor??null,cursorId??null,n]);
     if(!r.rowCount) {
-      const member=await this.db.query(`SELECT 1 FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
+      const member=await this.db.query(
+        `SELECT 1 FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status IN ('active','archived')
+         WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,[spaceId,userId]);
       if(!member.rowCount) throw new NotFoundException('Space not found.');
     }
     return r.rows;
@@ -69,7 +72,9 @@ export class TimelineService {
     if(typeof occurredAt!=='string'||Number.isNaN(Date.parse(occurredAt))) throw new BadRequestException('occurredAt must be a valid ISO date-time.');
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
-      const member=await client.query(`SELECT role FROM space_memberships WHERE space_id=$1 AND user_id=$2 AND state='active'`,[spaceId,userId]);
+      const member=await client.query(
+        `SELECT sm.role FROM space_memberships sm JOIN spaces s ON s.id=sm.space_id AND s.status='active'
+         WHERE sm.space_id=$1 AND sm.user_id=$2 AND sm.state='active'`,[spaceId,userId]);
       if(!member.rowCount) throw new NotFoundException('Space not found.');
       if(member.rows[0].role==='guest') throw new NotFoundException('Space not found.');
       if(hasPost) {
