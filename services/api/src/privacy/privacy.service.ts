@@ -60,10 +60,11 @@ export class PrivacyService {
     ];
     return this.db.transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      const entries = await Promise.all(queries.map(async ([key,sql]) => {
+      const entries: Array<[string,Record<string,unknown>[]]> = [];
+      for (const [key,sql] of queries) {
         const result = await client.query(sql,[userId]);
-        return [key,result.rows] as const;
-      }));
+        entries.push([key,result.rows]);
+      }
       return {
         format: 'momentia-data-export-v1',
         exportedAt: new Date().toISOString(),
