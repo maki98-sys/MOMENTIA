@@ -126,14 +126,14 @@ export class ModerationService {
         `SELECT storage_key,size_bytes FROM media_variants
          WHERE media_asset_id=$1 FOR UPDATE`,[id]);
       const objects=[
-        {storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},
-        ...variants.rows.map((row:{storage_key:string})=>({storage_key:row.storage_key,storage_provider:asset.rows[0].storage_provider})),
+        {storage_key:asset.rows[0].storage_key_original},
+        ...variants.rows.map((row:{storage_key:string})=>({storage_key:row.storage_key})),
       ];
       for(const object of objects) {
         await client.query(
-          `INSERT INTO media_storage_deletions(media_asset_id,storage_key,storage_provider)
-           VALUES($1,$2,$3) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
-          [id,object.storage_key,object.storage_provider]);
+          `INSERT INTO media_storage_deletions(media_asset_id,storage_key)
+           VALUES($1,$2) ON CONFLICT(media_asset_id,storage_key) DO NOTHING`,
+          [id,object.storage_key]);
       }
       await client.query(
         `UPDATE media_processing_jobs SET status='cancelled',locked_at=NULL,locked_by=NULL,updated_at=now()
