@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, PayloadTooLargeException, Post, TooManyRequestsException, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, PayloadTooLargeException, Post, HttpException, HttpStatus, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { createWriteStream } from 'fs';
 import { mkdtemp, rm } from 'fs/promises';
@@ -18,7 +18,7 @@ let activeUploadStaging = 0;
 async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number; release: () => void }> {
  if (activeUploadStaging >= MAX_CONCURRENT_UPLOAD_STAGING) {
   request.resume();
-  throw new TooManyRequestsException('Upload staging is at capacity. Retry shortly.');
+  throw new HttpException('Upload staging is at capacity. Retry shortly.', HttpStatus.TOO_MANY_REQUESTS);
  }
  activeUploadStaging++;
  let released = false;
