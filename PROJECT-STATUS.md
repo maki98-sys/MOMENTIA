@@ -597,3 +597,40 @@ No se declara terminado el backend completo ni se asigna porcentaje global de im
 7. Realizar auditoría final de producción, observabilidad, secretos, recuperación y storage externo.
 
 Backend completo aún no certificado; no se asigna porcentaje global de implementación. Issue #3 está cerrada con regresión PostgreSQL aprobada. PR #2 permanece abierto y sin fusionar. Frontend sigue excluido.
+
+
+---
+
+## Auditoría de autenticación y dispositivos — 2026-11-22 (01:58 UTC)
+
+**Head verificado:** `1636001b2c08576b7c59b19011206818652263cf`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44973673278` | **success** |
+| API Coverage | `44973673283` | **success** |
+| Database Check | `44973673276` | **success** |
+
+- Unit tests: **206/206**, 27 suites.
+- PostgreSQL snapshot E2E: 19/19 en el API Check.
+- TypeScript, build y contenedor de producción: aprobados.
+- Cobertura global: statements **32.94%**, branches **31.13%**, functions **33.73%**, lines **35.43%**.
+- `SessionTokenService`: 92.94% statements, 72.72% branches, 100% functions, 97.33% lines.
+- `DeviceSessionService`: 88.31% statements, 64.70% branches, 100% functions, 90.90% lines.
+
+### Autenticación reforzada y pruebas
+
+- Se añadió cobertura para creación de sesión solo con cuenta activa, rotación de refresh token, detección de reuse y revocación de la familia, expiración, validación JWT y limpieza.
+- Se corrigió el tipo del parámetro nullable `deviceId` en el audit JSONB de creación de sesión.
+- Se añadieron pruebas de heartbeat de dispositivo, listado de sesiones y auditoría de revocación.
+- Se corrigieron los tipos PostgreSQL de `platform` y `revokedSessions` en metadata JSONB de dispositivos.
+- Registro de dispositivo comprueba cuenta activa; el cambio de propietario de un device key revoca sesiones y cancela entregas push pendientes del propietario anterior.
+
+### Pendiente de autenticación y privacidad
+
+- Completar pruebas y auditoría de `PrivacyService`, especialmente exportación consistente, solicitud/cancelación de borrado, leases del worker, purga, reintentos y límites.
+- Revisar la política de transferencia de `deviceKey` entre cuentas y el tratamiento de entregas push ya en curso al revocar un dispositivo o iniciar eliminación.
+- Medir rotación/expiración de refresh tokens y comportamiento bajo concurrencia real.
+- Revisar secretos, rate limiting y controles de workers.
+
+No se declara terminado el backend completo. PR #2 sigue abierto y sin fusionar.
