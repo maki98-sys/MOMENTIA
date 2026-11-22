@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
 import { MediaService } from '../src/media/media.service';
@@ -30,7 +31,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     }),
     remove: jest.fn(async (key: string) => { objects.delete(key); }),
     locate: jest.fn(),
-    openReadStream: jest.fn(),
+    openReadStream: jest.fn(async (key: string) => {\n      const value = objects.get(key);\n      if (!value) throw new Error('Object not found');\n      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };\n    }),
   } as unknown as MediaStorage;
 
   const file = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02]);
@@ -239,12 +240,12 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     let releaseRead!: () => void;
     const readStarted = new Promise<void>(resolve => { markReadStarted = resolve; });
     const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
-    (storage.read as jest.Mock).mockImplementationOnce(async (key: string) => {
+    (storage.openReadStream as jest.Mock).mockImplementationOnce(async (key: string) => {
       markReadStarted();
       await readGate;
       const value = objects.get(key);
       if (!value) throw new Error('Object not found');
-      return Buffer.from(value);
+      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };
     });
 
     const assembly = service.completeResumableUpload(userId, uploadId);
