@@ -84,6 +84,26 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects variants whose dimensions exceed the processing pixel budget',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,width:10000,height:10000}]}))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects variants with an output size above the upload ceiling',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,sizeBytes:200*1024*1024+1}]}))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
   it('persists validated variants and schedules finalization',async()=>{
     const clientQuery=jest.fn()
       .mockResolvedValueOnce({rows:[],rowCount:0})
