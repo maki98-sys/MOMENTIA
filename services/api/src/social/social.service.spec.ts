@@ -100,8 +100,28 @@ describe('SocialService',()=>{
   expect(clientQuery.mock.calls[3][0]).toContain('DELETE FROM user_relationships');
  });
  it('rejects accepting a request that is not pending for the current user',async()=>{
-  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.respondToFollowRequest('u1','u2','accepted')).rejects.toBeInstanceOf(NotFoundException);
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
+  expect(clientQuery).toHaveBeenCalledTimes(2);
+ });
+
+ it('serializes unfollow with snapshot authorization reads',async()=>{
+  const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.unfollow('u1','u2')).resolves.toEqual({following:false});
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
+  expect(clientQuery.mock.calls[1][0]).toContain('DELETE FROM user_relationships');
+ });
+ it('serializes unblock with snapshot authorization reads',async()=>{
+  const clientQuery=jest.fn().mockResolvedValueOnce({rows:[],rowCount:0});
+  transaction.mockImplementationOnce(async(fn:any)=>fn({query:clientQuery}));
+  await expect(service.unblock('u1','u2')).resolves.toEqual({blocked:false});
+  expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
+  expect(clientQuery.mock.calls[1][0]).toContain('DELETE FROM user_blocks');
  });
 
  it('does not create a request for a fully private profile',async()=>{
