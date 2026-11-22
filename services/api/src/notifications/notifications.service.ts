@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DatabaseService } from '../database/database.service';
 import { decryptPushToken } from './push-token-crypto';
 
+export function isValidExpoPushToken(token: string): boolean {
+  return /^(?:ExponentPushToken|ExpoPushToken)\[[^\[\]\s]{8,512}\]$/.test(token);
+}
+
 interface NotificationCursor {
   createdAt: string;
   id: string;
@@ -332,7 +336,7 @@ export class NotificationsService {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
         const token = decryptPushToken(String(state.push_token_encrypted));
-        if (!/^(ExponentPushToken|ExpoPushToken)\\[.+\\]$/.test(token)) {
+        if (!isValidExpoPushToken(token)) {
           throw new Error('INVALID_EXPO_PUSH_TOKEN');
         }
         const response = await fetch('https://exp.host/--/api/v2/push/send', {
