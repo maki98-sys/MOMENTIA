@@ -632,6 +632,11 @@ export class SyncService {
     if (Object.keys(offsets).some(section => !requested.includes(section))) {
       throw new BadRequestException('Snapshot offsets must belong to requested sections.');
     }
+    // Capture the change-feed watermark before reading section data. If a write
+    // commits while sections are being materialized, its sequence must remain
+    // above this cursor so the next pull can deliver it (duplicates are safe).
+    const cursor = await client.query(
+      `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
     const nextOffsets: Record<string, number> = {};
     const data: Record<string, unknown[]> = frozenData ?? {};
     const has = (section: string) => !frozenData && requested.includes(section);
@@ -844,8 +849,6 @@ export class SyncService {
     if (!frozenData) {
       const totalRows = Object.values(data).reduce((sum, rows) => sum + rows.length, 0);
       if (totalRows > 25000 || Buffer.byteLength(JSON.stringify(data)) > 24 * 1024 * 1024) throw new BadRequestException('Snapshot exceeds the maximum materialized size; request fewer sections.');
-      const cursor = await client.query(
-        `SELECT COALESCE(MAX(sequence_id),0)::text AS cursor FROM sync_change_log WHERE user_id=$1`, [userId]);
       cursorValue = String(cursor.rows[0].cursor);
       const saved = continuationSnapshotId
         ? await client.query(
