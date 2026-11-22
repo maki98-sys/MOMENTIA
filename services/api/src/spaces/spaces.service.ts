@@ -178,6 +178,7 @@ export class SpacesService {
       throw new BadRequestException('action must be archive, reopen or close.');
     }
     return this.database.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const current=await client.query(
         `SELECT s.id,s.type,s.status FROM spaces s
          JOIN space_memberships sm ON sm.space_id=s.id AND sm.user_id=$1
