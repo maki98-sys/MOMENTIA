@@ -13,6 +13,7 @@ describe('MediaProcessingController worker authentication', () => {
   } as unknown as MediaProcessingService;
   const controller = new MediaProcessingController(processing);
   const token = 'media-worker-secret-'.padEnd(32, 'x');
+  const previousWorkerToken = process.env.MEDIA_WORKER_TOKEN;
   const workerId = 'media-worker-01';
   const jobId = '11111111-1111-4111-8111-111111111111';
   const deletionId = '33333333-3333-4333-8333-333333333333';
@@ -23,7 +24,8 @@ describe('MediaProcessingController worker authentication', () => {
   });
 
   afterAll(() => {
-    delete process.env.MEDIA_WORKER_TOKEN;
+    if (previousWorkerToken === undefined) delete process.env.MEDIA_WORKER_TOKEN;
+    else process.env.MEDIA_WORKER_TOKEN = previousWorkerToken;
   });
 
   it('rejects requests when the worker secret is not configured', () => {
@@ -35,6 +37,7 @@ describe('MediaProcessingController worker authentication', () => {
   it('rejects missing and incorrect worker credentials', () => {
     expect(() => controller.claim(undefined, { workerId })).toThrow(UnauthorizedException);
     expect(() => controller.claim('wrong-worker-secret', { workerId })).toThrow(UnauthorizedException);
+    expect(() => controller.claim('w'.repeat(token.length), { workerId })).toThrow(UnauthorizedException);
     expect(processing.claim).not.toHaveBeenCalled();
   });
 
