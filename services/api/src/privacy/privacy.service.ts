@@ -98,6 +98,11 @@ export class PrivacyService {
         `UPDATE devices SET revoked_at=now()
          WHERE user_id=$1 AND revoked_at IS NULL`,[userId]);
       await client.query(
+        `UPDATE notification_outbox
+         SET status='cancelled',processing_started_at=NULL,last_error_code='ACCOUNT_DELETION_PENDING'
+         WHERE user_id=$1 AND channel='push'
+           AND status IN ('pending','failed','processing')`,[userId]);
+      await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
          VALUES($1,$1,'account.deletion_requested','account',$1,
            jsonb_build_object('requestId',$2::text,'scheduledFor',$3::timestamptz))`,
