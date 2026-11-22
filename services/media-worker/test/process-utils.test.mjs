@@ -5,7 +5,7 @@ import { parseClamAvResponse, runFfmpeg } from '../dist/process-utils.js';
 test('ClamAV parser accepts only complete clean verdicts', () => {
   assert.equal(parseClamAvResponse('stream: OK\0'), 'clean');
   assert.equal(parseClamAvResponse('stream: OK'), 'pending');
-  assert.equal(parseClamAvResponse('stream: OK\\0unexpected'), 'pending');
+  assert.throws(() => parseClamAvResponse('stream: OK\0unexpected'), /after its terminal verdict/);
 });
 
 test('ClamAV parser identifies infected streams without substring false positives', () => {
