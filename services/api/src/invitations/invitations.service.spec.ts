@@ -54,7 +54,9 @@ describe('InvitationsService', () => {
         expires_at: new Date(Date.now() + 60_000).toISOString(),
         max_uses: 1, uses: 0, approval_required: false,
         revoked_at: null, type: 'EVENT', status: 'active',
+        owner_id: 'owner-1', created_by: 'creator-1',
       }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{id:'user-2'}] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
@@ -64,10 +66,11 @@ describe('InvitationsService', () => {
     await expect(service.accept('user-2', 'a'.repeat(43))).resolves.toEqual({
       spaceId: 'space-1', role: 'guest', membership: 'active',
     });
-    expect(clientQuery).toHaveBeenCalledTimes(6);
+    expect(clientQuery).toHaveBeenCalledTimes(7);
+    expect(clientQuery.mock.calls[2][0]).toContain("u.status='active'");
     expect(clientQuery.mock.calls[3][0]).toContain('INSERT INTO space_memberships');
-    expect(clientQuery.mock.calls[4][0]).toContain('uses = uses + 1');
-    expect(clientQuery.mock.calls[5][0]).toContain('space_audit_events');
+    expect(clientQuery.mock.calls[5][0]).toContain('uses = uses + 1');
+    expect(clientQuery.mock.calls[6][0]).toContain('space_audit_events');
   });
 
   it('does not accept an invitation for a couple space through the generic flow', async () => {
