@@ -6,11 +6,14 @@ describe('AlbumsService',()=>{
  const service=new AlbumsService({query,transaction} as unknown as DatabaseService);
  beforeEach(()=>{query.mockReset();transaction.mockReset();});
  it('requires active membership and album visibility before listing album items',async()=>{
-  query.mockResolvedValueOnce({rowCount:1,rows:[{id:'a1',visibility:'members',role:'member'}]});
-  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
+   .mockResolvedValueOnce({rowCount:1,rows:[{id:'a1',visibility:'members',role:'member'}]})
+   .mockResolvedValueOnce({rowCount:0,rows:[]});
+  transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
   await expect(service.listItems('u1','s1','a1')).resolves.toMatchObject({items:[],nextCursor:null});
-  expect(query.mock.calls[0][0]).toContain("sm.state='active'");
-  expect(query.mock.calls[1][0]).toContain("m.status='ready'");
+  expect(clientQuery.mock.calls[1][0]).toContain("sm.state='active'");
+  expect(clientQuery.mock.calls[2][0]).toContain("m.status='ready'");
  });
  it('rejects malformed album item cursors',async()=>{
   await expect(service.listItems('u1','s1','a1','bad','not-a-uuid')).rejects.toBeInstanceOf(BadRequestException);
