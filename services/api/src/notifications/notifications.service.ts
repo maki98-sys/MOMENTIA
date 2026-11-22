@@ -296,28 +296,29 @@ export class NotificationsService {
     let failed = 0;
     for (const item of deliveries) {
       try {
-        const preference = await this.db.query(
-          `SELECT np.push_enabled
-           FROM notification_preferences np
-           JOIN notifications n ON n.user_id=np.user_id AND n.category=np.category
-           WHERE n.id=$1 AND np.user_id=$2
-           LIMIT 1`,
-          [item.notification_id,item.user_id],
+        const deliveryState = await this.db.query(
+          `SELECT d.revoked_at,d.push_token_encrypted,
+                  COALESCE(np.push_enabled,true) AS push_enabled
+           FROM devices d
+           JOIN notifications n ON n.id=$1 AND n.user_id=d.user_id
+           LEFT JOIN notification_preferences np ON np.user_id=d.user_id AND np.category=n.category
+           WHERE d.id=$2 AND d.user_id=$3`,
+          [item.notification_id,item.device_id,item.user_id],
         );
-        if (preference.rowCount && preference.rows[0].push_enabled === false) {
+        const state=deliveryState.rows[0];
+        if (!state || state.revoked_at || !state.push_token_encrypted || state.push_enabled === false) {
           await this.db.query(
             `UPDATE notification_outbox
-             SET status='cancelled',last_error_code='PUSH_OPTED_OUT',
-                 processing_started_at=NULL
+             SET status='cancelled',last_error_code=$2,processing_started_at=NULL
              WHERE id=$1 AND status='processing'`,
-            [item.id],
+            [item.id,state?.push_enabled===false?'PUSH_OPTED_OUT':'DEVICE_UNAVAILABLE'],
           );
           continue;
         }
         if (item.platform !== 'ios' && item.platform !== 'android') {
           throw new Error('UNSUPPORTED_PUSH_PLATFORM');
         }
-        const token = decryptPushToken(String(item.push_token_encrypted));
+        const token = decryptPushToken(String(state.push_token_encrypted));
         if (!/^(ExponentPushToken|ExpoPushToken)\\[.+\\]$/.test(token)) {
           throw new Error('INVALID_EXPO_PUSH_TOKEN');
         }
