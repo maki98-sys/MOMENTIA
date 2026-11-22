@@ -56,4 +56,16 @@ describe('NotificationsService', () => {
     expect(query.mock.calls[1][0]).toContain("status='cancelled'");
   });
 
+  it('does not create notifications for suspended or deleted users',async()=>{
+    const transaction=jest.fn();
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[],rowCount:0});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    const createService=new NotificationsService({query,transaction} as unknown as DatabaseService);
+    await expect(createService.createForUser('user-1','social.comment',{postId:'p1'}))
+      .rejects.toThrow('Notification recipient is not active.');
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
 });
