@@ -17,6 +17,7 @@ let activeUploadStaging = 0;
 
 async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number; release: () => void }> {
  if (activeUploadStaging >= MAX_CONCURRENT_UPLOAD_STAGING) {
+  request.resume();
   throw new TooManyRequestsException('Upload staging is at capacity. Retry shortly.');
  }
  activeUploadStaging++;
@@ -67,7 +68,7 @@ export class MediaController {
  @Put('uploads/:uploadId/content')
  async uploadContent(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string,@Headers('content-type') contentType?:string) {
   if (!contentType || !contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
-  await this.media.assertUploadOwner(req.userId!,id);
+  try { await this.media.assertUploadOwner(req.userId!,id); } catch (error) { req.resume(); throw error; }
   const staged = await stageUploadBody(req);
   try {
    return await this.media.receiveUploadFile(req.userId!,id,staged.filePath,staged.sizeBytes);
@@ -81,7 +82,7 @@ export class MediaController {
   if(!contentType||!contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
   const partNumber=Number(part);
   if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
-  await this.media.assertUploadOwner(req.userId!,id);
+  try { await this.media.assertUploadOwner(req.userId!,id); } catch (error) { req.resume(); throw error; }
   const staged=await stageUploadBody(req,MAX_UPLOAD_PART_BYTES);
   try {
    return await this.media.receiveUploadPartFile(req.userId!,id,partNumber,staged.filePath,staged.sizeBytes,checksum??'');
