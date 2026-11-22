@@ -715,7 +715,7 @@ export class SyncService {
          WHERE m.user_id=$1 AND m.state='active' AND s.status IN ('active','archived')
            AND (t.post_id IS NULL OR EXISTS(
              SELECT 1 FROM posts p JOIN users timeline_author ON timeline_author.id=p.author_id AND timeline_author.status='active'
-             WHERE p.id=t.post_id AND p.status='published'
+             WHERE p.id=t.post_id AND p.space_id=t.space_id AND p.status='published'
                AND (
                  p.author_id=$1 OR p.audience='public'
                  OR (p.audience='followers' AND EXISTS(
@@ -841,7 +841,8 @@ export class SyncService {
                AND (p.author_id=$1 OR p.audience='public'
                  OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships rel
                    WHERE rel.requester_id=$1 AND rel.target_id=p.author_id AND rel.state='accepted'))
-                 OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
+                 OR (p.audience='space' AND EXISTS(SELECT 1 FROM spaces s WHERE s.id=p.space_id AND s.status IN ('active','archived'))
+                   AND EXISTS(SELECT 1 FROM space_memberships sm
                    WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))
                AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
                  (b.blocker_id=$1 AND b.blocked_id=c.author_id) OR
