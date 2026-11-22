@@ -418,3 +418,44 @@ La inspección estática de `SyncService.snapshot()` identificó un riesgo que r
 
 No se modifica el avance global ni el avance ponderado de backend en esta actualización. El control de fase del 18 de noviembre necesita una revisión completa por tareas y aceptación de módulos; el CI de esta entrega solo acredita los pasos descritos arriba. La cobertura de código no se debe interpretar como porcentaje de implementación.
 
+
+
+---
+
+## Auditoría backend y base de datos — actualización 2026-11-22
+
+**Alcance de esta actualización:** base de datos, backend, seguridad, migraciones y pruebas. **Frontend excluido deliberadamente** porque todavía no ha comenzado.
+
+### Cambios y verificaciones
+
+- Migraciones corregidas o añadidas: `0036`, `0039`, `0056`, `0061`–`0066`.
+- Última verificación de base de datos completada: workflow `44969542443`, commit `a728f08`, resultado **success**. Aplicación de migraciones, repetición/idempotencia, ledger, integridad, smoke test de timeline, backup/restore, SQLite y prueba de membresía COUPLE.
+- Última cobertura completada disponible en el corte anterior: workflow `44969387684`, commit `0fc`; **164/164 pruebas unitarias, 23 suites**.
+- Cobertura en ese corte: statements **29,47%**, branches **27,78%**, functions **28,33%**, lines **31,28%**. La siguiente ejecución está en curso tras añadir más pruebas y correcciones; estos valores no se presentan como resultado del head actual.
+- Se añadieron pruebas PostgreSQL para revocación entre páginas, unfollow, bloqueo, cambio de audiencia, autor suspendido, timeline archivado, cursor, redacción de payloads de pull, expiración, liberación, aislamiento por usuario y límite de sesiones. También se añadió una prueba de serialización de revocación de membresía; su CI está pendiente.
+- PR #2 permanece abierto y sin fusionar.
+
+### Correcciones de seguridad y backend realizadas
+
+- Las páginas de snapshot vuelven a consultar los datos con permisos actuales; la sesión ya no conserva una copia JSONB de contenido antiguo.
+- El pull incremental entrega metadatos y `payload: null`; el cliente debe refrescar mediante snapshot para no reproducir contenido que pudo perder autorización.
+- Se introdujeron bloqueos transaccionales compartidos/exclusivos para coordinar lecturas autorizadas y mutaciones de permisos, incluyendo perfil, membresías, relaciones, bloqueos, espacios, publicaciones, comentarios, álbumes y multimedia.
+- Se reforzó Social Audio: cuenta activa, participación persistida al entrar/salir, revocación y expiración de sockets.
+- Se reforzaron moderación, exportación de privacidad, notificaciones, registro de dispositivos y manejo de conexiones PostgreSQL.
+- El registro de dispositivos ahora exige una clave UUID estable; transferir la instalación a otra cuenta revoca sesiones y entregas push pendientes.
+
+### Pendientes que impiden certificar el backend como completo
+
+1. Terminar la auditoría semántica de las 66 migraciones, dependencias, triggers, restricciones, índices y rutas de escritura; que todas apliquen en CI no sustituye esa revisión.
+2. Esperar CI del head actual: TypeScript, pruebas unitarias, E2E PostgreSQL, build, contenedor y database-check.
+3. Completar pruebas de concurrencia y autorización para todos los cambios relevantes, no solo membresías.
+4. Revisar retención/limpieza de `sync_change_log`, recibos de operaciones sync, snapshots expirados y colas/outbox.
+5. Implementar cancelación real de suscripciones externas antes de completar la eliminación de una cuenta; hoy falta el adaptador del proveedor.
+6. Integrar proveedor de billing: endpoint/webhook real con verificación de firma, checkout, portal, cancelación y reconciliación.
+7. Completar Social Audio con adaptadores y autenticación de proveedores musicales; el backend actual coordina sesiones/cola/estado, pero no implementa la reproducción licenciada en cada teléfono.
+8. Completar entrega push con recibos del proveedor y soporte Web Push; actualmente los tokens push están limitados a iOS/Android.
+9. Incorporar rate limiting distribuido para endpoints públicos y eventos WebSocket, además de controles de abuso.
+10. Ampliar cobertura y pruebas de integración de privacidad, procesamiento multimedia, billing, parejas, eventos, notificaciones y autorización cruzada.
+11. Completar la revisión de producción: observabilidad, alertas, rotación de claves, recuperación, almacenamiento de objetos y pruebas de restauración de medios.
+
+**No se asigna porcentaje global de backend** hasta cerrar el inventario de módulos y definir ponderaciones verificables. La cobertura de tests se informa por separado. No se inicia frontend ni se fusiona el PR #2 en esta fase.
