@@ -109,6 +109,9 @@ export class NotificationsService {
       throw new BadRequestException('Invalid notification deduplication key.');
     }
     return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      const recipient=await client.query(`SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE`,[userId]);
+      if(!recipient.rowCount) throw new NotFoundException('Notification recipient is not active.');
       const inserted = await client.query(
         `INSERT INTO notifications(user_id,category,payload,dedupe_key)
          VALUES($1,$2,$3::jsonb,$4)
@@ -203,6 +206,7 @@ export class NotificationsService {
       const claimed = await client.query(
         `WITH candidates AS (
            SELECT o.id FROM notification_outbox o
+           JOIN users u ON u.id=o.user_id AND u.status='active'
            JOIN devices d ON d.id=o.device_id AND d.revoked_at IS NULL
            WHERE o.channel='push' AND o.status IN ('pending','failed')
              AND o.next_attempt_at<=now() AND o.attempts<8
@@ -299,7 +303,7 @@ export class NotificationsService {
         const deliveryState = await this.db.query(
           `SELECT d.revoked_at,d.push_token_encrypted,
                   COALESCE(np.push_enabled,true) AS push_enabled
-           FROM devices d
+           FROM devices d JOIN users u ON u.id=d.user_id AND u.status='active'
            JOIN notifications n ON n.id=$1 AND n.user_id=d.user_id
            LEFT JOIN notification_preferences np ON np.user_id=d.user_id AND np.category=n.category
            WHERE d.id=$2 AND d.user_id=$3`,
