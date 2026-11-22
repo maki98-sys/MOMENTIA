@@ -52,7 +52,8 @@ export class AlbumsService {
             AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
               (b.blocker_id=$1 AND b.blocked_id=ma.owner_id)
               OR (b.blocker_id=ma.owner_id AND b.blocked_id=$1))) item_count
-       FROM space_albums a JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
+       FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
+       JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        WHERE a.space_id=$2 AND (a.visibility='members' OR sm.role IN ('owner','admin','moderator'))
        ORDER BY a.created_at DESC`,[userId,spaceId]);
     if(!r.rowCount) {
@@ -73,7 +74,7 @@ export class AlbumsService {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       const access=await client.query(
-      `SELECT a.id,a.visibility,sm.role FROM space_albums a
+      `SELECT a.id,a.visibility,sm.role FROM space_albums a JOIN spaces s ON s.id=a.space_id AND s.status IN ('active','archived')
        JOIN space_memberships sm ON sm.space_id=a.space_id AND sm.user_id=$1 AND sm.state='active'
        WHERE a.id=$2 AND a.space_id=$3`,
       [userId,albumId,spaceId]);
