@@ -102,12 +102,12 @@ export class SessionTokenService {
       if (row.consumed_at) {
         await client.query(
           `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
-           WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
+           WHERE family_id=$1::uuid AND revoked_at IS NULL`,[row.family_id],
         );
         await client.query(
           `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::text)
-           FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::uuid)
+           FROM auth_sessions WHERE family_id=$1::uuid LIMIT 1`,[row.family_id],
         );
         return { reused: true as const };
       }
@@ -133,12 +133,12 @@ export class SessionTokenService {
       if (!consumed.rowCount) {
         await client.query(
           `UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now())
-           WHERE family_id=$1 AND revoked_at IS NULL`,[row.family_id],
+           WHERE family_id=$1::uuid AND revoked_at IS NULL`,[row.family_id],
         );
         await client.query(
           `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::text)
-           FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::uuid)
+           FROM auth_sessions WHERE family_id=$1::uuid LIMIT 1`,[row.family_id],
         );
         return { reused: true as const };
       }
