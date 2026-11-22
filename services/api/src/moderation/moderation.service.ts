@@ -123,11 +123,11 @@ export class ModerationService {
          FROM media_assets WHERE id=$1 AND status<>'deleted' FOR UPDATE`,[id]);
       if(!asset.rowCount) throw new NotFoundException('Media target not found or already deleted.');
       const variants=await client.query(
-        `SELECT storage_key,size_bytes,storage_provider FROM media_variants
+        `SELECT storage_key,size_bytes FROM media_variants
          WHERE media_asset_id=$1 FOR UPDATE`,[id]);
       const objects=[
         {storage_key:asset.rows[0].storage_key_original,storage_provider:asset.rows[0].storage_provider},
-        ...variants.rows,
+        ...variants.rows.map((row:{storage_key:string})=>({storage_key:row.storage_key,storage_provider:asset.rows[0].storage_provider})),
       ];
       for(const object of objects) {
         await client.query(
