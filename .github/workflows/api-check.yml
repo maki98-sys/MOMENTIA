@@ -73,6 +73,6 @@ jobs:
       - name: Install media worker dependencies
         working-directory: services/media-worker
         run: npm install --no-audit --no-fund
-      - name: Build media worker
+      - name: Test media worker storage adapters
         working-directory: services/media-worker
-        run: npm run build
+        run: npm test
