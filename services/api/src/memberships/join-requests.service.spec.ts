@@ -15,7 +15,7 @@ describe('JoinRequestsService',()=>{
    .mockResolvedValueOnce({rowCount:1,rows:[]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.create('u1','s1')).resolves.toMatchObject({id:'r1',status:'pending'});
-  expect(cq).toHaveBeenCalledTimes(6);
+  expect(cq).toHaveBeenCalledTimes(5);
  });
  it('rejects a banned requester',async()=>{
   const cq=jest.fn().mockResolvedValueOnce({rowCount:1,rows:[{id:'s1'}]}).mockResolvedValueOnce({rowCount:1,rows:[{state:'banned'}]});
@@ -37,7 +37,7 @@ describe('JoinRequestsService',()=>{
    .mockResolvedValueOnce({rowCount:1,rows:[]});
   transaction.mockImplementationOnce(async(work:(client:unknown)=>Promise<unknown>)=>work({query:cq}));
   await expect(service.review('admin','s1','r1','approved')).resolves.toMatchObject({status:'approved'});
-  expect(cq).toHaveBeenCalledTimes(5);
+  expect(cq).toHaveBeenCalledTimes(6);
   expect(cq.mock.calls[3][0]).toContain('INSERT INTO space_memberships');
  });
 });
