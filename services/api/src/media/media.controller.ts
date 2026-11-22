@@ -11,8 +11,9 @@ import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 
-async function stageUploadBody(request: Request): Promise<{ directory: string; filePath: string; sizeBytes: number }> {
+async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number }> {
  const directory = await mkdtemp(join(tmpdir(), 'momentia-upload-'));
  const filePath = join(directory, 'request-body.bin');
  let total = 0;
@@ -58,14 +59,12 @@ export class MediaController {
   if(!contentType||!contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
   const partNumber=Number(part);
   if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
-  const chunks:Buffer[]=[];let total=0;
-  for await(const chunk of req) {
-   const buffer=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);total+=buffer.length;
-   if(total>8*1024*1024) throw new BadRequestException('Upload part exceeds 8 MB.');
-   chunks.push(buffer);
+  const staged=await stageUploadBody(req,MAX_UPLOAD_PART_BYTES);
+  try {
+   return await this.media.receiveUploadPartFile(req.userId!,id,partNumber,staged.filePath,staged.sizeBytes,checksum??'');
+  } finally {
+   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);
   }
-  if(!total) throw new BadRequestException('Upload part is empty.');
-  return this.media.receiveUploadPart(req.userId!,id,partNumber,Buffer.concat(chunks,total),checksum??'');
  }
  @Post('uploads/:uploadId/complete')
  completeResumable(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string) {
