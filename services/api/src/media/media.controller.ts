@@ -1,22 +1,40 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, PayloadTooLargeException, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { createWriteStream } from 'fs';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
-async function readUploadBody(request: Request): Promise<Buffer> {
- const chunks: Buffer[] = [];
+async function stageUploadBody(request: Request): Promise<{ directory: string; filePath: string; sizeBytes: number }> {
+ const directory = await mkdtemp(join(tmpdir(), 'momentia-upload-'));
+ const filePath = join(directory, 'request-body.bin');
  let total = 0;
- for await (const chunk of request) {
-  const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-  total += part.length;
-  if (total > MAX_UPLOAD_BYTES) throw new BadRequestException('File exceeds the 200 MB platform upload limit.');
-  chunks.push(part);
+ const limiter = new Transform({
+  transform(chunk: Buffer | string, _encoding, callback) {
+   const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+   total += part.length;
+   if (total > MAX_UPLOAD_BYTES) {
+    callback(new PayloadTooLargeException('File exceeds the 200 MB platform upload limit.'));
+    return;
+   }
+   callback(null, part);
+  },
+ });
+ try {
+  await pipeline(request, limiter, createWriteStream(filePath, { flags: 'wx', mode: 0o600 }));
+  if (!total) throw new BadRequestException('Upload body is empty.');
+  return { directory, filePath, sizeBytes: total };
+ } catch (error) {
+  await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  throw error;
  }
- if (!total) throw new BadRequestException('Upload body is empty.');
- return Buffer.concat(chunks, total);
 }
 
 @Controller('media')
@@ -28,8 +46,12 @@ export class MediaController {
  @Put('uploads/:uploadId/content')
  async uploadContent(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string,@Headers('content-type') contentType?:string) {
   if (!contentType || !contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
-  const body = await readUploadBody(req);
-  return this.media.receiveUpload(req.userId!,id,body);
+  const staged = await stageUploadBody(req);
+  try {
+   return await this.media.receiveUploadFile(req.userId!,id,staged.filePath,staged.sizeBytes);
+  } finally {
+   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);
+  }
  }
  @Put('uploads/:uploadId/parts/:partNumber')
  async uploadPart(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string,@Param('partNumber') part:string,@Headers('content-type') contentType?:string,@Headers('x-part-sha256') checksum?:string) {
