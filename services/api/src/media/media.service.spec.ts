@@ -75,6 +75,7 @@ describe('MediaService',()=>{
   expect(query.mock.calls[0][0]).toContain("album_adder.status='active'");
   expect(query.mock.calls[0][0]).toContain("timeline_post.audience='space'");
   expect(query.mock.calls[0][0]).toContain("timeline_post.status='published'");
+  expect(query.mock.calls[0][0]).toContain("album_space.status IN ('active','archived')");
  });
 
 });
