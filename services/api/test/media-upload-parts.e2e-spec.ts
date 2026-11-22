@@ -1,0 +1,147 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { DatabaseService } from '../src/database/database.service';
+import { MediaService } from '../src/media/media.service';
+import { MediaStorage } from '../src/media/media-storage.service';
+
+describe('Media resumable upload PostgreSQL lifecycle', () => {
+  let pool: Pool;
+  let database: DatabaseService;
+  let service: MediaService;
+  let userId: string;
+  let otherUserId: string;
+  let assetId: string;
+  let uploadId: string;
+  const objects = new Map<string, Buffer>();
+  const storage = {
+    put: jest.fn(async (key: string, bytes: Buffer) => { objects.set(key, Buffer.from(bytes)); }),
+    read: jest.fn(async (key: string) => {
+      const value = objects.get(key);
+      if (!value) throw new Error('Object not found');
+      return Buffer.from(value);
+    }),
+    remove: jest.fn(async (key: string) => { objects.delete(key); }),
+    locate: jest.fn(),
+    openReadStream: jest.fn(),
+  } as unknown as MediaStorage;
+
+  const file = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02]);
+  const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+  async function seedUpload(expectedChecksum = sha256(file)) {
+    userId = randomUUID();
+    otherUserId = randomUUID();
+    assetId = randomUUID();
+    uploadId = randomUUID();
+    await pool.query(
+      `INSERT INTO users(id,email_normalized,status)
+       VALUES($1,$2,'active'),($3,$4,'active')`,
+      [userId, `media-${userId}@momentia.test`, otherUserId, `media-${otherUserId}@momentia.test`],
+    );
+    await pool.query(
+      `INSERT INTO media_assets(
+         id,owner_id,storage_key_original,storage_provider,original_filename,
+         mime_type_detected,size_bytes,checksum_sha256,status
+       ) VALUES($1,$2,$3,'local','photo.jpg','application/octet-stream',$4,$5,'pending')`,
+      [assetId, userId, `pending/${userId}/${assetId}`, file.length, expectedChecksum],
+    );
+    await pool.query(
+      `INSERT INTO media_uploads(
+         id,media_asset_id,uploader_id,state,bytes_received,idempotency_key,
+         declared_mime_type,request_fingerprint,expires_at
+       ) VALUES($1,$2,$3,'created',0,$4,'image/jpeg',$5,now()+interval '1 hour')`,
+      [uploadId, assetId, userId, `media-e2e-${uploadId}`, 'a'.repeat(64)],
+    );
+  }
+
+  beforeAll(() => {
+    if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for media E2E tests.');
+    pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
+    database = new DatabaseService(pool);
+    service = new MediaService(database, storage);
+  });
+
+  beforeEach(() => { objects.clear(); jest.clearAllMocks(); });
+
+  afterEach(async () => {
+    if (!userId) return;
+    await pool.query('DELETE FROM storage_usage_events WHERE user_id=ANY($1::uuid[])', [[userId, otherUserId]]);
+    await pool.query('DELETE FROM media_assets WHERE owner_id=ANY($1::uuid[])', [[userId, otherUserId]]);
+    await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [[userId, otherUserId]]);
+    userId = '';
+    otherUserId = '';
+  });
+
+  afterAll(async () => { await pool?.end(); });
+
+  it('rejects another account before storing an upload part', async () => {
+    await seedUpload();
+    const bytes = Buffer.from('private-part');
+    await expect(
+      service.receiveUploadPart(otherUserId, uploadId, 0, bytes, sha256(bytes)),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(storage.put).not.toHaveBeenCalled();
+    const parts = await pool.query('SELECT 1 FROM media_upload_parts WHERE upload_id=$1', [uploadId]);
+    expect(parts.rowCount).toBe(0);
+  });
+
+  it('assembles out-of-order parts only after contiguous sequence and full-file checksum validation', async () => {
+    await seedUpload();
+    const first = file.subarray(0, 4);
+    const second = file.subarray(4);
+    await service.receiveUploadPart(userId, uploadId, 1, second, sha256(second));
+    await service.receiveUploadPart(userId, uploadId, 0, first, sha256(first));
+
+    const completed = await service.completeResumableUpload(userId, uploadId);
+    expect(completed).toMatchObject({ state: 'uploaded', asset_status: 'quarantined' });
+
+    const asset = await pool.query('SELECT status FROM media_assets WHERE id=$1', [assetId]);
+    expect(asset.rows[0].status).toBe('quarantined');
+    const jobs = await pool.query(
+      'SELECT job_type,status FROM media_processing_jobs WHERE media_asset_id=$1 ORDER BY job_type',
+      [assetId],
+    );
+    expect(jobs.rows.map(row => row.job_type).sort()).toEqual(['inspect', 'virus_scan']);
+    const parts = await pool.query('SELECT 1 FROM media_upload_parts WHERE upload_id=$1', [uploadId]);
+    expect(parts.rowCount).toBe(0);
+    const cleanup = await pool.query(
+      `SELECT count(*)::int total FROM media_storage_deletions
+       WHERE media_asset_id=$1 AND storage_key LIKE 'parts/%'`,
+      [assetId],
+    );
+    expect(cleanup.rows[0].total).toBe(2);
+    expect(objects.get(`pending/${userId}/${assetId}`)).toEqual(file);
+  });
+
+  it('rejects a final file checksum mismatch and returns the upload to uploading state', async () => {
+    await seedUpload('0'.repeat(64));
+    await service.receiveUploadPart(userId, uploadId, 0, file, sha256(file));
+    await expect(service.completeResumableUpload(userId, uploadId)).rejects.toThrow('Final file checksum mismatch.');
+    const upload = await pool.query('SELECT state FROM media_uploads WHERE id=$1', [uploadId]);
+    expect(upload.rows[0].state).toBe('uploading');
+    const asset = await pool.query('SELECT status FROM media_assets WHERE id=$1', [assetId]);
+    expect(asset.rows[0].status).toBe('pending');
+    expect(objects.has(`pending/${userId}/${assetId}`)).toBe(false);
+  });
+
+  it('cancels an incomplete upload, queues fragment cleanup and refuses further parts', async () => {
+    await seedUpload();
+    const part = file.subarray(0, 4);
+    await service.receiveUploadPart(userId, uploadId, 0, part, sha256(part));
+    await expect(service.cancelUpload(userId, uploadId)).resolves.toMatchObject({
+      cancelled: true,
+      alreadyCancelled: false,
+    });
+    await expect(
+      service.receiveUploadPart(userId, uploadId, 1, file.subarray(4), sha256(file.subarray(4))),
+    ).rejects.toMatchObject({ status: 409 });
+    const upload = await pool.query('SELECT state FROM media_uploads WHERE id=$1', [uploadId]);
+    expect(upload.rows[0].state).toBe('cancelled');
+    const cleanup = await pool.query(
+      `SELECT count(*)::int total FROM media_storage_deletions
+       WHERE media_asset_id=$1 AND storage_key LIKE 'parts/%'`,
+      [assetId],
+    );
+    expect(cleanup.rows[0].total).toBe(1);
+  });
+});
