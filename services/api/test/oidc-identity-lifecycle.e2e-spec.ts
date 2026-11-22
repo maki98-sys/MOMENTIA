@@ -81,6 +81,45 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
     expect(stored.rows).toHaveLength(0);
   });
 
+  it('serializes concurrent first-login provisioning for the same external identity', async () => {
+    const externalSubject = subject();
+    const email = `concurrent-${randomUUID()}@oidc-e2e.test`;
+    const principal = {
+      issuer: provider, subject: externalSubject, audience: ['momentia-api'],
+      email, emailVerified: true,
+    };
+    const results = await Promise.all([
+      identities.resolveOrProvision(principal),
+      identities.resolveOrProvision(principal),
+    ]);
+    expect(results.filter(result => result.created)).toHaveLength(1);
+    expect(results[0].userId).toBe(results[1].userId);
+    provisionedUserIds.push(results[0].userId);
+    const stored = await pool.query(
+      'SELECT id FROM auth_identities WHERE provider=$1 AND provider_subject=$2',
+      [provider, externalSubject],
+    );
+    expect(stored.rows).toHaveLength(1);
+  });
+
+  it('rejects sign-in through an identity attached to a suspended account', async () => {
+    const externalSubject = subject();
+    await pool.query(
+      'INSERT INTO auth_identities(user_id,provider,provider_subject) VALUES($1,$2,$3)',
+      [userId, provider, externalSubject],
+    );
+    await pool.query("UPDATE users SET status='suspended' WHERE id=$1", [userId]);
+    await expect(identities.resolveOrProvision({
+      issuer: provider, subject: externalSubject, audience: ['momentia-api'],
+    })).rejects.toThrow('not active');
+    const stored = await pool.query(
+      'SELECT user_id FROM auth_identities WHERE provider=$1 AND provider_subject=$2',
+      [provider, externalSubject],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0].user_id).toBe(userId);
+  });
+
   it('does not provision an account when the provider email is unverified', async () => {
     const email = `unverified-${randomUUID()}@oidc-e2e.test`;
     await expect(identities.resolveOrProvision({
