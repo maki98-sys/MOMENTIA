@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/auth.types';
 import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
@@ -42,6 +42,37 @@ export class SocialController {
   @Delete('users/:userId/block')
   unblock(@Req() req: Request & AuthenticatedRequest, @Param('userId') targetId: string) {
     return this.social.unblock(req.userId!, targetId);
+  }
+
+
+  @Get('me/following')
+  following(@Req() req: Request & AuthenticatedRequest, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.listConnections(req, 'following', cursor, limit);
+  }
+
+  @Get('me/followers')
+  followers(@Req() req: Request & AuthenticatedRequest, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.listConnections(req, 'followers', cursor, limit);
+  }
+
+  @Get('me/follow-requests')
+  incomingFollowRequests(@Req() req: Request & AuthenticatedRequest, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.listConnections(req, 'requests', cursor, limit);
+  }
+
+  private listConnections(
+    req: Request & AuthenticatedRequest,
+    kind: 'following' | 'followers' | 'requests',
+    cursor?: string,
+    limit?: string,
+  ) {
+    if (!req.userId) throw new UnauthorizedException('Authenticated user context is missing.');
+    if (cursor !== undefined && cursor.length > 512) throw new BadRequestException('cursor is too long.');
+    const parsedLimit = limit === undefined ? 20 : Number(limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 50) {
+      throw new (require('@nestjs/common').BadRequestException)('limit must be an integer between 1 and 50.');
+    }
+    return this.social.listConnections(req.userId, kind, cursor, parsedLimit);
   }
 
   @Get('feed')

@@ -128,6 +128,65 @@ export class SocialService {
     return { blocked:false };
   }
 
+
+  async listConnections(
+    userId: string,
+    kind: 'following' | 'followers' | 'requests',
+    cursorValue?: string,
+    requestedLimit = 20,
+  ) {
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 50) {
+      throw new BadRequestException('limit must be an integer between 1 and 50.');
+    }
+    const cursor = cursorValue ? decodeConnectionCursor(cursorValue) : null;
+    const result = await this.db.query<{
+      relationship_id: string;
+      created_at: Date | string;
+      user_id: string;
+      display_name: string | null;
+      avatar_media_id: string | null;
+    }>(
+      `SELECT r.id AS relationship_id, r.created_at,
+              u.id AS user_id, up.display_name, up.avatar_media_id
+       FROM user_relationships r
+       JOIN users viewer ON viewer.id = $1 AND viewer.status = 'active'
+       JOIN users u
+         ON u.id = CASE WHEN $2 = 'following' THEN r.target_id ELSE r.requester_id END
+        AND u.status = 'active'
+       LEFT JOIN user_profiles up ON up.user_id = u.id
+       WHERE (
+         ($2 = 'following' AND r.requester_id = $1 AND r.state = 'accepted')
+         OR ($2 = 'followers' AND r.target_id = $1 AND r.state = 'accepted')
+         OR ($2 = 'requests' AND r.target_id = $1 AND r.state = 'pending')
+       )
+         AND NOT EXISTS (
+           SELECT 1 FROM user_blocks b
+           WHERE (b.blocker_id = $1 AND b.blocked_id = u.id)
+              OR (b.blocker_id = u.id AND b.blocked_id = $1)
+         )
+         AND ($3::timestamptz IS NULL OR (r.created_at, r.id) < ($3::timestamptz, $4::uuid))
+       ORDER BY r.created_at DESC, r.id DESC
+       LIMIT $5`,
+      [userId, kind, cursor?.createdAt ?? null, cursor?.id ?? null, requestedLimit + 1],
+    );
+    const hasMore = result.rows.length > requestedLimit;
+    const rows = result.rows.slice(0, requestedLimit);
+    const users = rows.map(row => ({
+      userId: row.user_id,
+      displayName: row.display_name,
+      avatarMediaId: row.avatar_media_id,
+      createdAt: toIsoString(row.created_at),
+    }));
+    const last = rows[rows.length - 1];
+    return {
+      users,
+      hasMore,
+      nextCursor: hasMore && last
+        ? encodeConnectionCursor({ createdAt: toIsoString(last.created_at), id: last.relationship_id })
+        : null,
+    };
+  }
+
   async create(userId: string, input: unknown) {
     const v = this.validatePost(input);
     return this.db.transaction(async client => {
@@ -373,4 +432,34 @@ export class SocialService {
           WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))`,[userId,postId]);
     if(!r.rowCount) throw new NotFoundException('Post not found.');
   }
+}
+
+type ConnectionCursor = { createdAt: string; id: string };
+
+function encodeConnectionCursor(cursor: ConnectionCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function decodeConnectionCursor(value: string): ConnectionCursor {
+  if (value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new BadRequestException('cursor is invalid.');
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid');
+    const candidate = parsed as Record<string, unknown>;
+    if (typeof candidate.createdAt !== 'string'
+      || !Number.isFinite(Date.parse(candidate.createdAt))
+      || typeof candidate.id !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate.id)) {
+      throw new Error('invalid');
+    }
+    return { createdAt: new Date(candidate.createdAt).toISOString(), id: candidate.id };
+  } catch {
+    throw new BadRequestException('cursor is invalid.');
+  }
+}
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

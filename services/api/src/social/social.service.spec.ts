@@ -156,4 +156,37 @@ describe('SocialService',()=>{
   expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
  });
 
+
+ it('rejects malformed connection cursors before querying PostgreSQL', async () => {
+  await expect(service.listConnections('u1','followers','not-a-cursor',20)).rejects.toBeInstanceOf(BadRequestException);
+  expect(query).not.toHaveBeenCalled();
+ });
+ it('returns cursor-paginated followers and filters blocked or inactive accounts', async () => {
+  const createdAt='2026-11-22T10:00:00.000Z';
+  query.mockResolvedValueOnce({rowCount:2,rows:[
+   {relationship_id:'00000000-0000-4000-8000-000000000001',created_at:createdAt,user_id:'u2',display_name:'User 2',avatar_media_id:null},
+   {relationship_id:'00000000-0000-4000-8000-000000000002',created_at:createdAt,user_id:'u3',display_name:'User 3',avatar_media_id:null},
+  ]});
+  const result=await service.listConnections('u1','followers',undefined,1);
+  expect(result.users).toEqual([{userId:'u2',displayName:'User 2',avatarMediaId:null,createdAt}]);
+  expect(result.hasMore).toBe(true);
+  expect(result.nextCursor).toBeTruthy();
+  expect(query.mock.calls[0][0]).toContain("u.status = 'active'");
+  expect(query.mock.calls[0][0]).toContain('NOT EXISTS');
+  expect(query.mock.calls[0][0]).toContain("(r.created_at, r.id) < ($3::timestamptz, $4::uuid)");
+  expect(query.mock.calls[0][1]).toEqual(['u1','followers',null,null,2]);
+ });
+ it('supports following and incoming-request list filters with stable cursor ordering', async () => {
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.listConnections('u1','following')).resolves.toMatchObject({users:[],hasMore:false,nextCursor:null});
+  expect(query.mock.calls[0][0]).toContain("r.requester_id = $1 AND r.state = 'accepted'");
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  await expect(service.listConnections('u1','requests')).resolves.toMatchObject({users:[],hasMore:false,nextCursor:null});
+  expect(query.mock.calls[1][0]).toContain("r.target_id = $1 AND r.state = 'pending'");
+ });
+ it('rejects connection list limits outside the supported range', async () => {
+  await expect(service.listConnections('u1','followers',undefined,51)).rejects.toBeInstanceOf(BadRequestException);
+  expect(query).not.toHaveBeenCalled();
+ });
+
 });
