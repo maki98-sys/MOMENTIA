@@ -372,7 +372,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
   it('rejects continuation after snapshot expiry', async () => {
     const snapshot = await sync.snapshot(viewerId, { sections: ['profile'] });
     await pool.query(
-      `UPDATE sync_snapshot_sessions SET expires_at=now()-interval '1 minute' WHERE id=$1`,
+      `UPDATE sync_snapshot_sessions SET created_at=now()-interval '2 minutes',expires_at=now()-interval '1 minute' WHERE id=$1`,
       [snapshot.snapshotId],
     );
     await expect(sync.snapshot(viewerId,{snapshotId:snapshot.snapshotId}))
