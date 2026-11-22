@@ -127,6 +127,9 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
     expect(clientQuery.mock.calls[2][0]).toContain("status='failed'");
     expect(clientQuery.mock.calls[3][0]).toContain('media_storage_deletions');
+    expect(clientQuery.mock.calls[3][0]).toContain('attempts>=max_attempts');
+    expect(clientQuery.mock.calls[3][0]).toContain('dead_lettered_at');
+    expect(clientQuery.mock.calls[3][0]).toContain('RETRY_EXHAUSTED:WORKER_LEASE_EXPIRED');
   });
 
   it('cleans expired uploads without issuing unnecessary part queries',async()=>{
