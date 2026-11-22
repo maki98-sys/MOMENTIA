@@ -185,6 +185,40 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     await expect(processing.claimDeletions('media-e2e-worker', 10)).resolves.toHaveLength(0);
   });
 
+  it('expires an assembling upload and queues original plus part objects before completion can publish', async () => {
+    await seedUpload();
+    const part = file.subarray(0, 4);
+    const partChecksum = sha256(part);
+    await service.receiveUploadPart(userId, uploadId, 0, part, partChecksum);
+    await pool.query(
+      `UPDATE media_uploads SET state='assembling',expires_at=now()-interval '1 minute' WHERE id=$1`,
+      [uploadId],
+    );
+
+    await expect(processing.cleanupExpiredUploads(100)).resolves.toMatchObject({
+      expired: 1,
+      removedParts: 1,
+    });
+
+    const upload = await pool.query('SELECT state,last_error_code FROM media_uploads WHERE id=$1', [uploadId]);
+    expect(upload.rows[0]).toMatchObject({ state: 'cancelled', last_error_code: 'UPLOAD_EXPIRED' });
+    const asset = await pool.query('SELECT status FROM media_assets WHERE id=$1', [assetId]);
+    expect(asset.rows[0].status).toBe('deleted');
+    const parts = await pool.query('SELECT 1 FROM media_upload_parts WHERE upload_id=$1', [uploadId]);
+    expect(parts.rowCount).toBe(0);
+
+    const queued = await pool.query(
+      `SELECT storage_key FROM media_storage_deletions
+       WHERE media_asset_id=$1 ORDER BY storage_key`,
+      [assetId],
+    );
+    expect(queued.rows.map(row => row.storage_key).sort()).toEqual([
+      `parts/${userId}/${uploadId}/0-${partChecksum}`,
+      `pending/${userId}/${assetId}`,
+    ].sort());
+    await expect(service.completeResumableUpload(userId, uploadId)).rejects.toMatchObject({ status: 409 });
+  });
+
   it('cancels an incomplete upload, queues fragment cleanup and refuses further parts', async () => {
     await seedUpload();
     const part = file.subarray(0, 4);
