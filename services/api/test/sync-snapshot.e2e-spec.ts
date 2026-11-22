@@ -300,4 +300,14 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(timelineIndex).toBeGreaterThan(cursorIndex);
   });
 
+
+  it('excludes posts and timeline entries from suspended authors', async () => {
+    const suspendedPost = await createTimelinePost('public', '2026-11-21T09:00:00Z');
+    await pool.query(`UPDATE users SET status='suspended' WHERE id=$1`, [authorId]);
+
+    const snapshot = await sync.snapshot(viewerId, { sections: ['posts', 'timeline'], limit: 100 });
+    expect(snapshot.data.posts.map((row: any) => row.id)).not.toContain(suspendedPost);
+    expect(snapshot.data.timeline.map((row: any) => row.post_id)).not.toContain(suspendedPost);
+  });
+
 });
