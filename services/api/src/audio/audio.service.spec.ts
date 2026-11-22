@@ -65,6 +65,27 @@ describe('AudioService', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it('clears the current track and resets position when the host ends playback', async () => {
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'s',host_user_id:'user-1',state:'playing',server_version:7}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'s',state:'ended',playback_state:'ended',position_ms:0,current_item_id:null,server_version:8}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(operation:any)=>operation({query:clientQuery}));
+
+    await expect(service.updatePlayback('user-1','11111111-1111-4111-8111-111111111111',{action:'end',expectedVersion:7}))
+      .resolves.toMatchObject({state:'ended',playback_state:'ended',position_ms:0,current_item_id:null});
+    const updateCall=clientQuery.mock.calls.find((call:any[])=>String(call[0]).includes('UPDATE audio_sessions SET'));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[0]).toContain('position_ms=CASE');
+    expect(updateCall[0]).toContain('current_item_id=CASE');
+    expect(updateCall[1][6]).toBe(true);
+    expect(updateCall[1][7]).toBe(true);
+    expect(clientQuery.mock.calls.at(-1)[0]).toContain("state='played'");
+  });
+
   it('rejects invalid votes before database access', async () => {
     await expect(service.vote('user-1', '11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', 0))
       .rejects.toBeInstanceOf(BadRequestException);
