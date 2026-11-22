@@ -39,6 +39,7 @@ export class InvitationsService {
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const result = await this.database.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const created = await client.query(
         `INSERT INTO space_invitations
            (space_id, created_by, token_hash, role, expires_at, max_uses, approval_required)
