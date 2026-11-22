@@ -106,7 +106,7 @@ export class SessionTokenService {
         );
         await client.query(
           `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1)
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::text)
            FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
         );
         return { reused: true as const };
@@ -137,7 +137,7 @@ export class SessionTokenService {
         );
         await client.query(
           `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1)
+           SELECT user_id,user_id,'auth.session.refresh_reuse_detected','session',id,jsonb_build_object('familyId',$1::text)
            FROM auth_sessions WHERE family_id=$1 LIMIT 1`,[row.family_id],
         );
         return { reused: true as const };
