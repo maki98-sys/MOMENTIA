@@ -359,7 +359,7 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
 
 
   it('preserves event timeline memories after the space is archived', async () => {
-    const archivedPost = await createTimelinePost('space', '2026-11-21T07:00:00Z');
+    const archivedPost = await createTimelinePost('space', '2026-11-21T07:00:00Z',ownerId);
     await pool.query(`UPDATE spaces SET status='archived' WHERE id=$1`,[spaceId]);
     const snapshot = await sync.snapshot(viewerId,{sections:['timeline'],limit:100});
     expect(snapshot.data.timeline.map((row:any)=>row.post_id)).toContain(archivedPost);
