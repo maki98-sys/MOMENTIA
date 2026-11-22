@@ -16,7 +16,8 @@ describe('DeviceSessionService', () => {
     query.mockResolvedValue({ rowCount: 1, rows: [{ id: 'device-1', platform: 'android' }] });
     await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'android' }))
       .resolves.toMatchObject({ id: 'device-1', platform: 'android' });
-    expect(query.mock.calls[0][0]).toContain('RETURNING id, platform, last_seen_at, created_at');
+    expect(query.mock.calls[0][0]).toContain("status='active'");
+    expect(query.mock.calls[1][0]).toContain('RETURNING id, platform, last_seen_at, created_at');
   });
 
   it('rejects unsupported device platforms and fields', async () => {
@@ -25,6 +26,20 @@ describe('DeviceSessionService', () => {
     await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'ios', userId: 'other-user' }))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects push tokens for web devices until a web push provider exists', async () => {
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', {
+      platform:'web',pushToken:'web-push-token',
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('does not register a device for an inactive account', async () => {
+    query.mockResolvedValueOnce({rowCount:0,rows:[]});
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111',{platform:'ios'}))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('lists only active devices owned by the authenticated user', async () => {
