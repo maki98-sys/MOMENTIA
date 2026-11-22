@@ -26,7 +26,7 @@ import { DatabaseService } from './database.service';
           idleTimeoutMillis: 30_000,
           statement_timeout: boundedNumber('DATABASE_STATEMENT_TIMEOUT_MS',60_000,1_000,180_000),
           query_timeout: boundedNumber('DATABASE_QUERY_TIMEOUT_MS',65_000,1_000,240_000),
-          options: '-c idle_in_transaction_session_timeout=30000',
+          options: `-c idle_in_transaction_session_timeout=${boundedNumber('DATABASE_IDLE_TRANSACTION_TIMEOUT_MS',30_000,1_000,300_000)}`,
         });
         pool.on('error',(error:Error)=>{
           Logger.error('Unexpected idle PostgreSQL client error',error.stack,'DatabasePool');
