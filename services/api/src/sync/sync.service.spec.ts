@@ -48,7 +48,9 @@ describe('SyncService', () => {
   });
 
   it('requests a fresh snapshot when the client cursor is ahead of the server', async () => {
-    clientQuery.mockResolvedValueOnce({ rows: [{ oldest_sequence: '3', latest_sequence: '9' }] });
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ oldest_sequence: '3', latest_sequence: '9' }] });
     const result = await service.pull('user-1', '12');
     expect(result).toMatchObject({
       changes: [], nextCursor: '12', hasMore: false, resetRequired: true,
@@ -59,13 +61,14 @@ describe('SyncService', () => {
 
   it('does not expose change-log payloads and caps pull page size at 500', async () => {
     clientQuery
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ oldest_sequence: '1', latest_sequence: '700' }] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{
         sequence_id: '6', entity_type: 'post', entity_id: 'post-1',
         change_type: 'created', occurred_at: new Date(0), payload: { private: true },
       }] });
     const result = await service.pull('user-1', '5', 900);
-    expect(clientQuery).toHaveBeenNthCalledWith(2, expect.any(String), ['user-1', '5', 500]);
+    expect(clientQuery).toHaveBeenNthCalledWith(3, expect.any(String), ['user-1', '5', 500]);
     expect(result).toMatchObject({
       nextCursor: '6', hasMore: false, resetRequired: false, refreshRequired: true,
       changes: [{ sequence_id: '6', payload: null }],
