@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import { parseClamAvResponse, runFfmpeg } from '../dist/process-utils.js';
 
 test('ClamAV parser accepts only complete clean verdicts', () => {
-  assert.equal(parseClamAvResponse('stream: OK\\0'), 'clean');
+  assert.equal(parseClamAvResponse('stream: OK\0'), 'clean');
   assert.equal(parseClamAvResponse('stream: OK'), 'clean');
 });
 
 test('ClamAV parser identifies infected streams without substring false positives', () => {
-  assert.equal(parseClamAvResponse('stream: Eicar-Test-Signature FOUND\\0'), 'rejected');
+  assert.equal(parseClamAvResponse('stream: Eicar-Test-Signature FOUND\0'), 'rejected');
   assert.equal(parseClamAvResponse('not OK; still scanning'), 'pending');
   assert.equal(parseClamAvResponse(''), 'pending');
 });
 
 test('ClamAV scanner errors fail closed', () => {
-  assert.throws(() => parseClamAvResponse('stream: INSTREAM size limit exceeded ERROR\\0'), /ClamAV scan failed/);
+  assert.throws(() => parseClamAvResponse('stream: INSTREAM size limit exceeded ERROR\0'), /ClamAV scan failed/);
 });
 
 test('FFmpeg runner resolves successful child processes', async () => {
