@@ -90,7 +90,7 @@ describe('SocialService',()=>{
   const clientQuery=jest.fn().mockResolvedValueOnce({rowCount:0,rows:[]}).mockResolvedValueOnce({rowCount:1,rows:[{id:'u2',visibility:'private'}]});
   transaction.mockImplementation(async(fn:any)=>fn({query:clientQuery}));
   await expect(service.follow('u1','u2')).rejects.toBeInstanceOf(NotFoundException);
-  expect(clientQuery).toHaveBeenCalledTimes(1);
+  expect(clientQuery).toHaveBeenCalledTimes(2);
  });
  it('filters comments authored by users blocked in either direction',async()=>{
   query.mockResolvedValueOnce({rowCount:1,rows:[{'?column?':1}]}).mockResolvedValueOnce({rowCount:0,rows:[]});
