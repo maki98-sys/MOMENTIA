@@ -21,8 +21,8 @@ async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): P
   transform(chunk: Buffer | string, _encoding, callback) {
    const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
    total += part.length;
-   if (total > MAX_UPLOAD_BYTES) {
-    callback(new PayloadTooLargeException('File exceeds the 200 MB platform upload limit.'));
+   if (total > maxBytes) {
+    callback(new PayloadTooLargeException(maxBytes === MAX_UPLOAD_PART_BYTES ? 'Upload part exceeds 8 MB.' : 'File exceeds the 200 MB platform upload limit.'));
     return;
    }
    callback(null, part);
