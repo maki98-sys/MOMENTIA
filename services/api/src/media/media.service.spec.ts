@@ -36,6 +36,25 @@ describe('MediaService',()=>{
   await expect(service.receiveUpload('u','123e4567-e89b-42d3-a456-426614174000',Buffer.from('x'))).rejects.toThrow('SHA-256 checksum mismatch.');
   expect(transaction).not.toHaveBeenCalled();
  });
+ it('does not let another account upload a part into someone else\'s upload',async()=>{
+  query.mockResolvedValueOnce({rowCount:0,rows:[]});
+  const put=jest.spyOn(service['storage'],'put');
+  const bytes=Buffer.from('private-part');
+  const checksum=createHash('sha256').update(bytes).digest('hex');
+  await expect(service.receiveUploadPart('attacker','123e4567-e89b-42d3-a456-426614174000',0,bytes,checksum))
+   .rejects.toBeInstanceOf(NotFoundException);
+  expect(put).not.toHaveBeenCalled();
+  put.mockRestore();
+ });
+ it('rejects an upload part with an invalid checksum before database or storage writes',async()=>{
+  const put=jest.spyOn(service['storage'],'put');
+  const bytes=Buffer.from('part-data');
+  await expect(service.receiveUploadPart('owner','123e4567-e89b-42d3-a456-426614174000',0,bytes,'0'.repeat(64)))
+   .rejects.toBeInstanceOf(BadRequestException);
+  expect(query).not.toHaveBeenCalled();
+  expect(put).not.toHaveBeenCalled();
+  put.mockRestore();
+ });
  it('persists matching bytes and keeps the asset quarantined',async()=>{
   const root=await mkdtemp(join(tmpdir(),'momentia-media-'));
   const previous=process.env.MEDIA_STORAGE_DIR;

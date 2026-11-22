@@ -8,11 +8,13 @@ on:
   push:
     paths:
       - "services/api/**"
+      - "services/media-worker/**"
       - "database/**"
       - ".github/workflows/api-check.yml"
   pull_request:
     paths:
       - "services/api/**"
+      - "services/media-worker/**"
       - "database/**"
       - ".github/workflows/api-check.yml"
   workflow_dispatch:
@@ -68,3 +70,9 @@ jobs:
         run: npm run build
       - name: Build production container
         run: docker build --tag momentia-api:ci services/api
+      - name: Install media worker dependencies
+        working-directory: services/media-worker
+        run: npm install --no-audit --no-fund
+      - name: Test media worker storage adapters
+        working-directory: services/media-worker
+        run: npm test

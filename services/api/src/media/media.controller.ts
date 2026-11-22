@@ -60,7 +60,7 @@ export class MediaController {
  @Get('assets/:assetId/content')
  async getAssetContent(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string,@Res({passthrough:true}) response:Response) {
   const file=await this.media.openAssetContent(req.userId!,id,'original');
-  response.setHeader('Cache-Control','private, max-age=60');
+  response.setHeader('Cache-Control','private, no-store, max-age=0');
   response.setHeader('X-Content-Type-Options','nosniff');
   return new StreamableFile(file.stream,{
    type:file.mimeType,
@@ -71,7 +71,7 @@ export class MediaController {
  @Get('assets/:assetId/variants/:variantType/content')
  async getAssetVariant(@Req() req:Request&AuthenticatedRequest,@Param('assetId') id:string,@Param('variantType') variantType:string,@Res({passthrough:true}) response:Response) {
   const file=await this.media.openAssetContent(req.userId!,id,variantType);
-  response.setHeader('Cache-Control','private, max-age=300');
+  response.setHeader('Cache-Control','private, no-store, max-age=0');
   response.setHeader('X-Content-Type-Options','nosniff');
   return new StreamableFile(file.stream,{
    type:file.mimeType,

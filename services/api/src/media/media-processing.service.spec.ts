@@ -11,7 +11,7 @@ describe('MediaProcessingService',()=>{
   const assetId='22222222-2222-4222-8222-222222222222';
   const deletionId='33333333-3333-4333-8333-333333333333';
   const variant={
-    variantType:'thumbnail',storageKey:'variants/thumb.webp',mimeType:'image/webp',
+    variantType:'thumbnail',storageKey:'variants/22222222-2222-4222-8222-222222222222/thumb.webp',mimeType:'image/webp',
     sizeBytes:2048,width:320,height:240,checksumSha256:'a'.repeat(64),
   };
 
@@ -49,12 +49,37 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery.mock.calls[4][0]).toContain("status='completed'");
   });
 
+  it('keeps media quarantined and reports blocked when virus scanning is unavailable',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'virus_scan',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'quarantined'}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,scanVerdict:'unavailable'}))
+      .resolves.toMatchObject({jobId,status:'completed',mediaAssetId:assetId,nextStage:'blocked'});
+    expect(clientQuery.mock.calls[2][0]).toContain("CASE WHEN $2='rejected' THEN 'quarantined' ELSE status END");
+    expect(clientQuery.mock.calls[2][1]).toEqual([assetId,'unavailable']);
+    expect(clientQuery.mock.calls[3][0]).toContain("status='completed'");
+    expect(clientQuery.mock.calls.some(call=>String(call[0]).includes('INSERT INTO media_processing_jobs'))).toBe(false);
+  });
+
   it('rejects a variant result with unsafe storage keys',async()=>{
     const clientQuery=jest.fn()
       .mockResolvedValueOnce({rows:[],rowCount:0})
       .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
     transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
     await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,storageKey:'variants/../secret'}]}))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a variant key belonging to a different media asset',async()=>{
+    const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{id:jobId,media_asset_id:assetId,job_type:'image_variants',attempts:1,max_attempts:5,mime_type_detected:'image/jpeg',storage_provider:'local',asset_status:'processing'}],rowCount:1});
+    transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
+    await expect(service.complete(worker,jobId,{success:true,variants:[{...variant,storageKey:'variants/33333333-3333-4333-8333-333333333333/thumb.webp'}]}))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(clientQuery).toHaveBeenCalledTimes(2);
   });
@@ -102,6 +127,9 @@ describe('MediaProcessingService',()=>{
     expect(clientQuery.mock.calls[0][0]).toContain('pg_advisory_xact_lock');
     expect(clientQuery.mock.calls[2][0]).toContain("status='failed'");
     expect(clientQuery.mock.calls[3][0]).toContain('media_storage_deletions');
+    expect(clientQuery.mock.calls[3][0]).toContain('attempts>=max_attempts');
+    expect(clientQuery.mock.calls[3][0]).toContain('dead_lettered_at');
+    expect(clientQuery.mock.calls[3][0]).toContain('RETRY_EXHAUSTED:WORKER_LEASE_EXPIRED');
   });
 
   it('cleans expired uploads without issuing unnecessary part queries',async()=>{
@@ -121,9 +149,24 @@ describe('MediaProcessingService',()=>{
       .mockResolvedValueOnce({rows:[{id:deletionId,status:'completed',media_asset_id:assetId}],rowCount:1});
     await expect(service.claimDeletions(worker,1000)).resolves.toHaveLength(1);
     expect(query.mock.calls[0][0]).toContain('FOR UPDATE OF d SKIP LOCKED');
+    expect(query.mock.calls[0][0]).toContain('d.attempts<d.max_attempts');
+    expect(query.mock.calls[0][0]).toContain('d.dead_lettered_at IS NULL');
     await expect(service.completeDeletion(worker,deletionId,{success:true}))
       .resolves.toMatchObject({id:deletionId,status:'completed'});
     expect(query.mock.calls[1][1]).toEqual([deletionId,worker,'completed',null]);
+  });
+
+
+  it('dead-letters a storage deletion after its bounded retry budget is exhausted',async()=>{
+    query.mockResolvedValueOnce({
+      rows:[{id:deletionId,status:'failed',media_asset_id:assetId,dead_lettered_at:'2026-11-22T00:00:00.000Z'}],
+      rowCount:1,
+    });
+    await expect(service.completeDeletion(worker,deletionId,{success:false,errorCode:'S3_UNAVAILABLE'}))
+      .resolves.toMatchObject({id:deletionId,status:'failed',dead_lettered_at:expect.any(String)});
+    expect(query.mock.calls[0][0]).toContain('attempts>=max_attempts');
+    expect(query.mock.calls[0][0]).toContain('dead_lettered_at');
+    expect(query.mock.calls[0][0]).toContain('RETRY_EXHAUSTED:');
   });
 
   it('rejects completion by a worker that does not own the deletion task',async()=>{

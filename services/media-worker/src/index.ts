@@ -84,8 +84,9 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
       socket.write('zINSTREAM\0');
       const stream=createReadStream(path,{highWaterMark:64*1024});
       stream.on('data',chunk=>{
-        const header=Buffer.alloc(4);header.writeUInt32BE(chunk.length,0);
-        if(!socket.write(Buffer.concat([header,chunk]))) stream.pause();
+        const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+        const header=Buffer.alloc(4);header.writeUInt32BE(data.length,0);
+        if(!socket.write(Buffer.concat([header,data]))) stream.pause();
       });
       socket.on('drain',()=>stream.resume());
       stream.on('end',()=>socket.end(Buffer.alloc(4)));
@@ -188,12 +189,31 @@ async function processJob(job: Job): Promise<Record<string,unknown>> {
   throw new Error('Unsupported media job');
 }
 
+async function removeUncommittedVariants(result: Record<string,unknown>): Promise<void> {
+  if(!Array.isArray(result.variants)) return;
+  for(const variant of result.variants) {
+    if(!variant||typeof variant!=='object'||typeof (variant as Record<string,unknown>).storageKey!=='string') continue;
+    await storage.remove(String((variant as Record<string,unknown>).storageKey)).catch(error=>{
+      process.stderr.write(`orphan variant cleanup failed: ${String(error)}\\n`);
+    });
+  }
+}
+
 async function deliverJob(job: Job): Promise<void> {
+  let result:Record<string,unknown>|undefined;
   try {
     storage = createMediaWorkerStorage(job.storage_provider);
-    const result=await processJob(job);
-    await api(`/internal/media-processing/jobs/${job.id}/complete`,'POST',{workerId:WORKER_ID,...result});
+    result=await processJob(job);
+    const completion=await api<{status?:string}>(`/internal/media-processing/jobs/${job.id}/complete`,'POST',{workerId:WORKER_ID,...result});
+    // The API may have cancelled a job because its asset was deleted or failed
+    // while the worker was generating variants. Those objects were never committed
+    // to media_variants and must not be left orphaned in object storage.
+    if(completion?.status==='cancelled') await removeUncommittedVariants(result);
   } catch(error) {
+    // A 404 means the lease was revoked (for example, by asset deletion). The
+    // completion transaction did not persist these variants, so remove them.
+    // Do not clean up on ambiguous network/5xx errors: the DB may have committed.
+    if(result&&/API 404:/.test(String(error))) await removeUncommittedVariants(result);
     const errorCode=error instanceof Error?error.name||'WORKER_ERROR':'WORKER_ERROR';
     await api(`/internal/media-processing/jobs/${job.id}/complete`,'POST',{
       workerId:WORKER_ID,success:false,errorCode,

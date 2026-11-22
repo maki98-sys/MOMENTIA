@@ -95,7 +95,7 @@ export class MediaProcessingService {
           if(!item||typeof item!=='object'||Array.isArray(item)) throw new BadRequestException('Invalid media variant.');
           const v=item as Record<string,unknown>;
           if(!['thumbnail','preview','display','video_poster'].includes(String(v.variantType)) ||
-             typeof v.storageKey!=='string'||!v.storageKey.startsWith('variants/')||v.storageKey.includes('..')||v.storageKey.length>500||
+             typeof v.storageKey!=='string'||!v.storageKey.startsWith(`variants/${job.media_asset_id}/`)||v.storageKey.includes('..')||v.storageKey.length>500||
              typeof v.mimeType!=='string'||!['image/jpeg','image/png','image/webp'].includes(v.mimeType)||
              !Number.isSafeInteger(v.sizeBytes)||Number(v.sizeBytes)<1||!Number.isSafeInteger(v.width)||!Number.isSafeInteger(v.height)||
              Number(v.width)<1||Number(v.height)<1||typeof v.checksumSha256!=='string'||! /^[a-f0-9]{64}$/i.test(v.checksumSha256)) {
@@ -132,7 +132,7 @@ export class MediaProcessingService {
         `UPDATE media_processing_jobs SET status='completed',result=$2::jsonb,
            locked_at=NULL,locked_by=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1`,
         [jobId,JSON.stringify(value.result??{})]);
-      return {jobId,status:'completed',mediaAssetId:job.media_asset_id,nextStage:job.job_type==='virus_scan'?'variants':job.job_type==='finalize'?'ready':'continue'};
+      return {jobId,status:'completed',mediaAssetId:job.media_asset_id,nextStage:job.job_type==='virus_scan'?(value.scanVerdict==='clean'?'variants':'blocked'):job.job_type==='finalize'?'ready':'continue'};
     });
   }
 
@@ -219,7 +219,10 @@ export class MediaProcessingService {
       );
       const deletions=await client.query(
         `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
-           last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
+           last_error_code=CASE WHEN attempts>=max_attempts
+             THEN 'RETRY_EXHAUSTED:WORKER_LEASE_EXPIRED' ELSE 'WORKER_LEASE_EXPIRED' END,
+           dead_lettered_at=CASE WHEN attempts>=max_attempts THEN COALESCE(dead_lettered_at,now()) ELSE NULL END,
+           available_at=now()
          WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
          RETURNING id`,
         [seconds],
@@ -239,6 +242,7 @@ export class MediaProcessingService {
          SELECT d.id FROM media_storage_deletions d
          JOIN media_assets a ON a.id=d.media_asset_id
          WHERE d.status IN ('pending','failed') AND d.available_at<=now()
+           AND d.attempts<d.max_attempts AND d.dead_lettered_at IS NULL
            AND ($3::uuid IS NULL OR a.owner_id=$3)
          ORDER BY d.available_at,d.created_at LIMIT $1 FOR UPDATE OF d SKIP LOCKED
        )
@@ -260,9 +264,17 @@ export class MediaProcessingService {
     }
     const result=await this.db.query(
       `UPDATE media_storage_deletions SET status=$3,locked_at=NULL,locked_by=NULL,
-         last_error_code=$4,available_at=now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+         last_error_code=CASE
+           WHEN $3='completed' THEN NULL
+           WHEN attempts>=max_attempts THEN 'RETRY_EXHAUSTED:'||left($4,96)
+           ELSE $4
+         END,
+         dead_lettered_at=CASE WHEN $3='failed' AND attempts>=max_attempts THEN now() ELSE NULL END,
+         available_at=CASE WHEN $3='failed'
+           THEN now()+make_interval(secs=>LEAST(3600,30*(2^LEAST(attempts,7))::integer))
+           ELSE now() END
        WHERE id=$1 AND status='processing' AND locked_by=$2
-       RETURNING id,status,media_asset_id`,
+       RETURNING id,status,media_asset_id,dead_lettered_at`,
       [deletionId,workerId,value.success?'completed':'failed',value.success?null:String(value.errorCode??'STORAGE_DELETE_FAILED').slice(0,120)]);
     if(!result.rowCount) throw new NotFoundException('Storage deletion task not found or not owned by this worker.');
     return result.rows[0];

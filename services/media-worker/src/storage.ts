@@ -1,5 +1,5 @@
 import { createWriteStream, createReadStream } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -13,6 +13,27 @@ export abstract class MediaWorkerStorage {
   abstract release(storageKey: string): Promise<void>;
   abstract remove(storageKey: string): Promise<void>;
   abstract stat(storageKey: string): Promise<{ size: number; isFile: boolean }>;
+}
+
+async function assertNoSymlinkPath(root: string, target: string, createParents = false): Promise<void> {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const rootInfo = await lstat(root);
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) throw new Error('Storage root must be a real directory');
+  const relative = target.slice(root.length + 1);
+  const segments = relative.split('/');
+  let current = root;
+  for (let index = 0; index < segments.length; index++) {
+    current = join(current, segments[index]);
+    const isParent = index < segments.length - 1;
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error('Symbolic links are not allowed in storage paths');
+      if (isParent && !info.isDirectory()) throw new Error('Storage path parent must be a directory');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (createParents && isParent) await mkdir(current, { mode: 0o700 });
+    }
+  }
 }
 
 function validateKey(storageKey: string): void {
@@ -30,15 +51,25 @@ export class LocalMediaWorkerStorage extends MediaWorkerStorage {
   }
   async ensureParent(storageKey: string): Promise<string> {
     const target = this.pathFor(storageKey);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await assertNoSymlinkPath(this.root, target, true);
     return target;
   }
-  async materialize(storageKey: string): Promise<string> { return this.pathFor(storageKey); }
+  async materialize(storageKey: string): Promise<string> {
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.root, target);
+    return target;
+  }
   async commit(_storageKey: string, _localPath: string): Promise<void> {}
   async release(_storageKey: string): Promise<void> {}
-  async remove(storageKey: string): Promise<void> { await rm(this.pathFor(storageKey), { force: true }); }
+  async remove(storageKey: string): Promise<void> {
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.root, target);
+    await rm(target, { force: true });
+  }
   async stat(storageKey: string): Promise<{ size: number; isFile: boolean }> {
-    const info = await stat(this.pathFor(storageKey));
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.root, target);
+    const info = await stat(target);
     return { size: info.size, isFile: info.isFile() };
   }
 }
@@ -62,7 +93,7 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
   }
   async ensureParent(storageKey: string): Promise<string> {
     const target = this.pathFor(storageKey);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await assertNoSymlinkPath(this.stageRoot, target, true);
     return target;
   }
   async materialize(storageKey: string): Promise<string> {
@@ -73,16 +104,23 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
     return target;
   }
   async commit(storageKey: string, localPath: string): Promise<void> {
+    validateKey(storageKey);
     const info = await stat(localPath);
     await this.client.send(new PutObjectCommand({
       Bucket: this.bucket, Key: storageKey, Body: createReadStream(localPath), ContentLength: info.size,
     }));
   }
-  async release(storageKey: string): Promise<void> { await rm(this.pathFor(storageKey), { force: true }); }
+  async release(storageKey: string): Promise<void> {
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.stageRoot, target);
+    await rm(target, { force: true });
+  }
   async remove(storageKey: string): Promise<void> {
     validateKey(storageKey);
+    const target = this.pathFor(storageKey);
+    await assertNoSymlinkPath(this.stageRoot, target);
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }));
-    await rm(this.pathFor(storageKey), { force: true }).catch(() => undefined);
+    await rm(target, { force: true }).catch(() => undefined);
   }
   async stat(storageKey: string): Promise<{ size: number; isFile: boolean }> {
     validateKey(storageKey);
