@@ -77,7 +77,7 @@ export class DeviceSessionService {
       }
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'auth.device.registered','device',$2,jsonb_build_object('platform',$3))`,
+         VALUES($1,$1,'auth.device.registered','device',$2,jsonb_build_object('platform',$3::text))`,
         [userId,result.rows[0].id,value.platform],
       );
       return result.rows[0];
@@ -132,7 +132,7 @@ export class DeviceSessionService {
       );
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'auth.device.revoked','device',$2,jsonb_build_object('revokedSessions',$3))`,
+         VALUES($1,$1,'auth.device.revoked','device',$2,jsonb_build_object('revokedSessions',$3::integer))`,
         [userId,deviceId,sessions.rowCount ?? 0],
       );
       return { revoked: true, revokedSessions: sessions.rowCount ?? 0, cancelledPushDeliveries: pendingPush.rowCount ?? 0 };
