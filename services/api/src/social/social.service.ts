@@ -370,7 +370,7 @@ export class SocialService {
         OR (p.audience='followers' AND EXISTS(SELECT 1 FROM user_relationships ur
           WHERE ur.requester_id=$1 AND ur.target_id=p.author_id AND ur.state='accepted'))
         OR (p.audience='space' AND EXISTS(SELECT 1 FROM space_memberships sm
-          WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active'))`,[userId,postId]);
+          WHERE sm.space_id=p.space_id AND sm.user_id=$1 AND sm.state='active')))`,[userId,postId]);
     if(!r.rowCount) throw new NotFoundException('Post not found.');
   }
 }
