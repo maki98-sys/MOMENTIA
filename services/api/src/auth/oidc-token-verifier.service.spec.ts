@@ -76,6 +76,42 @@ describe('OidcTokenVerifier', () => {
     });
   });
 
+  it('rejects a verified-token result missing the subject or issuer claim', async () => {
+    const verifier = new OidcTokenVerifier(createConfig({
+      OIDC_ISSUER: ISSUER,
+      OIDC_AUDIENCE: AUDIENCE,
+      OIDC_JWKS_URI: JWKS_URI,
+    }));
+    (jwtVerify as jest.Mock).mockResolvedValue({
+      payload: { aud: AUDIENCE, exp: 2_000_000_000 },
+    });
+
+    await expect(verifier.verifyAccessToken('token-with-missing-identity-claims'))
+      .rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('does not treat a non-boolean email_verified claim as verified', async () => {
+    const verifier = new OidcTokenVerifier(createConfig({
+      OIDC_ISSUER: ISSUER,
+      OIDC_AUDIENCE: AUDIENCE,
+      OIDC_JWKS_URI: JWKS_URI,
+    }));
+    (jwtVerify as jest.Mock).mockResolvedValue({
+      payload: {
+        iss: ISSUER, sub: 'external-subject-2', aud: AUDIENCE,
+        exp: 2_000_000_000, email: 'person@example.test', email_verified: 'true',
+      },
+    });
+
+    await expect(verifier.verifyAccessToken('token-with-invalid-email-claim'))
+      .resolves.toEqual({
+        issuer: ISSUER,
+        subject: 'external-subject-2',
+        audience: [AUDIENCE],
+        email: 'person@example.test',
+      });
+  });
+
   it('rejects JOSE validation errors as unauthorized', async () => {
     (jwtVerify as jest.Mock).mockRejectedValue(new errors.JOSEError('invalid signature'));
     const verifier = new OidcTokenVerifier(createConfig({
