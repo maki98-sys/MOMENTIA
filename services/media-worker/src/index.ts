@@ -247,7 +247,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
   const target=safePath(storageKey);
   try {
     await storage.ensureParent(storageKey);
-    await runFfmpeg(['-nostdin','-y','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3',target]);
+    await runFfmpeg(['-nostdin','-y','-protocol_whitelist','file,pipe','-max_alloc','67108864','-ss','1','-i',source,'-frames:v','1','-vf','scale=min(1280\\,iw):-2','-q:v','3','-fs','20971520',target]);
     const meta=await sharp(target).metadata();
     const info=await stat(target);
     if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
