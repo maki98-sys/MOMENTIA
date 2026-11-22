@@ -22,6 +22,7 @@ describe('DeviceSessionService', () => {
     expect(query.mock.calls[0][0]).toContain("status='active'");
     expect(query.mock.calls[2][0]).toContain('INSERT INTO devices');
     expect(query.mock.calls[2][1]).toEqual(['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','android',null]);
+    expect(query.mock.calls[3][0]).toContain("jsonb_build_object('platform',$3::text)");
   });
 
   it('rejects unsupported device platforms and fields', async () => {
@@ -78,6 +79,7 @@ describe('DeviceSessionService', () => {
     expect(query).toHaveBeenCalledTimes(4);
     expect(query.mock.calls[1][0]).toContain('UPDATE auth_sessions');
     expect(query.mock.calls[2][0]).toContain('UPDATE notification_outbox');
+    expect(query.mock.calls[3][0]).toContain("jsonb_build_object('revokedSessions',$3::integer)");
   });
 
   it('does not revoke a device owned by another user', async () => {
@@ -98,4 +100,19 @@ describe('DeviceSessionService', () => {
     expect(query.mock.calls[0][0]).toContain('WHERE user_id=$1 AND revoked_at IS NULL');
     expect(query).toHaveBeenCalledTimes(4);
   });
+  it('updates heartbeat only for a valid active device owned by the user',async()=>{
+    await expect(service.heartbeat('user-1','bad-id')).rejects.toBeInstanceOf(BadRequestException);
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',last_seen_at:new Date()}]});
+    await expect(service.heartbeat('user-1','11111111-1111-4111-8111-111111111111')).resolves.toMatchObject({id:'device-1'});
+    expect(query.mock.calls[0][0]).toContain('user_id=$2');
+    expect(query.mock.calls[0][0]).toContain('revoked_at IS NULL');
+  });
+
+  it('lists recent sessions with derived active, revoked and expired states',async()=>{
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'session-1',status:'active'}]});
+    await expect(service.listSessions('user-1')).resolves.toEqual([{id:'session-1',status:'active'}]);
+    expect(query.mock.calls[0][0]).toContain('CASE WHEN s.revoked_at IS NULL');
+    expect(query.mock.calls[0][0]).toContain('LIMIT 100');
+  });
+
 });
