@@ -49,7 +49,7 @@ This runbook describes the operational controls required by the API and media wo
 ## Release acceptance tests still required
 
 - Real JPEG, PNG, WebP, HEIC/HEIF and supported video samples, including malformed, truncated, oversized and adversarial files.
-- EXIF rotation and proof that generated variants do not retain GPS or other private metadata.
+- Real JPEG, PNG and WebP corpus coverage plus HEIC/HEIF samples supported by the production Sharp/libvips build; verify EXIF orientation and that generated WebP variants contain no EXIF/IPTC/XMP metadata. Automated worker tests now exercise orientation normalization, metadata stripping and decoded-pixel rejection using generated image fixtures.
 - ClamAV clean, EICAR, unavailable, slow, timeout, malformed response and signature-update cases against a real daemon.
 - FFmpeg malformed input, missing video stream, unsupported codec, hang/timeout and resource-exhaustion cases in the production container.
 - S3 upload/download/delete isolation between users, checksum mismatch, missing-object and permission-denied cases against a disposable test bucket.
