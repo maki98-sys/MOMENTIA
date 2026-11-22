@@ -540,7 +540,7 @@ export class SyncService {
       const latest = BigInt(bounds.rows[0].latest_sequence);
       const requested = BigInt(requestedCursor);
       const cursorAhead = requested > latest;
-      const historyExpired = oldest > 0n && requested < oldest - 1n;
+      const historyExpired = requested > 0n && oldest > 0n && requested < oldest - 1n;
       if (cursorAhead || historyExpired) {
         return {
           changes: [],
