@@ -16,38 +16,47 @@ describe('Social Audio authorization (PostgreSQL)', () => {
   let spaceId: string;
 
   beforeEach(async () => {
-    hostId = randomUUID();
-    outsiderId = randomUUID();
-    spaceId = randomUUID();
+    const client = await pool.connect();
+    await client.query('BEGIN');
+    try {
+      hostId = randomUUID();
+      outsiderId = randomUUID();
+      spaceId = randomUUID();
 
-    await pool.query(
-      `INSERT INTO users(id,email_normalized,status)
-       VALUES($1,$2,'active'),($3,$4,'active')`,
-      [
-        hostId,
-        `audio-host-${hostId}@momentia.test`,
-        outsiderId,
-        `audio-outsider-${outsiderId}@momentia.test`,
-      ],
-    );
+      await client.query(
+        `INSERT INTO users(id,email_normalized,status)
+         VALUES($1,$2,'active'),($3,$4,'active')`,
+        [
+          hostId,
+          `audio-host-${hostId}@momentia.test`,
+          outsiderId,
+          `audio-outsider-${outsiderId}@momentia.test`,
+        ],
+      );
 
-    await pool.query(
-      `INSERT INTO spaces(id,type,owner_id,name,visibility,status)
-       VALUES($1,'EVENT',$2,'Audio authorization fixture','private','active')`,
-      [spaceId, hostId],
-    );
-    await pool.query(
-      `INSERT INTO event_details(space_id,timezone)
-       VALUES($1,'UTC')`,
-      [spaceId],
-    );
-    await pool.query(
-      `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
-       VALUES($1,$2,'owner','active',now())`,
-      [spaceId, hostId],
-    );
+      await client.query(
+        `INSERT INTO spaces(id,type,owner_id,name,visibility,status)
+         VALUES($1,'EVENT',$2,'Audio authorization fixture','private','active')`,
+        [spaceId, hostId],
+      );
+      await client.query(
+        `INSERT INTO event_details(space_id,timezone)
+         VALUES($1,'UTC')`,
+        [spaceId],
+      );
+      await client.query(
+        `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
+         VALUES($1,$2,'owner','active',now())`,
+        [spaceId, hostId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
-
   afterEach(async () => {
     await pool.query('DELETE FROM spaces WHERE id=$1', [spaceId]);
     await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [[hostId, outsiderId]]);
