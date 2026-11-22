@@ -29,7 +29,7 @@ export class BillingWebhookWorkerController {
   @Get('dead-letter')
   deadLetter(@Headers('x-worker-token') token?:string,@Query('limit') limit?:string) {
     this.authorize(token);
-    if (limit !== undefined && !/^\\d{1,3}$/.test(limit)) {
+    if (limit !== undefined && !/^\d{1,3}$/.test(limit)) {
       throw new UnauthorizedException('limit must be a positive integer.');
     }
     const parsedLimit = limit === undefined ? 50 : Number(limit);
