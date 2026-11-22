@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, PayloadTooLargeException, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, PayloadTooLargeException, Post, TooManyRequestsException, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { createWriteStream } from 'fs';
 import { mkdtemp, rm } from 'fs/promises';
@@ -11,7 +11,7 @@ import { OidcBearerGuard } from '../auth/oidc-bearer.guard';
 import { MediaService } from './media.service';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
-const MAX_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_PART_BYTES = 8 * 1024 * 1024;\nconst MAX_CONCURRENT_UPLOAD_STAGING = Math.min(Math.max(Number(process.env.MEDIA_UPLOAD_STAGING_MAX_CONCURRENT) || 4, 1), 32);\nlet activeUploadStaging = 0;
 
 async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): Promise<{ directory: string; filePath: string; sizeBytes: number }> {
  const directory = await mkdtemp(join(tmpdir(), 'momentia-upload-'));
@@ -31,7 +31,7 @@ async function stageUploadBody(request: Request, maxBytes = MAX_UPLOAD_BYTES): P
  try {
   await pipeline(request, limiter, createWriteStream(filePath, { flags: 'wx', mode: 0o600 }));
   if (!total) throw new BadRequestException('Upload body is empty.');
-  return { directory, filePath, sizeBytes: total };
+  return { directory, filePath, sizeBytes: total, release };
  } catch (error) {
   await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   throw error;
@@ -52,7 +52,7 @@ export class MediaController {
   try {
    return await this.media.receiveUploadFile(req.userId!,id,staged.filePath,staged.sizeBytes);
   } finally {
-   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);
+   await rm(staged.directory,{recursive:true,force:true}).catch(()=>undefined);\n   staged.release();
   }
  }
  @Put('uploads/:uploadId/parts/:partNumber')
