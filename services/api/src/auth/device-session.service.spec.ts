@@ -25,7 +25,7 @@ describe('DeviceSessionService', () => {
   });
 
   it('rejects unsupported device platforms and fields', async () => {
-    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'desktop' }))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { deviceKey:'22222222-2222-4222-8222-222222222222', platform: 'desktop' }))
       .rejects.toBeInstanceOf(BadRequestException);
     await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'ios', userId: 'other-user' }))
       .rejects.toBeInstanceOf(BadRequestException);
@@ -34,14 +34,14 @@ describe('DeviceSessionService', () => {
 
   it('rejects push tokens for web devices until a web push provider exists', async () => {
     await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', {
-      platform:'web',pushToken:'web-push-token',
+      deviceKey:'22222222-2222-4222-8222-222222222222',platform:'web',pushToken:'web-push-token',
     })).rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
   });
 
   it('does not register a device for an inactive account', async () => {
     query.mockResolvedValueOnce({rowCount:0,rows:[]});
-    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111',{platform:'ios'}))
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111',{deviceKey:'22222222-2222-4222-8222-222222222222',platform:'ios'}))
       .rejects.toBeInstanceOf(NotFoundException);
     expect(query).toHaveBeenCalledTimes(1);
   });
