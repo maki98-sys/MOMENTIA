@@ -132,7 +132,7 @@ export class MediaProcessingService {
         `UPDATE media_processing_jobs SET status='completed',result=$2::jsonb,
            locked_at=NULL,locked_by=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1`,
         [jobId,JSON.stringify(value.result??{})]);
-      return {jobId,status:'completed',mediaAssetId:job.media_asset_id,nextStage:job.job_type==='virus_scan'?'variants':job.job_type==='finalize'?'ready':'continue'};
+      return {jobId,status:'completed',mediaAssetId:job.media_asset_id,nextStage:job.job_type==='virus_scan'?(value.scanVerdict==='clean'?'variants':'blocked'):job.job_type==='finalize'?'ready':'continue'};
     });
   }
 
