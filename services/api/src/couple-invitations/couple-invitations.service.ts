@@ -51,7 +51,7 @@ export class CoupleInvitationsService {
         [inviterId,inviteeId,hash]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$2,'couple.invitation.created','couple_invitation',$3,jsonb_build_object('expiresAt',$4))`,
+         VALUES($1,$2,'couple.invitation.created','couple_invitation',$3,jsonb_build_object('expiresAt',$4::timestamptz))`,
         [inviterId,inviteeId,created.rows[0].id,created.rows[0].expires_at]);
       return created.rows[0];
     });
@@ -148,7 +148,7 @@ export class CoupleInvitationsService {
         `UPDATE couple_space_invitations SET accepted_at=now() WHERE id=$1`,[invite.id]);
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$2,'couple.space.created','space',$3,jsonb_build_object('invitationId',$4))`,
+         VALUES($1,$2,'couple.space.created','space',$3,jsonb_build_object('invitationId',$4::text))`,
         [userId,invite.inviter_user_id,spaceId,invite.id]);
       return {spaceId,type:'COUPLE',visibility:'private',members:[invite.inviter_user_id,userId]};
     });
