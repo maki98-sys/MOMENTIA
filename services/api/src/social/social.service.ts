@@ -86,14 +86,15 @@ export class SocialService {
     const result=await this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       return client.query(
-      `UPDATE user_relationships r SET state=$3,updated_at=now()
-       WHERE r.requester_id=$2 AND r.target_id=$1 AND r.state='pending'
-         AND NOT EXISTS (SELECT 1 FROM user_blocks b
-           WHERE (b.blocker_id=$1 AND b.blocked_id=$2)
-              OR (b.blocker_id=$2 AND b.blocked_id=$1))
-       RETURNING id,requester_id,target_id,state,updated_at`,
-      [actorId,requesterId,decision],
-    );
+        `UPDATE user_relationships r SET state=$3,updated_at=now()
+         WHERE r.requester_id=$2 AND r.target_id=$1 AND r.state='pending'
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b
+             WHERE (b.blocker_id=$1 AND b.blocked_id=$2)
+                OR (b.blocker_id=$2 AND b.blocked_id=$1))
+         RETURNING id,requester_id,target_id,state,updated_at`,
+        [actorId,requesterId,decision],
+      );
+    });
     if(!result.rowCount) throw new NotFoundException('Pending follow request not found.');
     return result.rows[0];
   }
