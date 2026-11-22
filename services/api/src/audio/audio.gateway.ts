@@ -53,6 +53,9 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
         await Promise.allSettled([publisher.quit(),subscriber.quit()]);
       }
     } else {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('AUDIO_REDIS_URL_REQUIRED_IN_PRODUCTION');
+      }
       this.logger.warn('AUDIO_REDIS_URL is not configured; realtime broadcasts are limited to this API instance.');
     }
     this.logger.log('Social Audio realtime gateway initialized.');
