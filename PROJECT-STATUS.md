@@ -461,3 +461,54 @@ No se modifica el avance global ni el avance ponderado de backend en esta actual
 11. Completar la revisión de producción: observabilidad, alertas, rotación de claves, recuperación, almacenamiento de objetos y pruebas de restauración de medios.
 
 **No se asigna porcentaje global de backend** hasta cerrar el inventario de módulos y definir ponderaciones verificables. La cobertura de tests se informa por separado. No se inicia frontend ni se fusiona el PR #2 en esta fase.
+
+
+---
+
+## Continuación de auditoría backend y base de datos — 2026-11-22 (01:36 UTC)
+
+**Alcance:** backend, PostgreSQL, seguridad, migraciones y pruebas. Frontend sigue fuera de alcance.
+
+### Evidencia de CI en el head `c50bf8f96163d8028b11ad279e458e1d6803b11d`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44971987081` | **success** |
+| API Coverage | `44971987083` | **success** |
+| Database Check | `44971987104` | **success** |
+
+API Check: TypeScript aprobado, **171/171 pruebas unitarias**, **16/16 pruebas E2E PostgreSQL**, build y contenedor de producción aprobados.
+
+Cobertura del mismo corte: statements **26.55%**, branches **23.45%**, functions **27.19%**, lines **28.65%**. La cobertura es una métrica de pruebas, no un porcentaje de implementación.
+
+Database Check: aplicó las 66 migraciones, repitió el migrador, verificó ledger e integridad, ejecutó query plans, timeline sintético de 10.000 filas, backup/restore, esquema SQLite y prueba de concurrencia COUPLE. Todos los pasos pasaron.
+
+### Correcciones incorporadas después del último informe
+
+- Migraciones `0064` y `0065`: bloqueos transaccionales para ordenar lecturas de snapshots frente a cambios de autorización, incluyendo visibilidad de perfiles.
+- Migración `0066`: columna e índice de identidad de instalación con DDL `IF NOT EXISTS`.
+- Snapshots: límite de dos sesiones corregido; cursor inicial cero aceptado con secuencia global; expiración E2E respeta la restricción temporal.
+- Membresías: orden del bloqueo antes de row locks y parámetros UUID/texto de auditoría tipados correctamente.
+- Social: unfollow, respuesta de solicitudes y unblock coordinados con mutaciones de autorización.
+- Parejas: lecturas/escrituras de diario coordinadas con revocación de membresía.
+- Eventos: resumen y mutaciones RSVP coordinados con autorización; cuentas suspendidas excluidas; parámetros de auditoría tipados.
+- Perfil: cambio de visibilidad dentro de transacción con bloqueo exclusivo.
+- Invitaciones, moderación, espacios y privacidad: parámetros de metadata JSONB tipados para evitar errores PostgreSQL en ejecución.
+
+### Seguridad de snapshots
+
+La mitigación principal de la carrera concurrente está implementada y ha pasado CI. El snapshot mantiene un bloqueo compartido; los triggers de autorización toman el bloqueo exclusivo antes de cambios relevantes. Las continuaciones reconstruyen el contenido con permisos actuales. No se reutiliza el payload JSONB congelado anterior.
+
+Issue #3 permanece **abierta** deliberadamente. Faltan pruebas específicas de revocación de acceso a álbumes y parejas, prueba concurrente de visibilidad de perfil y revisión de todos los caminos de escritura de autorización. El bloqueo global es una solución conservadora de corrección; falta medir su contención y granularizarlo antes de certificar escalabilidad alta.
+
+### Pendientes de backend y calidad
+
+1. Terminar la auditoría semántica de servicios y controladores aún no revisados integralmente.
+2. Añadir pruebas para billing webhook (actualmente sin cobertura propia suficiente) y decidir/integrar proveedor real: firma, endpoint de ingreso, checkout, portal, cancelación y reconciliación. El worker interno no equivale a una integración completa.
+3. Ampliar pruebas de procesamiento multimedia, sesiones/tokens, álbumes, eventos, notificaciones, privacidad, parejas y permisos cruzados.
+4. Completar los casos restantes de la issue #3 y medir contención/concurrencia del bloqueo global.
+5. Auditar retención/limpieza de change log, recibos sync, snapshots expirados, colas y outbox.
+6. Completar revisión de producción: rate limiting distribuido, límites WebSocket, observabilidad/alertas, rotación de secretos, recuperación y almacenamiento de objetos.
+7. Ejecutar una auditoría final de regresión sobre el head final después de las próximas correcciones.
+
+**Estado:** CI de este corte completamente verde; base de datos y conjunto actual de pruebas aprobados. Backend todavía no certificado al 100%. No se asigna porcentaje global sin inventario ponderado verificable. PR #2 sigue abierto y no fusionado.
