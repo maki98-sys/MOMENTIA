@@ -54,15 +54,16 @@ describe('SpacesService', () => {
 
   it('updates event settings only for owner/admin in one transaction', async () => {
     const clientQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
       .mockResolvedValueOnce({rows:[{id:'event-1',name:'Launch',starts_at:null,ends_at:null,timezone:'UTC',moderation_mode:'host',download_policy:'members'}],rowCount:1})
       .mockResolvedValueOnce({rows:[{starts_at:'2026-12-01T10:00:00Z',ends_at:null,timezone:'UTC',moderation_mode:'approval',download_policy:'members'}],rowCount:1})
       .mockResolvedValueOnce({rows:[],rowCount:1});
     transaction.mockImplementationOnce(async (work:(client:unknown)=>Promise<unknown>)=>work({query:clientQuery}));
     await expect(service.updateEvent('user-1','event-1',{startsAt:'2026-12-01T10:00:00Z',moderationMode:'approval'}))
       .resolves.toMatchObject({spaceId:'event-1',moderation_mode:'approval'});
-    expect(clientQuery).toHaveBeenCalledTimes(3);
-    expect(clientQuery.mock.calls[0][0]).toContain("sm.role IN ('owner','admin')");
-    expect(clientQuery.mock.calls[2][0]).toContain('space_audit_events');
+    expect(clientQuery).toHaveBeenCalledTimes(4);
+    expect(clientQuery.mock.calls[1][0]).toContain("sm.role IN ('owner','admin')");
+    expect(clientQuery.mock.calls[3][0]).toContain('space_audit_events');
   });
 
   it('archives an active space only for its owner and audits the transition', async () => {
