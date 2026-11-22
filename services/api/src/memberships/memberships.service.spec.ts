@@ -16,13 +16,13 @@ describe('MembershipsService', () => {
   });
 
   it('lists members only after verifying caller access', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ok: 1 }], rowCount: 1 });
-    query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', role: 'owner', display_name: 'Member', avatar_media_id: null }] });
+    query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', role: 'owner', display_name: 'Member', avatar_media_id: null }], rowCount: 1 });
     await expect(service.list('u1', 's1')).resolves.toEqual([{ user_id: 'u1', role: 'owner', display_name: 'Member', avatar_media_id: null }]);
+    expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0][1]).toEqual(['s1', 'u1']);
-    expect(query.mock.calls[1][1]).toEqual(['s1']);
-    expect(query.mock.calls[1][0]).toContain('LEFT JOIN user_profiles');
-    expect(query.mock.calls[1][0]).not.toContain('u.display_name');
+    expect(query.mock.calls[0][0]).toContain('LEFT JOIN user_profiles');
+    expect(query.mock.calls[0][0]).toContain("caller.state = 'active'");
+    expect(query.mock.calls[0][0]).not.toContain('u.display_name');
   });
 
   it('rejects unsupported roles before querying', async () => {
