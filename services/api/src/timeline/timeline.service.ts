@@ -21,13 +21,14 @@ export class TimelineService {
        FROM timeline_entries t
        JOIN space_memberships sm ON sm.space_id=t.space_id AND sm.user_id=$1 AND sm.state='active'
        LEFT JOIN posts p ON p.id=t.post_id AND p.status='published'
+       LEFT JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
        LEFT JOIN user_profiles up ON up.user_id=p.author_id
        LEFT JOIN media_assets m ON m.id=t.media_asset_id AND m.status='ready'
        LEFT JOIN user_profiles pu ON pu.user_id=m.owner_id
        WHERE t.space_id=$2
          AND ($3::timestamptz IS NULL OR (t.occurred_at,t.id)<($3::timestamptz,$4::uuid))
          AND (t.post_id IS NULL OR (
-           p.id IS NOT NULL AND (
+           p.id IS NOT NULL AND post_author.id IS NOT NULL AND (
              p.author_id=$1 OR p.audience='public'
              OR (p.audience='followers' AND EXISTS(
                SELECT 1 FROM user_relationships rel
