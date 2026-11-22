@@ -119,7 +119,7 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
       [assetId],
     );
     expect(cleanup.rows[0].total).toBe(2);
-    expect(objects.get(`pending/${userId}/${assetId}`)).toEqual(file);
+    expect(objects.get(`pending/${userId}/${assetId}`)).toEqual(file);\n    expect(storage.putFile).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a final file checksum mismatch and returns the upload to uploading state', async () => {
