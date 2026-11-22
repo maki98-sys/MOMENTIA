@@ -25,10 +25,13 @@ describe('TimelineService',()=>{
    .mockResolvedValueOnce({rowCount:1,rows:[{ok:1}]});
   transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
   await expect(service.list('u1','s1')).resolves.toEqual([]);
-  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
-  expect(clientQuery.mock.calls[1][0]).toContain('post_author.id IS NOT NULL');
-  expect(clientQuery.mock.calls[1][0]).toContain('media_owner.id IS NOT NULL');
-  expect(clientQuery.mock.calls[1][0]).toContain("p.audience='public'");
+  const sql=clientQuery.mock.calls[1][0] as string;
+  expect(sql).toContain('user_blocks');
+  expect(sql).toContain('post_author.id IS NOT NULL');
+  expect(sql).toContain('media_owner.id IS NOT NULL');
+  expect(sql).toContain('media_block.blocker_id=$1 AND media_block.blocked_id=m.owner_id');
+  expect(sql).toContain('media_block.blocker_id=m.owner_id AND media_block.blocked_id=$1');
+  expect(sql).toContain("p.audience='public'");
   expect(clientQuery.mock.calls[1][1]).toEqual(['u1','s1',null,null,30]);
   expect(clientQuery.mock.calls[2][0]).toContain("viewer.status='active'");
  });
@@ -42,5 +45,4 @@ describe('TimelineService',()=>{
   expect(clientQuery.mock.calls[2][0]).toContain("audience='space'");
   expect(clientQuery.mock.calls[2][0]).toContain('user_blocks');
  });
-
 });
