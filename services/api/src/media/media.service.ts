@@ -114,6 +114,79 @@ export class MediaService {
     });
   }
 
+  async receiveUploadPartFile(userId:string,uploadId:string,partNumber:number,filePath:string,expectedBytes:number,checksumHeader:string) {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
+    if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
+    const info=await stat(filePath).catch(()=>null);
+    if(!info?.isFile()||info.size<1||info.size>8*1024*1024||info.size!==expectedBytes) {
+      throw new PayloadTooLargeException('Each upload part must be between 1 byte and 8 MB.');
+    }
+    const digest=createHash('sha256');
+    for await(const chunk of createReadStream(filePath)) digest.update(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk));
+    const checksum=digest.digest('hex');
+    if(!/^[a-f0-9]{64}$/i.test(checksumHeader)||checksum!==checksumHeader.toLowerCase()) {
+      throw new BadRequestException('Part checksum mismatch.');
+    }
+    const upload=await this.db.query(
+      \`SELECT u.id,u.state,u.uploader_id,a.size_bytes,a.storage_provider FROM media_uploads u
+       JOIN media_assets a ON a.id=u.media_asset_id WHERE u.id=$1 AND u.uploader_id=$2\`,[uploadId,userId]);
+    if(!upload.rowCount) throw new NotFoundException('Upload not found.');
+    if(!['created','uploading'].includes(String(upload.rows[0].state))) throw new ConflictException('Upload is not accepting parts.');
+    const key='parts/'+userId+'/'+uploadId+'/'+partNumber+'-'+checksum;
+    const existing=await this.db.query(
+      \`SELECT byte_size,checksum_sha256,storage_key,storage_provider FROM media_upload_parts WHERE upload_id=$1 AND part_number=$2\`,[uploadId,partNumber]);
+    if(existing.rowCount) {
+      if(Number(existing.rows[0].byte_size)!==info.size||String(existing.rows[0].checksum_sha256)!==checksum) {
+        throw new ConflictException('Part number already contains different data.');
+      }
+      return {uploadId,partNumber,received:true,duplicate:true};
+    }
+    const storageProvider=String(upload.rows[0].storage_provider);
+    await this.storage.putFile(key,filePath,info.size,storageProvider);
+    let keepStoredPart=false;
+    let transactionCommitted=false;
+    try {
+      const inserted=await this.db.transaction(async client=>{
+        const locked=await client.query(
+          \`SELECT u.state,a.size_bytes FROM media_uploads u JOIN media_assets a ON a.id=u.media_asset_id
+           WHERE u.id=$1 AND u.uploader_id=$2 FOR UPDATE OF u\`,[uploadId,userId]);
+        if(!locked.rowCount||!['created','uploading'].includes(String(locked.rows[0].state))) {
+          throw new ConflictException('Upload is no longer accepting parts.');
+        }
+        const accumulated=await client.query(
+          \`SELECT COALESCE(sum(byte_size),0)::bigint total FROM media_upload_parts WHERE upload_id=$1\`,[uploadId]);
+        if(BigInt(accumulated.rows[0].total)+BigInt(info.size)>BigInt(locked.rows[0].size_bytes)) {
+          throw new PayloadTooLargeException('Upload parts exceed the declared file size.');
+        }
+        const saved=await client.query(
+          \`INSERT INTO media_upload_parts(upload_id,part_number,byte_size,checksum_sha256,storage_key,storage_provider)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(upload_id,part_number) DO NOTHING
+           RETURNING part_number\`,[uploadId,partNumber,info.size,checksum,key,storageProvider]);
+        if(!saved.rowCount) {
+          const winner=await client.query(
+            \`SELECT byte_size,checksum_sha256,storage_key FROM media_upload_parts
+             WHERE upload_id=$1 AND part_number=$2\`,[uploadId,partNumber]);
+          if(!winner.rowCount||Number(winner.rows[0].byte_size)!==info.size||String(winner.rows[0].checksum_sha256)!==checksum) {
+            throw new ConflictException('Part number already contains different data.');
+          }
+          keepStoredPart=String(winner.rows[0].storage_key)===key;
+        } else keepStoredPart=true;
+        await client.query(
+          \`UPDATE media_uploads SET state='uploading',
+             bytes_received=(SELECT COALESCE(sum(byte_size),0) FROM media_upload_parts WHERE upload_id=$1),
+             updated_at=now() WHERE id=$1\`,[uploadId]);
+        return !saved.rowCount;
+      });
+      transactionCommitted=true;
+      if(!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
+      return {uploadId,partNumber,received:true,duplicate:inserted};
+    } catch(error) {
+      if(!transactionCommitted||!keepStoredPart) await this.storage.remove(key,storageProvider).catch(()=>undefined);
+      throw error;
+    }
+  }
+
   async receiveUploadPart(userId:string,uploadId:string,partNumber:number,bytes:Buffer,checksumHeader:string) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new BadRequestException('Invalid upload id.');
     if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
