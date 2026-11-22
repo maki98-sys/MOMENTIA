@@ -36,7 +36,7 @@ export class ModerationService {
       const prior=await client.query(`SELECT id FROM user_reports WHERE reporter_id=$1 AND target_type=$2 AND target_id=$3 AND status IN ('open','reviewing') LIMIT 1`,[reporterId,v.targetType,v.targetId]);
       if(prior.rowCount) throw new BadRequestException('You already have an open report for this target.');
       const created=await client.query(`INSERT INTO user_reports(reporter_id,target_type,target_id,reason,details) VALUES($1,$2,$3,$4,$5) RETURNING id,target_type,target_id,reason,status,created_at`,[reporterId,v.targetType,v.targetId,v.reason,v.details??null]);
-      await client.query(`INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata) VALUES($1,NULL,'moderation.report.submitted','report',$2,jsonb_build_object('targetType',$3,'reason',$4))`,[reporterId,created.rows[0].id,v.targetType,v.reason]);
+      await client.query(`INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata) VALUES($1,NULL,'moderation.report.submitted','report',$2,jsonb_build_object('targetType',$3::text,'reason',$4::text))`,[reporterId,created.rows[0].id,v.targetType,v.reason]);
       return created.rows[0];
     });
   }
