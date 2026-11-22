@@ -67,7 +67,7 @@ export class SessionTokenService {
       );
       await client.query(
         `INSERT INTO user_audit_events(actor_id,subject_user_id,action,target_type,target_id,metadata)
-         VALUES($1,$1,'auth.session.created','session',$2,jsonb_build_object('deviceId',$3))`,
+         VALUES($1,$1,'auth.session.created','session',$2,jsonb_build_object('deviceId',$3::text))`,
         [userId,inserted.rows[0].id,deviceId ?? null],
       );
       return inserted.rows[0];
