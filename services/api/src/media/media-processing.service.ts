@@ -219,7 +219,10 @@ export class MediaProcessingService {
       );
       const deletions=await client.query(
         `UPDATE media_storage_deletions SET status='failed',locked_at=NULL,locked_by=NULL,
-           last_error_code='WORKER_LEASE_EXPIRED',available_at=now()
+           last_error_code=CASE WHEN attempts>=max_attempts
+             THEN 'RETRY_EXHAUSTED:WORKER_LEASE_EXPIRED' ELSE 'WORKER_LEASE_EXPIRED' END,
+           dead_lettered_at=CASE WHEN attempts>=max_attempts THEN COALESCE(dead_lettered_at,now()) ELSE NULL END,
+           available_at=now()
          WHERE status='processing' AND locked_at<now()-make_interval(secs=>$1)
          RETURNING id`,
         [seconds],
