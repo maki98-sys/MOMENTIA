@@ -313,6 +313,37 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
   });
 
 
+  it('serializes concurrent membership revocation behind an in-flight snapshot authorization read', async () => {
+    const holder = await pool.connect();
+    const writer = await pool.connect();
+    let mutationFinished = false;
+    let mutation: Promise<any> | undefined;
+    try {
+      await holder.query('BEGIN');
+      await holder.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))",
+      );
+      mutation = writer.query(
+        `UPDATE space_memberships SET state='left',left_at=now()
+         WHERE space_id=$1 AND user_id=$2`,
+        [spaceId,viewerId],
+      ).then(result => {
+        mutationFinished = true;
+        return result;
+      });
+      await new Promise(resolve => setTimeout(resolve, 75));
+      expect(mutationFinished).toBe(false);
+      await holder.query('COMMIT');
+      await expect(mutation).resolves.toBeDefined();
+      expect(mutationFinished).toBe(true);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      if (mutation && !mutationFinished) await mutation.catch(() => undefined);
+      holder.release();
+      writer.release();
+    }
+  });
+
   it('never exposes historical sync payloads that may outlive their authorization', async () => {
     const postId = await createTimelinePost('public', '2026-11-21T08:00:00Z',ownerId);
     const pulled = await sync.pull(ownerId, '0', 100);
