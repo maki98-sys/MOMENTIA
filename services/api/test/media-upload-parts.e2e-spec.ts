@@ -31,7 +31,11 @@ describe('Media resumable upload PostgreSQL lifecycle', () => {
     }),
     remove: jest.fn(async (key: string) => { objects.delete(key); }),
     locate: jest.fn(),
-    openReadStream: jest.fn(async (key: string) => {\n      const value = objects.get(key);\n      if (!value) throw new Error('Object not found');\n      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };\n    }),
+    openReadStream: jest.fn(async (key: string) => {
+      const value = objects.get(key);
+      if (!value) throw new Error('Object not found');
+      return { stream: Readable.from([Buffer.from(value)]), sizeBytes: value.length };
+    }),
   } as unknown as MediaStorage;
 
   const file = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02]);
