@@ -552,3 +552,48 @@ Issue #3 permanece **abierta** deliberadamente. Faltan pruebas específicas de r
 6. Ejecutar la auditoría de producción y regresión final después de las correcciones restantes.
 
 No se declara terminado el backend completo ni se asigna porcentaje global de implementación. PR #2 sigue abierto y sin fusionar. Frontend continúa excluido.
+
+
+---
+
+## Auditoría de multimedia y álbumes — 2026-11-22 (01:50 UTC)
+
+**Head verificado:** `83ee8d7fcda65a05d7f9ecfee5d18dd5677206ba`
+
+| Workflow | Run | Resultado |
+|---|---:|---|
+| API Check | `44973122879` | **success** |
+| API Coverage | `44973122813` | **success** |
+| Database Check | `44973122856` | **success** |
+
+- Unit tests: **194/194**, 26 suites.
+- PostgreSQL snapshot E2E: **19/19**.
+- TypeScript, build y contenedor de producción: aprobados.
+- Database migrations, idempotencia, ledger, integridad, query plans, timeline 10k, backup/restore, SQLite y concurrencia COUPLE: aprobados.
+- Cobertura: statements **31.22%**, branches **29.79%**, functions **31.62%**, lines **33.44%**.
+- `MediaProcessingService`: 73.38% statements, 56.15% branches, 88.88% functions, 83.83% lines.
+- `AlbumsService`: 65.09% statements, 61.62% branches, 85.71% functions, 70.51% lines.
+
+### Cambios de multimedia
+
+- Se añadió suite para claim SKIP LOCKED, virus scan, validación de variantes, finalize, retries, leases, cleanup y cola de eliminación de objetos.
+- `releaseStaleLocks()` ahora adquiere el bloqueo global de autorización antes de bloquear filas de trabajos y medios, evitando inversión de orden con `complete()` y `cleanupExpiredUploads()`.
+- Sigue pendiente revisar el worker externo real: el repositorio contiene el ciclo de jobs, pero el procesamiento físico de imágenes/video, antivirus y borrado en storage requiere workers/adaptadores desplegados y credenciales. No se certifica la ejecución real de proveedores externos por los tests unitarios.
+
+### Cambios de álbumes
+
+- `AlbumsService.list()` ahora mantiene un bloqueo compartido durante la lectura y la comprobación de membresía.
+- Crear álbumes y añadir elementos exige que el espacio esté activo; no se permiten escrituras en espacios archivados.
+- Se añadieron pruebas para listado vacío autorizado, usuario sin membresía y rechazo de escrituras en espacios archivados.
+
+### Pendientes siguientes
+
+1. Revisar `SessionTokenService`, renovación/revocación de sesiones, expiración, rotación y concurrencia.
+2. Revisar `MediaProcessingService` frente a los workers reales; decidir el tratamiento explícito de escaneo antivirus `unavailable` y el job `inspect`.
+3. Completar cobertura y revisión semántica de privacidad, notificaciones, invitaciones, espacios, social, parejas y eventos.
+4. Revisar todos los controladores y límites de rate limiting; completar protección distribuida y límites WebSocket.
+5. Integrar proveedor de billing, proveedor musical y push según proveedor/credenciales elegidos.
+6. Medir contención del bloqueo global de autorización y decidir granularización.
+7. Realizar auditoría final de producción, observabilidad, secretos, recuperación y storage externo.
+
+Backend completo aún no certificado; no se asigna porcentaje global de implementación. Issue #3 está cerrada con regresión PostgreSQL aprobada. PR #2 permanece abierto y sin fusionar. Frontend sigue excluido.
