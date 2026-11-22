@@ -116,6 +116,7 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       return { event: 'audio:error', data: { code: 'INVALID_SESSION' } };
     }
     try {
+      await this.audio.join(userId, sessionId);
       const snapshot = await this.audio.getSession(userId, sessionId);
       const previous = client.data.sessionId;
       if (typeof previous === 'string' && previous !== sessionId) await client.leave(room(previous));
