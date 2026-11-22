@@ -1,8 +1,9 @@
 import { ServiceUnavailableException } from '@nestjs/common';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { LocalMediaStorage } from './media-storage.service';
+import { LocalMediaStorage, S3MediaStorage } from './media-storage.service';
 
 describe('LocalMediaStorage symlink path hardening', () => {
   let root: string;
@@ -75,5 +76,42 @@ describe('LocalMediaStorage symlink path hardening', () => {
       await rm(linkRoot, { force: true });
       await rm(realRoot, { recursive: true, force: true });
     }
+  });
+});
+
+
+describe('S3MediaStorage server-side encryption', () => {
+  const originalBucket = process.env.MEDIA_S3_BUCKET;
+  const originalKmsKey = process.env.MEDIA_S3_SSE_KMS_KEY_ID;
+  let sendSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    process.env.MEDIA_S3_BUCKET = 'momentia-test';
+    delete process.env.MEDIA_S3_SSE_KMS_KEY_ID;
+    sendSpy = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+  });
+
+  afterEach(() => {
+    sendSpy.mockRestore();
+    if (originalBucket === undefined) delete process.env.MEDIA_S3_BUCKET;
+    else process.env.MEDIA_S3_BUCKET = originalBucket;
+    if (originalKmsKey === undefined) delete process.env.MEDIA_S3_SSE_KMS_KEY_ID;
+    else process.env.MEDIA_S3_SSE_KMS_KEY_ID = originalKmsKey;
+  });
+
+  it('uses SSE-S3 by default for every object upload', async () => {
+    const storage = new S3MediaStorage();
+    await storage.put('users/u1/photo.bin', Buffer.from('photo'));
+    const command = sendSpy.mock.calls[0][0] as PutObjectCommand;
+    expect(command.input.ServerSideEncryption).toBe('AES256');
+  });
+
+  it('uses the configured customer-managed KMS key when provided', async () => {
+    process.env.MEDIA_S3_SSE_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/momentia';
+    const storage = new S3MediaStorage();
+    await storage.put('users/u1/photo.bin', Buffer.from('photo'));
+    const command = sendSpy.mock.calls[0][0] as PutObjectCommand;
+    expect(command.input.ServerSideEncryption).toBe('aws:kms');
+    expect(command.input.SSEKMSKeyId).toBe(process.env.MEDIA_S3_SSE_KMS_KEY_ID);
   });
 });
