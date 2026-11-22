@@ -310,4 +310,14 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(snapshot.data.timeline.map((row: any) => row.post_id)).not.toContain(suspendedPost);
   });
 
+
+  it('never exposes historical sync payloads that may outlive their authorization', async () => {
+    const postId = await createTimelinePost('public', '2026-11-21T08:00:00Z');
+    const pulled = await sync.pull(ownerId, '0', 100);
+    const change = pulled.changes.find((row: any) => row.entity_id === postId);
+    expect(change).toBeDefined();
+    expect(change.payload).toBeNull();
+    expect(pulled.refreshRequired).toBe(true);
+  });
+
 });
