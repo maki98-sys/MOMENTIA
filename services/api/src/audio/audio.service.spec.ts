@@ -20,6 +20,7 @@ describe('AudioService', () => {
     await expect(service.heartbeat('user-1', '11111111-1111-4111-8111-111111111111'))
       .rejects.toBeInstanceOf(NotFoundException);
     expect(clientQuery).toHaveBeenCalledTimes(4);
+    expect(clientQuery.mock.calls[3][0]).toContain("sp.status='active'");
   });
 
   it('refreshes heartbeat only for an active participant', async () => {
@@ -110,6 +111,44 @@ describe('AudioService', () => {
       .rejects.toBeInstanceOf(BadRequestException);
     expect(transaction).not.toHaveBeenCalled();
   });
+  it('requires an active space for heartbeat, queue writes, playback and votes', async () => {
+    const sessionId='11111111-1111-4111-8111-111111111111';
+    const itemId='22222222-2222-4222-8222-222222222222';
+
+    const queueQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:sessionId}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{next_position:0}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:itemId}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(operation:any)=>operation({query:queueQuery}));
+    await service.addQueueItem('user-1',sessionId,'track-1');
+    expect(queueQuery.mock.calls[3][0]).toContain("sp.status='active'");
+
+    const playbackQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'s',host_user_id:'user-1',state:'playing',server_version:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{id:'s',state:'playing'}],rowCount:1});
+    transaction.mockImplementationOnce(async(operation:any)=>operation({query:playbackQuery}));
+    await service.updatePlayback('user-1',sessionId,{action:'play'});
+    expect(playbackQuery.mock.calls[3][0]).toContain("sp.status='active'");
+
+    const voteQuery=jest.fn()
+      .mockResolvedValueOnce({rows:[],rowCount:0})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{enabled:true}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{ok:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[{queue_item_id:itemId,vote:1}],rowCount:1})
+      .mockResolvedValueOnce({rows:[],rowCount:1});
+    transaction.mockImplementationOnce(async(operation:any)=>operation({query:voteQuery}));
+    await service.vote('user-1',sessionId,itemId,1);
+    expect(voteQuery.mock.calls[3][0]).toContain("sp.status='active'");
+  });
+
   it('requires an active account, membership and fresh heartbeat for socket participation', async () => {
     query.mockResolvedValueOnce({rows:[{ok:1}],rowCount:1});
     await expect(service.isActiveParticipant(
