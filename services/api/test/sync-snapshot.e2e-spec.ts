@@ -365,4 +365,25 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     expect(snapshot.data.timeline.map((row:any)=>row.post_id)).toContain(archivedPost);
   });
 
+
+  it('serializes membership revocation behind an in-flight authorized snapshot read', async () => {
+    const holder=await pool.connect();
+    let committed=false;
+    try {
+      await holder.query('BEGIN');
+      await holder.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
+      let settled=false;
+      const mutation=memberships.remove(ownerId,spaceId,viewerId).finally(()=>{settled=true;});
+      await new Promise(resolve=>setTimeout(resolve,100));
+      expect(settled).toBe(false);
+      await holder.query('COMMIT');
+      committed=true;
+      await expect(mutation).resolves.toMatchObject({removed:true});
+      expect(settled).toBe(true);
+    } finally {
+      if(!committed) await holder.query('ROLLBACK');
+      holder.release();
+    }
+  });
+
 });
