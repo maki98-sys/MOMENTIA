@@ -27,12 +27,13 @@ describe('TimelineService',()=>{
  });
  it('rejects adding a post with an incompatible audience or blocked author',async()=>{
   const clientQuery=jest.fn()
+   .mockResolvedValueOnce({rowCount:0,rows:[]})
    .mockResolvedValueOnce({rowCount:1,rows:[{role:'member'}]})
    .mockResolvedValueOnce({rowCount:0,rows:[]});
   transaction.mockImplementationOnce(async(work:any)=>work({query:clientQuery}));
   await expect(service.add('u1','s1',{postId:'post-id'})).rejects.toBeInstanceOf(NotFoundException);
-  expect(clientQuery.mock.calls[1][0]).toContain("audience='space'");
-  expect(clientQuery.mock.calls[1][0]).toContain('user_blocks');
+  expect(clientQuery.mock.calls[2][0]).toContain("audience='space'");
+  expect(clientQuery.mock.calls[2][0]).toContain('user_blocks');
  });
 
 });
