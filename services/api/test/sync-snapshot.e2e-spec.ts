@@ -344,6 +344,123 @@ describe('Sync snapshot authorization (PostgreSQL)', () => {
     }
   });
 
+  it('revalidates album access after space membership is revoked', async () => {
+    await pool.query(
+      `INSERT INTO space_albums(space_id,created_by,name,visibility)
+       VALUES($1,$2,'Album one','members'),($1,$2,'Album two','members')`,
+      [spaceId,ownerId],
+    );
+    const first=await sync.snapshot(viewerId,{sections:['albums'],limit:1});
+    expect(first.data.albums).toHaveLength(1);
+    expect(first.hasMore).toBe(true);
+    if(!first.snapshotId) throw new Error('Expected album snapshot id.');
+    await pool.query(
+      `UPDATE space_memberships SET state='left',left_at=now()
+       WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+      [spaceId,viewerId],
+    );
+    const next=await sync.snapshot(viewerId,{
+      snapshotId:first.snapshotId,sections:['albums'],limit:1,offsets:first.nextOffsets,
+    });
+    expect(next.data.albums).toEqual([]);
+    expect(next.hasMore).toBe(false);
+  });
+
+
+  it('revalidates couple journal access after partner membership is revoked', async () => {
+    const coupleSpaceId=randomUUID();
+    const client=await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO spaces(id,type,owner_id,name,visibility,status)
+         VALUES($1,'COUPLE',$2,'Private couple test','private','active')`,
+        [coupleSpaceId,ownerId],
+      );
+      await client.query('INSERT INTO couple_details(space_id) VALUES($1)',[coupleSpaceId]);
+      await client.query(
+        `INSERT INTO space_memberships(space_id,user_id,role,state,joined_at)
+         VALUES($1,$2,'owner','active',now()),($1,$3,'member','active',now())`,
+        [coupleSpaceId,ownerId,viewerId],
+      );
+      await client.query(
+        `INSERT INTO couple_journal_entries(space_id,author_id,ciphertext,nonce)
+         VALUES($1,$2,decode('0102','hex'),decode('000000000000000000000000','hex')),
+               ($1,$3,decode('0304','hex'),decode('000000000000000000000000','hex'))`,
+        [coupleSpaceId,ownerId,viewerId],
+      );
+      await client.query('COMMIT');
+    } catch(error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    try {
+      const first=await sync.snapshot(viewerId,{sections:['coupleJournal'],limit:1});
+      expect(first.data.coupleJournal).toHaveLength(1);
+      expect(first.hasMore).toBe(true);
+      if(!first.snapshotId) throw new Error('Expected couple journal snapshot id.');
+      await pool.query(
+        `UPDATE space_memberships SET state='left',left_at=now()
+         WHERE space_id=$1 AND user_id=$2 AND state='active'`,
+        [coupleSpaceId,viewerId],
+      );
+      const next=await sync.snapshot(viewerId,{
+        snapshotId:first.snapshotId,sections:['coupleJournal'],limit:1,offsets:first.nextOffsets,
+      });
+      expect(next.data.coupleJournal).toEqual([]);
+      expect(next.hasMore).toBe(false);
+    } finally {
+      await pool.query('DELETE FROM spaces WHERE id=$1',[coupleSpaceId]);
+    }
+  });
+
+
+  it('serializes profile visibility changes behind authorized reads', async () => {
+    await pool.query(
+      `INSERT INTO user_profiles(user_id,display_name,visibility)
+       VALUES($1,'Owner profile','public')
+       ON CONFLICT(user_id) DO UPDATE SET visibility='public'`,
+      [ownerId],
+    );
+    const holder=await pool.connect();
+    const writer=await pool.connect();
+    let mutation:Promise<any>|undefined;
+    try {
+      await holder.query('BEGIN');
+      await holder.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))",
+      );
+      mutation=writer.query(
+        `UPDATE user_profiles SET visibility='private' WHERE user_id=$1`,
+        [ownerId],
+      );
+      let waiting=false;
+      const deadline=Date.now()+3000;
+      while(!waiting&&Date.now()<deadline) {
+        const locks=await pool.query(
+          `SELECT EXISTS(
+             SELECT 1 FROM pg_locks l
+             JOIN pg_stat_activity a ON a.pid=l.pid
+             WHERE l.locktype='advisory' AND NOT l.granted
+               AND a.query LIKE 'UPDATE user_profiles SET visibility%'
+           ) AS waiting`,
+        );
+        waiting=locks.rows[0].waiting===true;
+        if(!waiting) await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      expect(waiting).toBe(true);
+      await holder.query('COMMIT');
+      await expect(mutation).resolves.toMatchObject({rowCount:1});
+    } finally {
+      await holder.query('ROLLBACK').catch(()=>undefined);
+      if(mutation) await mutation.catch(()=>undefined);
+      holder.release();
+      writer.release();
+    }
+  });
+
   it('never exposes historical sync payloads that may outlive their authorization', async () => {
     const postId = await createTimelinePost('public', '2026-11-21T08:00:00Z',ownerId);
     const pulled = await sync.pull(ownerId, '0', 100);
