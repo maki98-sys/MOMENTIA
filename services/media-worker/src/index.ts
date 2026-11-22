@@ -84,8 +84,9 @@ async function clamScan(path: string): Promise<'clean'|'rejected'|'unavailable'>
       socket.write('zINSTREAM\0');
       const stream=createReadStream(path,{highWaterMark:64*1024});
       stream.on('data',chunk=>{
-        const header=Buffer.alloc(4);header.writeUInt32BE(chunk.length,0);
-        if(!socket.write(Buffer.concat([header,chunk]))) stream.pause();
+        const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+        const header=Buffer.alloc(4);header.writeUInt32BE(data.length,0);
+        if(!socket.write(Buffer.concat([header,data]))) stream.pause();
       });
       socket.on('drain',()=>stream.resume());
       stream.on('end',()=>socket.end(Buffer.alloc(4)));
