@@ -226,7 +226,7 @@ async function makeImageVariants(job: Job): Promise<Variant[]> {
           .webp({quality:82,effort:4})
           .toFile(target);
         const checksumSha256=await sha256(target);
-        await storage.commit(storageKey,target);
+        await storage.commit(storageKey,target,checksumSha256);
         variants.push({
           variantType:definition.type,storageKey,mimeType:'image/webp',
           sizeBytes:output.size,width:output.width,height:output.height,checksumSha256,
