@@ -13,11 +13,15 @@ describe('DeviceSessionService', () => {
   });
 
   it('registers a supported device without returning push credentials', async () => {
-    query.mockResolvedValue({ rowCount: 1, rows: [{ id: 'device-1', platform: 'android' }] });
-    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { platform: 'android' }))
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'user-1'}]})
+      .mockResolvedValueOnce({rowCount:0,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',platform:'android'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    await expect(service.registerDevice('11111111-1111-4111-8111-111111111111', { deviceKey:'22222222-2222-4222-8222-222222222222', platform: 'android' }))
       .resolves.toMatchObject({ id: 'device-1', platform: 'android' });
     expect(query.mock.calls[0][0]).toContain("status='active'");
-    expect(query.mock.calls[1][0]).toContain('RETURNING id, platform, last_seen_at, created_at');
+    expect(query.mock.calls[2][0]).toContain('INSERT INTO devices');
+    expect(query.mock.calls[2][1]).toEqual(['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','android',null]);
   });
 
   it('rejects unsupported device platforms and fields', async () => {
@@ -40,6 +44,21 @@ describe('DeviceSessionService', () => {
     await expect(service.registerDevice('11111111-1111-4111-8111-111111111111',{platform:'ios'}))
       .rejects.toBeInstanceOf(NotFoundException);
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('transfers a stable device key and revokes the previous account sessions', async () => {
+    query.mockResolvedValueOnce({rowCount:1,rows:[{id:'user-2'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',user_id:'user-1'}]})
+      .mockResolvedValueOnce({rowCount:2,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]})
+      .mockResolvedValueOnce({rowCount:1,rows:[{id:'device-1',platform:'ios'}]})
+      .mockResolvedValueOnce({rowCount:1,rows:[]});
+    await expect(service.registerDevice('user-2',{
+      deviceKey:'22222222-2222-4222-8222-222222222222',platform:'ios',
+    })).resolves.toMatchObject({id:'device-1',platform:'ios'});
+    expect(query.mock.calls[2][0]).toContain('UPDATE auth_sessions');
+    expect(query.mock.calls[3][0]).toContain('UPDATE notification_outbox');
+    expect(query.mock.calls[4][0]).toContain('UPDATE devices SET user_id');
   });
 
   it('lists only active devices owned by the authenticated user', async () => {
