@@ -346,6 +346,17 @@ export class MediaService {
     }
   }
 
+  async assertUploadOwner(userId:string,uploadId:string):Promise<void> {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
+      throw new BadRequestException('Invalid upload id.');
+    }
+    const owned=await this.db.query(
+      'SELECT 1 FROM media_uploads WHERE id=$1 AND uploader_id=$2',
+      [uploadId,userId],
+    );
+    if(!owned.rowCount) throw new NotFoundException('Upload not found.');
+  }
+
   async receiveUploadFile(userId:string,uploadId:string,filePath:string,expectedBytes:number,assembling=false) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) {
       throw new BadRequestException('Invalid upload id.');
