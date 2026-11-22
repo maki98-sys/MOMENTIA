@@ -101,7 +101,7 @@ export class LocalMediaStorage extends MediaStorage {
         createWriteStream(temporary, { flags: 'wx', mode: 0o600 }),
       );
       const copied = await stat(temporary);
-      if (copied.size !== expectedSize) throw new Error('Stored media size mismatch');
+      if (copied.size !== expectedSize || await sha256File(temporary) !== checksumSha256.toLowerCase()) throw new Error('Stored media integrity mismatch');
       await rename(temporary, destination);
     } catch {
       await rm(temporary, { force: true }).catch(() => undefined);
