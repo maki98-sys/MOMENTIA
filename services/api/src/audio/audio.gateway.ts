@@ -51,8 +51,14 @@ export class AudioGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       } catch(error) {
         this.logger.error('Social Audio Redis adapter could not connect; realtime is running in single-instance mode.',error instanceof Error?error.stack:undefined);
         await Promise.allSettled([publisher.quit(),subscriber.quit()]);
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('AUDIO_REDIS_CONNECTION_REQUIRED_IN_PRODUCTION');
+        }
       }
     } else {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('AUDIO_REDIS_URL_REQUIRED_IN_PRODUCTION');
+      }
       this.logger.warn('AUDIO_REDIS_URL is not configured; realtime broadcasts are limited to this API instance.');
     }
     this.logger.log('Social Audio realtime gateway initialized.');
