@@ -11,6 +11,7 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
   const identities = new OidcIdentityService(database);
   let userId: string;
   let otherUserId: string;
+  const provisionedUserIds: string[] = [];
   const provider = 'https://oidc-e2e.momentia.test/';
   const subject = () => randomUUID();
 
@@ -25,6 +26,12 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
   });
 
   afterEach(async () => {
+    if (provisionedUserIds.length) {
+      await pool.query('DELETE FROM user_audit_events WHERE actor_id=ANY($1::uuid[]) OR subject_user_id=ANY($1::uuid[])', [provisionedUserIds]);
+      await pool.query('DELETE FROM auth_identities WHERE user_id=ANY($1::uuid[])', [provisionedUserIds]);
+      await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [provisionedUserIds]);
+      provisionedUserIds.length = 0;
+    }
     await pool.query(
       'DELETE FROM user_audit_events WHERE actor_id=ANY($1::uuid[]) OR subject_user_id=ANY($1::uuid[])',
       [[userId,otherUserId]],
@@ -34,6 +41,55 @@ describe('OIDC identity lifecycle (PostgreSQL)', () => {
   });
 
   afterAll(async () => { await pool.end(); });
+
+
+  it('provisions a new account only from a verified external email', async () => {
+    const externalSubject = subject();
+    const result = await identities.resolveOrProvision({
+      issuer: provider, subject: externalSubject, audience: ['momentia-api'],
+      email: `new-${randomUUID()}@oidc-e2e.test`, emailVerified: true,
+    });
+    expect(result.created).toBe(true);
+    provisionedUserIds.push(result.userId);
+    const stored = await pool.query(
+      `SELECT u.status,u.email_verified_at,p.visibility,ai.provider_subject
+       FROM users u
+       JOIN user_profiles p ON p.user_id=u.id
+       JOIN auth_identities ai ON ai.user_id=u.id
+       WHERE u.id=$1`,
+      [result.userId],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]).toMatchObject({
+      status: 'active', visibility: 'private', provider_subject: externalSubject,
+    });
+    expect(stored.rows[0].email_verified_at).not.toBeNull();
+  });
+
+  it('does not auto-link a new external identity to an existing account by matching email', async () => {
+    const externalSubject = subject();
+    const email = `${userId}@oidc-e2e.test`;
+    await pool.query('UPDATE users SET email_normalized=$2 WHERE id=$1', [userId,email]);
+    await expect(identities.resolveOrProvision({
+      issuer: provider, subject: externalSubject, audience: ['momentia-api'],
+      email, emailVerified: true,
+    })).rejects.toThrow('Sign in to that account before linking');
+    const stored = await pool.query(
+      'SELECT id FROM auth_identities WHERE provider=$1 AND provider_subject=$2',
+      [provider,externalSubject],
+    );
+    expect(stored.rows).toHaveLength(0);
+  });
+
+  it('does not provision an account when the provider email is unverified', async () => {
+    const email = `unverified-${randomUUID()}@oidc-e2e.test`;
+    await expect(identities.resolveOrProvision({
+      issuer: provider, subject: subject(), audience: ['momentia-api'],
+      email, emailVerified: false,
+    })).rejects.toThrow('verified email address is required');
+    const stored = await pool.query('SELECT id FROM users WHERE email_normalized=$1',[email]);
+    expect(stored.rows).toHaveLength(0);
+  });
 
   it('links a separately proven identity to the authenticated account', async () => {
     const externalSubject = subject();
