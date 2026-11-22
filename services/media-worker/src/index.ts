@@ -252,7 +252,7 @@ async function makeVideoPoster(job: Job): Promise<Variant[]> {
     const info=await stat(target);
     if(!meta.width||!meta.height) throw new Error('Video poster dimensions could not be read');
     const checksumSha256=await sha256(target);
-    await storage.commit(storageKey,target);
+    await storage.commit(storageKey,target,checksumSha256);
     return [{
       variantType:'video_poster',storageKey,mimeType:'image/jpeg',
       sizeBytes:info.size,width:meta.width,height:meta.height,checksumSha256,
