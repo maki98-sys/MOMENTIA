@@ -49,6 +49,7 @@ export class MediaProcessingService {
     if (value.result!==undefined && (!value.result || typeof value.result!=='object' || Array.isArray(value.result) || Buffer.byteLength(JSON.stringify(value.result))>12000)) throw new BadRequestException('Invalid result metadata.');
     if (value.scanVerdict!==undefined && !['clean','rejected','unavailable'].includes(String(value.scanVerdict))) throw new BadRequestException('Invalid scan verdict.');
     return this.db.transaction(async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const locked=await client.query(
         `SELECT j.id,j.media_asset_id,j.job_type,j.attempts,j.max_attempts,a.mime_type_detected,a.storage_provider,a.status asset_status
          FROM media_processing_jobs j JOIN media_assets a ON a.id=j.media_asset_id
@@ -139,7 +140,6 @@ export class MediaProcessingService {
   async cleanupExpiredUploads(limit = 100) {
     const batch = Math.min(Math.max(Number(limit) || 100, 1), 500);
     return this.db.transaction(async client => {
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const expired = await client.query(
         `WITH candidates AS (
