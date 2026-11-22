@@ -47,6 +47,7 @@ export class SyncService {
       const requestHash = this.requestFingerprint(operation);
       try {
         const result = await this.db.transaction(async client => {
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
           const receipt = await client.query(
             `INSERT INTO sync_operation_receipts(user_id,operation_id,operation_type,request_hash)
              VALUES($1,$2,$3,$4) ON CONFLICT(user_id,operation_id) DO NOTHING
