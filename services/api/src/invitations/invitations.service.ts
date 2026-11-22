@@ -53,7 +53,7 @@ export class InvitationsService {
       if(!created.rowCount) throw new NotFoundException('Space was not found or invitation permission is missing.');
       await client.query(
         `INSERT INTO space_audit_events(space_id,actor_id,action,resource_type,resource_id,metadata)
-         VALUES($1,$2,'invitation.created','invitation',$3,jsonb_build_object('role',$4,'expiresAt',$5))`,
+         VALUES($1,$2,'invitation.created','invitation',$3,jsonb_build_object('role',$4::text,'expiresAt',$5::timestamptz))`,
         [spaceId,userId,created.rows[0].id,input.role,created.rows[0].expires_at]);
       return created.rows[0];
     });
