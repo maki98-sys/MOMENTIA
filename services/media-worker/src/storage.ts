@@ -141,6 +141,9 @@ export class S3MediaWorkerStorage extends MediaWorkerStorage {
     if (expectedSize !== undefined && contentLength !== expectedSize) {
       throw new Error('Remote media object size differs from the declared size');
     }
+    // Remove an abandoned staging file from a prior crashed attempt before
+    // opening a new exclusive destination.
+    await rm(target, { force: true });
     const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }));
     if (!response.Body) throw new Error('Remote object body is missing');
     let received = 0;
