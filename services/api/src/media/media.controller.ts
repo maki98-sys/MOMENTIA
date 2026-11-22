@@ -47,7 +47,7 @@ export class MediaController {
  @Put('uploads/:uploadId/content')
  async uploadContent(@Req() req:Request&AuthenticatedRequest,@Param('uploadId') id:string,@Headers('content-type') contentType?:string) {
   if (!contentType || !contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
-  const staged = await stageUploadBody(req);
+  await this.media.assertUploadOwner(req.userId!,id);\n  const staged = await stageUploadBody(req);
   try {
    return await this.media.receiveUploadFile(req.userId!,id,staged.filePath,staged.sizeBytes);
   } finally {
@@ -59,7 +59,7 @@ export class MediaController {
   if(!contentType||!contentType.startsWith('application/octet-stream')) throw new BadRequestException('Content-Type must be application/octet-stream.');
   const partNumber=Number(part);
   if(!Number.isInteger(partNumber)||partNumber<0||partNumber>10000) throw new BadRequestException('Invalid part number.');
-  const staged=await stageUploadBody(req,MAX_UPLOAD_PART_BYTES);
+  await this.media.assertUploadOwner(req.userId!,id);\n  const staged=await stageUploadBody(req,MAX_UPLOAD_PART_BYTES);
   try {
    return await this.media.receiveUploadPartFile(req.userId!,id,partNumber,staged.filePath,staged.sizeBytes,checksum??'');
   } finally {
