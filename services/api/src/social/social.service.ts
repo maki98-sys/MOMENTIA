@@ -176,7 +176,8 @@ export class SocialService {
       await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('momentia.sync.authorization', 0))");
       await this.assertCanView(userId,postId,client);
       const r=await client.query(`SELECT c.id,c.post_id,c.author_id,c.body,c.created_at,up.display_name
-      FROM post_comments c LEFT JOIN user_profiles up ON up.user_id=c.author_id
+      FROM post_comments c JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
+      LEFT JOIN user_profiles up ON up.user_id=c.author_id
       WHERE c.post_id=$1 AND c.status='visible'
         AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
           (b.blocker_id=$2 AND b.blocked_id=c.author_id)
@@ -274,7 +275,7 @@ export class SocialService {
     return this.db.transaction(async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('momentia.sync.authorization', 0))");
       const visible=await client.query(
-        `SELECT c.post_id FROM post_comments c
+        `SELECT c.post_id FROM post_comments c JOIN users comment_author ON comment_author.id=c.author_id AND comment_author.status='active'
          WHERE c.id=$1 AND c.status='visible'
            AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
              (b.blocker_id=$2 AND b.blocked_id=c.author_id)
@@ -326,7 +327,8 @@ export class SocialService {
   }
 
   private async assertCanView(userId: string, postId: string, executor: {query:(sql:string,values?:unknown[])=>Promise<any>} = this.db) {
-    const r=await executor.query(`SELECT 1 FROM posts p WHERE p.id=$2 AND p.status='published'
+    const r=await executor.query(`SELECT 1 FROM posts p JOIN users post_author ON post_author.id=p.author_id AND post_author.status='active'
+      WHERE p.id=$2 AND p.status='published'
       AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE
         (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
       AND (p.author_id=$1 OR p.audience='public'
