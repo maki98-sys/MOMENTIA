@@ -44,3 +44,9 @@ The worker currently checks path components with `lstat` before filesystem opera
 - [ ] Restore and deletion-reconciliation procedures tested before production traffic.
 
 These are deployment acceptance criteria; repository CI can test code paths and migrations but cannot certify the live cloud account or infrastructure configuration.
+
+## API storage adapter notes
+
+The API's local adapter applies the same `lstat` preflight policy to writes, reads, stream location and removal. This blocks pre-existing symlink components in those paths, but it has the same TOCTOU limitation described above: it does not make path validation and the later filesystem operation atomic. The API media root must therefore be protected from writes by upload clients and unrelated processes. Keep the API and worker roots on the same trusted persistent volume when using local storage.
+
+The API and worker S3 adapters now set server-side encryption on each object upload: SSE-S3 (`AES256`) by default, or SSE-KMS (`aws:kms`) when `MEDIA_S3_SSE_KMS_KEY_ID` is configured. For KMS, grant the API and worker roles only the required key-use permissions and verify key policy and region compatibility. Keep bucket default encryption enabled as defense in depth. A bucket policy should deny non-TLS requests and prevent public access; runtime roles must not be allowed to weaken these controls. Repository CI tests the request parameters but does not inspect or certify the live bucket, IAM or KMS configuration.

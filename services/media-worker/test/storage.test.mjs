@@ -27,6 +27,7 @@ const envKeys = [
   'MEDIA_S3_REGION',
   'MEDIA_S3_ENDPOINT',
   'MEDIA_S3_FORCE_PATH_STYLE',
+  'MEDIA_S3_SSE_KMS_KEY_ID',
 ];
 
 async function withCleanEnv(fn) {
@@ -135,7 +136,14 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
       await storage.commit('users/u1/variant.webp', uploadSource);
       const put = calls.find(command => command instanceof PutObjectCommand);
       assert.ok(put);
+      assert.equal(put.input.ServerSideEncryption, 'AES256');
       assert.deepEqual(uploaded, Buffer.from('upload-content'));
+
+      process.env.MEDIA_S3_SSE_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/test-key';
+      await storage.commit('users/u1/kms-variant.webp', uploadSource);
+      const kmsPut = calls.filter(command => command instanceof PutObjectCommand).at(-1);
+      assert.equal(kmsPut.input.ServerSideEncryption, 'aws:kms');
+      assert.equal(kmsPut.input.SSEKMSKeyId, process.env.MEDIA_S3_SSE_KMS_KEY_ID);
 
       await storage.remove(key);
       assert.ok(calls.some(command => command instanceof DeleteObjectCommand));
