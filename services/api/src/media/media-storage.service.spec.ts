@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createHash } from 'crypto';
+import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -40,7 +41,7 @@ describe('LocalMediaStorage symlink path hardening', () => {
     const source = join(root, 'staged-upload.bin');
     const payload = Buffer.from('streamed-media-content');
     await writeFile(source, payload);
-    await storage.putFile('users/u1/streamed.bin', source, payload.length);
+    await storage.putFile('users/u1/streamed.bin', source, payload.length, createHash('sha256').update(payload).digest('hex'));
     expect(await readFile(join(root, 'users/u1/streamed.bin'))).toEqual(payload);
   });
 
@@ -120,12 +121,26 @@ describe('S3MediaStorage server-side encryption', () => {
     const payload = Buffer.from('streamed-s3-content');
     await writeFile(source, payload);
     try {
+      const checksum = createHash('sha256').update(payload).digest('hex');
+      const checksumBase64 = Buffer.from(checksum, 'hex').toString('base64');
+      sendSpy.mockImplementation(async (command: any) => {
+        if (command instanceof PutObjectCommand) {
+          for await (const _chunk of command.input.Body) { /* consume upload stream */ }
+          return {} as never;
+        }
+        if (command instanceof HeadObjectCommand) {
+          return { ContentLength: payload.length, ChecksumSHA256: checksumBase64 } as never;
+        }
+        return {} as never;
+      });
       const storage = new S3MediaStorage();
-      await storage.putFile('users/u1/streamed.bin', source, payload.length);
+      await storage.putFile('users/u1/streamed.bin', source, payload.length, checksum);
       const command = sendSpy.mock.calls[0][0] as PutObjectCommand;
       expect(command.input.ContentLength).toBe(payload.length);
+      expect(command.input.ChecksumSHA256).toBe(checksumBase64);
       expect(command.input.Body).toBeDefined();
       expect(command.input.ServerSideEncryption).toBe('AES256');
+      expect(sendSpy.mock.calls[1][0]).toBeInstanceOf(HeadObjectCommand);
     } finally {
       await rm(stage, { recursive: true, force: true });
     }
