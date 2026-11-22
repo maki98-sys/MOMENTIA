@@ -83,6 +83,7 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
     const stage = await mkdtemp(join(tmpdir(), 'momentia-s3-stage-'));
     const originalSend = S3Client.prototype.send;
     const calls = [];
+    let uploaded;
     const remote = Buffer.from('remote-object-content');
     S3Client.prototype.send = async function(command) {
       calls.push(command);
@@ -93,7 +94,7 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
       if (command instanceof PutObjectCommand) {
         const chunks = [];
         for await (const chunk of command.input.Body) chunks.push(Buffer.from(chunk));
-        this.uploaded = Buffer.concat(chunks);
+        uploaded = Buffer.concat(chunks);
         return {};
       }
       if (command instanceof DeleteObjectCommand) return {};
@@ -114,7 +115,7 @@ test('S3 adapter streams downloads, uploads, reads metadata and removes objects 
       await storage.commit('users/u1/variant.webp', uploadSource);
       const put = calls.find(command => command instanceof PutObjectCommand);
       assert.ok(put);
-      assert.deepEqual(this.uploaded, Buffer.from('upload-content'));
+      assert.deepEqual(uploaded, Buffer.from('upload-content'));
 
       await storage.remove(key);
       assert.ok(calls.some(command => command instanceof DeleteObjectCommand));
