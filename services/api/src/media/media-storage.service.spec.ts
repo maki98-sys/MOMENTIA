@@ -134,7 +134,9 @@ describe('S3MediaStorage server-side encryption', () => {
       const checksumBase64 = Buffer.from(checksum, 'hex').toString('base64');
       sendSpy.mockImplementation(async (command: any) => {
         if (command instanceof PutObjectCommand) {
-          const body = command.input.Body;\n          if (!body) throw new Error('Missing upload body');\n          for await (const _chunk of body as AsyncIterable<Uint8Array>) { /* consume upload stream */ }
+          const body = command.input.Body;
+          if (!body) throw new Error('Missing upload body');
+          for await (const _chunk of body as AsyncIterable<Uint8Array>) { /* consume upload stream */ }
           return {} as never;
         }
         if (command instanceof HeadObjectCommand) {
